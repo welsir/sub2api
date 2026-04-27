@@ -74,12 +74,12 @@ func AnalyzeToolContinuationSignals(reqBody map[string]any) ToolContinuationSign
 		}
 		itemType, _ := itemMap["type"].(string)
 		switch itemType {
-		case "tool_call", "function_call":
+		case "tool_call", "function_call", "tool_search_call":
 			callID, _ := itemMap["call_id"].(string)
 			if strings.TrimSpace(callID) != "" {
 				signals.HasToolCallContext = true
 			}
-		case "function_call_output":
+		case "function_call_output", "tool_search_output":
 			signals.HasFunctionCallOutput = true
 			callID, _ := itemMap["call_id"].(string)
 			callID = strings.TrimSpace(callID)
@@ -143,9 +143,9 @@ func ValidateFunctionCallOutputContext(reqBody map[string]any) FunctionCallOutpu
 		}
 		itemType, _ := itemMap["type"].(string)
 		switch itemType {
-		case "function_call_output":
+		case "function_call_output", "tool_search_output":
 			result.HasFunctionCallOutput = true
-		case "tool_call", "function_call":
+		case "tool_call", "function_call", "tool_search_call":
 			callID, _ := itemMap["call_id"].(string)
 			if strings.TrimSpace(callID) != "" {
 				result.HasToolCallContext = true
@@ -169,7 +169,7 @@ func ValidateFunctionCallOutputContext(reqBody map[string]any) FunctionCallOutpu
 		}
 		itemType, _ := itemMap["type"].(string)
 		switch itemType {
-		case "function_call_output":
+		case "function_call_output", "tool_search_output":
 			callID, _ := itemMap["call_id"].(string)
 			callID = strings.TrimSpace(callID)
 			if callID == "" {
