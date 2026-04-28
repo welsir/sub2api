@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/cespare/xxhash/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/require"
 	"github.com/tidwall/gjson"
 )
@@ -1527,6 +1528,71 @@ func TestOpenAIBuildUpstreamRequestPreservesCompactPathForAPIKeyBaseURL(t *testi
 	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false, "", false)
 	require.NoError(t, err)
 	require.Equal(t, "https://example.com/v1/responses/compact", req.URL.String())
+}
+
+func TestOpenAIBuildUpstreamRequestCompressesLargeOAuthStreamBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+
+	svc := &OpenAIGatewayService{cfg: &config.Config{
+		Gateway: config.GatewayConfig{
+			OpenAIRequestCompressionEnabled:  true,
+			OpenAIRequestCompressionMinBytes: 64,
+		},
+	}}
+	account := &Account{Type: AccountTypeOAuth}
+	body := []byte(`{"model":"gpt-5","stream":true,"input":"` + strings.Repeat("hello ", 200) + `"}`)
+
+	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, body, "token", true, "", true)
+	require.NoError(t, err)
+	require.Equal(t, "zstd", req.Header.Get("Content-Encoding"))
+	require.Less(t, int(req.ContentLength), len(body))
+
+	compressed, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	decoder, err := zstd.NewReader(nil)
+	require.NoError(t, err)
+	defer decoder.Close()
+	decoded, err := decoder.DecodeAll(compressed, nil)
+	require.NoError(t, err)
+	require.Equal(t, body, decoded)
+}
+
+func TestOpenAIBuildUpstreamRequestSkipsCompressionForCompactOrAPIKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	body := []byte(`{"model":"gpt-5","stream":true,"input":"` + strings.Repeat("hello ", 200) + `"}`)
+	svc := &OpenAIGatewayService{cfg: &config.Config{
+		Gateway: config.GatewayConfig{
+			OpenAIRequestCompressionEnabled:  true,
+			OpenAIRequestCompressionMinBytes: 64,
+		},
+		Security: config.SecurityConfig{
+			URLAllowlist: config.URLAllowlistConfig{Enabled: false},
+		},
+	}}
+
+	compactRec := httptest.NewRecorder()
+	compactCtx, _ := gin.CreateTestContext(compactRec)
+	compactCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses/compact", nil)
+	oauthReq, err := svc.buildUpstreamRequest(compactCtx.Request.Context(), compactCtx, &Account{Type: AccountTypeOAuth}, body, "token", true, "", true)
+	require.NoError(t, err)
+	require.Empty(t, oauthReq.Header.Get("Content-Encoding"))
+	require.Equal(t, int64(len(body)), oauthReq.ContentLength)
+
+	apiKeyRec := httptest.NewRecorder()
+	apiKeyCtx, _ := gin.CreateTestContext(apiKeyRec)
+	apiKeyCtx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	apiKeyAccount := &Account{
+		Type:        AccountTypeAPIKey,
+		Platform:    PlatformOpenAI,
+		Credentials: map[string]any{"base_url": "https://example.com/v1"},
+	}
+	apiKeyReq, err := svc.buildUpstreamRequest(apiKeyCtx.Request.Context(), apiKeyCtx, apiKeyAccount, body, "token", true, "", true)
+	require.NoError(t, err)
+	require.Empty(t, apiKeyReq.Header.Get("Content-Encoding"))
+	require.Equal(t, int64(len(body)), apiKeyReq.ContentLength)
 }
 
 func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t *testing.T) {
