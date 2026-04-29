@@ -590,6 +590,7 @@ func isInstructionsEmpty(reqBody map[string]any) bool {
 // preserveReferences 为 true 时保持引用与 id，以满足续链请求对上下文的依赖。
 func filterCodexInput(input []any, preserveReferences bool) []any {
 	filtered := make([]any, 0, len(input))
+	toolSearchOutputCallIDs := codexToolSearchOutputCallIDs(input)
 	for _, item := range input {
 		m, ok := item.(map[string]any)
 		if !ok {
@@ -608,6 +609,13 @@ func filterCodexInput(input []any, preserveReferences bool) []any {
 				return "fc" + strings.TrimPrefix(id, "call_")
 			}
 			return "fc_" + id
+		}
+
+		if typ == "tool_search_call" {
+			callID := firstNonEmptyString(m["call_id"], m["id"])
+			if _, ok := toolSearchOutputCallIDs[fixCallIDPrefix(callID)]; !ok {
+				continue
+			}
 		}
 
 		if typ == "item_reference" {
@@ -671,11 +679,32 @@ func filterCodexInput(input []any, preserveReferences bool) []any {
 	return filtered
 }
 
-func isCodexToolCallItemType(typ string) bool {
-	if typ == "" {
-		return false
+func codexToolSearchOutputCallIDs(input []any) map[string]struct{} {
+	ids := make(map[string]struct{})
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if typ, _ := m["type"].(string); typ != "tool_search_output" {
+			continue
+		}
+		callID := firstNonEmptyString(m["call_id"], m["id"])
+		callID = strings.TrimSpace(callID)
+		if callID == "" {
+			continue
+		}
+		if strings.HasPrefix(callID, "fc") {
+			ids[callID] = struct{}{}
+			continue
+		}
+		if strings.HasPrefix(callID, "call_") {
+			ids["fc"+strings.TrimPrefix(callID, "call_")] = struct{}{}
+			continue
+		}
+		ids["fc_"+callID] = struct{}{}
 	}
-	return strings.HasSuffix(typ, "_call") || strings.HasSuffix(typ, "_call_output")
+	return ids
 }
 
 func normalizeCodexTools(reqBody map[string]any) bool {

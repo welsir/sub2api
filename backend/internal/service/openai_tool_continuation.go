@@ -21,7 +21,7 @@ type FunctionCallOutputValidation struct {
 }
 
 // NeedsToolContinuation 判定请求是否需要工具调用续链处理。
-// 满足以下任一信号即视为续链：previous_response_id、input 内包含 function_call_output/item_reference、
+// 满足以下任一信号即视为续链：previous_response_id、input 内包含工具输出/item_reference、
 // 或显式声明 tools/tool_choice。
 func NeedsToolContinuation(reqBody map[string]any) bool {
 	if reqBody == nil {
@@ -46,7 +46,7 @@ func NeedsToolContinuation(reqBody map[string]any) bool {
 			continue
 		}
 		itemType, _ := itemMap["type"].(string)
-		if itemType == "function_call_output" || itemType == "item_reference" {
+		if isCodexToolOutputItemType(itemType) || itemType == "item_reference" {
 			return true
 		}
 	}
@@ -74,12 +74,15 @@ func AnalyzeToolContinuationSignals(reqBody map[string]any) ToolContinuationSign
 		}
 		itemType, _ := itemMap["type"].(string)
 		switch itemType {
-		case "tool_call", "function_call":
+		case "tool_call", "function_call", "tool_search_call":
 			callID, _ := itemMap["call_id"].(string)
 			if strings.TrimSpace(callID) != "" {
 				signals.HasToolCallContext = true
 			}
-		case "function_call_output":
+		default:
+			if !isCodexToolOutputItemType(itemType) {
+				continue
+			}
 			signals.HasFunctionCallOutput = true
 			callID, _ := itemMap["call_id"].(string)
 			callID = strings.TrimSpace(callID)
@@ -143,13 +146,16 @@ func ValidateFunctionCallOutputContext(reqBody map[string]any) FunctionCallOutpu
 		}
 		itemType, _ := itemMap["type"].(string)
 		switch itemType {
-		case "function_call_output":
-			result.HasFunctionCallOutput = true
-		case "tool_call", "function_call":
+		case "tool_call", "function_call", "tool_search_call":
 			callID, _ := itemMap["call_id"].(string)
 			if strings.TrimSpace(callID) != "" {
 				result.HasToolCallContext = true
 			}
+		default:
+			if !isCodexToolOutputItemType(itemType) {
+				continue
+			}
+			result.HasFunctionCallOutput = true
 		}
 		if result.HasFunctionCallOutput && result.HasToolCallContext {
 			return result
@@ -169,14 +175,6 @@ func ValidateFunctionCallOutputContext(reqBody map[string]any) FunctionCallOutpu
 		}
 		itemType, _ := itemMap["type"].(string)
 		switch itemType {
-		case "function_call_output":
-			callID, _ := itemMap["call_id"].(string)
-			callID = strings.TrimSpace(callID)
-			if callID == "" {
-				result.HasFunctionCallOutputMissingCallID = true
-				continue
-			}
-			callIDs[callID] = struct{}{}
 		case "item_reference":
 			idValue, _ := itemMap["id"].(string)
 			idValue = strings.TrimSpace(idValue)
@@ -184,6 +182,17 @@ func ValidateFunctionCallOutputContext(reqBody map[string]any) FunctionCallOutpu
 				continue
 			}
 			referenceIDs[idValue] = struct{}{}
+		default:
+			if !isCodexToolOutputItemType(itemType) {
+				continue
+			}
+			callID, _ := itemMap["call_id"].(string)
+			callID = strings.TrimSpace(callID)
+			if callID == "" {
+				result.HasFunctionCallOutputMissingCallID = true
+				continue
+			}
+			callIDs[callID] = struct{}{}
 		}
 	}
 
@@ -221,6 +230,22 @@ func FunctionCallOutputCallIDs(reqBody map[string]any) []string {
 // HasFunctionCallOutputMissingCallID 判断是否存在缺少 call_id 的 function_call_output。
 func HasFunctionCallOutputMissingCallID(reqBody map[string]any) bool {
 	return AnalyzeToolContinuationSignals(reqBody).HasFunctionCallOutputMissingCallID
+}
+
+func isCodexToolCallItemType(typ string) bool {
+	typ = strings.TrimSpace(typ)
+	if typ == "" {
+		return false
+	}
+	return typ == "tool_search_call" || isCodexToolOutputItemType(typ) || strings.HasSuffix(typ, "_call")
+}
+
+func isCodexToolOutputItemType(typ string) bool {
+	typ = strings.TrimSpace(typ)
+	if typ == "" {
+		return false
+	}
+	return typ == "tool_search_output" || strings.HasSuffix(typ, "_call_output")
 }
 
 // HasItemReferenceForCallIDs 判断 item_reference.id 是否覆盖所有 call_id。

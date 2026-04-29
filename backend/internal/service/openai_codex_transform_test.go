@@ -92,6 +92,67 @@ func TestApplyCodexOAuthTransform_ToolContinuationNormalizesToolReferenceIDsOnly
 	require.Equal(t, "fc1", second["call_id"])
 }
 
+func TestApplyCodexOAuthTransform_ToolSearchCallOutputKeepsMatchingCallID(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"input": []any{
+			map[string]any{
+				"type":    "tool_search_call",
+				"call_id": "call_amAgsitsXfs2y6mUwRsBdZTG",
+				"status":  "completed",
+			},
+			map[string]any{
+				"type":    "tool_search_output",
+				"call_id": "call_amAgsitsXfs2y6mUwRsBdZTG",
+				"status":  "completed",
+				"tools":   []any{},
+			},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, false)
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 2)
+
+	callItem, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	outputItem, ok := input[1].(map[string]any)
+	require.True(t, ok)
+
+	require.Equal(t, "fcamAgsitsXfs2y6mUwRsBdZTG", callItem["call_id"])
+	require.Equal(t, callItem["call_id"], outputItem["call_id"])
+	require.Equal(t, "tool_search_output", outputItem["type"])
+}
+
+func TestApplyCodexOAuthTransform_RemovesOrphanToolSearchCallFromHTTPInput(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"tools": []any{
+			map[string]any{"type": "image_generation"},
+		},
+		"input": []any{
+			map[string]any{"type": "message", "role": "user", "content": "keep chatting"},
+			map[string]any{
+				"type":    "tool_search_call",
+				"call_id": "call_fc5nhSQCACz5MvF5jGWmylEedh",
+				"status":  "completed",
+			},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, true, false)
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 1)
+
+	item, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "message", item["type"])
+}
+
 func TestApplyCodexOAuthTransform_ExplicitStoreFalsePreserved(t *testing.T) {
 	// 续链场景：显式 store=false 不再强制为 true，保持 false。
 
