@@ -8751,22 +8751,24 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		accounts = filtered
 	}
 
-	// Collect unique models from all accounts
+	// Collect unique models explicitly declared for public model visibility.
+	// Runtime fallbacks/default aliases still work during request forwarding, but
+	// they must not silently expand the public /v1/models catalog.
 	modelSet := make(map[string]struct{})
-	hasAnyMapping := false
+	hasAnyExplicitMapping := false
 
 	for _, acc := range accounts {
-		mapping := acc.GetModelMapping()
+		mapping := acc.GetExplicitModelMapping()
 		if len(mapping) > 0 {
-			hasAnyMapping = true
+			hasAnyExplicitMapping = true
 			for model := range mapping {
 				modelSet[model] = struct{}{}
 			}
 		}
 	}
 
-	// If no account has model_mapping, return nil (use default)
-	if !hasAnyMapping {
+	// If no account explicitly declares a visible model set, return nil.
+	if !hasAnyExplicitMapping {
 		if s.modelsListCache != nil {
 			s.modelsListCache.Set(cacheKey, []string(nil), s.modelsListCacheTTL)
 			modelsListCacheStoreTotal.Add(1)

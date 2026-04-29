@@ -426,6 +426,31 @@ func (a *Account) GetModelMapping() map[string]string {
 	return mapping
 }
 
+// GetExplicitModelMapping returns only the model_mapping explicitly stored on the
+// account credentials. Unlike GetModelMapping, it does not inject platform
+// defaults or fallback passthrough aliases.
+func (a *Account) GetExplicitModelMapping() map[string]string {
+	if a == nil || a.Credentials == nil {
+		return nil
+	}
+
+	rawMapping, _ := a.Credentials["model_mapping"].(map[string]any)
+	if len(rawMapping) == 0 {
+		return nil
+	}
+
+	result := make(map[string]string)
+	for k, v := range rawMapping {
+		if s, ok := v.(string); ok {
+			result[k] = s
+		}
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
 func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]string {
 	if a.Credentials == nil {
 		// Antigravity 平台使用默认映射
