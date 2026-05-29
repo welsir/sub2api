@@ -81,6 +81,13 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		zap.String("capability", string(parsed.RequiredCapability)),
 	)
 
+	// 用户级模型白名单准入校验（空白名单 = 不限制）
+	if userModelDenied(apiKey, parsed.Model) {
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalPolicyDenied)
+		h.errorResponse(c, http.StatusForbidden, "permission_error", userModelDenialMessage(parsed.Model))
+		return
+	}
+
 	if parsed.Multipart {
 		setOpsRequestContext(c, parsed.Model, parsed.Stream, nil)
 	} else {

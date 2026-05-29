@@ -47,6 +47,10 @@ type APIKeyAuthUserSnapshot struct {
 	// RPMLimit 用户级每分钟请求数上限（0 = 不限制）；用于 billing_cache_service.checkRPM 兜底判断。
 	RPMLimit int `json:"rpm_limit"`
 
+	// AllowedModels 用户级模型白名单（支持通配符，如 "claude-*"）；空 = 不限制。
+	// 随认证缓存快照下发，网关热路径据此做准入校验，避免每请求查库。
+	AllowedModels []string `json:"allowed_models,omitempty"`
+
 	// UserGroupRPMOverride 该 API Key 对应的 (user, group) 专属 RPM 覆盖值。
 	// nil = 无 override（回退到 group/user 级）；0 = 不限流；>0 = 专属上限。
 	UserGroupRPMOverride *int `json:"user_group_rpm_override,omitempty"`

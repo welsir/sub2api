@@ -120,6 +120,7 @@ type CreateUserInput struct {
 	Concurrency   int
 	RPMLimit      int
 	AllowedGroups []int64
+	AllowedModels []string
 }
 
 type UpdateUserInput struct {
@@ -131,7 +132,8 @@ type UpdateUserInput struct {
 	Concurrency   *int     // 使用指针区分"未提供"和"设置为0"
 	RPMLimit      *int     // 使用指针区分"未提供"和"设置为0"
 	Status        string
-	AllowedGroups *[]int64 // 使用指针区分"未提供"和"设置为空数组"
+	AllowedGroups *[]int64  // 使用指针区分"未提供"和"设置为空数组"
+	AllowedModels *[]string // 使用指针区分"未提供"和"设置为空数组"
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
 	GroupRates map[int64]*float64
@@ -651,6 +653,7 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 		RPMLimit:      input.RPMLimit,
 		Status:        StatusActive,
 		AllowedGroups: input.AllowedGroups,
+		AllowedModels: input.AllowedModels,
 	}
 	if err := user.SetPassword(input.Password); err != nil {
 		return nil, err
@@ -736,6 +739,12 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		user.AllowedGroups = *input.AllowedGroups
 	}
 
+	allowedModelsChanged := false
+	if input.AllowedModels != nil {
+		user.AllowedModels = *input.AllowedModels
+		allowedModelsChanged = true
+	}
+
 	if err := s.userRepo.Update(ctx, user); err != nil {
 		return nil, err
 	}
@@ -749,8 +758,9 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 
 	if s.authCacheInvalidator != nil {
 		// RPMLimit 直接参与 billing_cache_service.checkRPM 的三级级联，
+		// AllowedModels 参与网关入口的模型白名单准入校验（随认证快照下发），
 		// 不失效缓存会让修改在一个 L2 TTL 内失去效果。
-		if user.Concurrency != oldConcurrency || user.Status != oldStatus || user.Role != oldRole || user.RPMLimit != oldRPMLimit {
+		if user.Concurrency != oldConcurrency || user.Status != oldStatus || user.Role != oldRole || user.RPMLimit != oldRPMLimit || allowedModelsChanged {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, user.ID)
 		}
 	}

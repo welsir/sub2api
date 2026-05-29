@@ -14,7 +14,7 @@ import (
 	"github.com/dgraph-io/ristretto"
 )
 
-const apiKeyAuthSnapshotVersion = 7 // v7: added UserGroupRPMOverride on user snapshot
+const apiKeyAuthSnapshotVersion = 8 // v8: carry per-user allowed_models whitelist
 
 type apiKeyAuthCacheConfig struct {
 	l1Size        int

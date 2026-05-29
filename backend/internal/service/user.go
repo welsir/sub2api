@@ -22,6 +22,9 @@ type User struct {
 	Concurrency    int
 	Status         string
 	AllowedGroups  []int64
+	// AllowedModels 用户级模型白名单（支持通配符，如 "claude-*"）。
+	// 为空表示不限制，放行全部模型。在网关入口处做准入校验，并过滤 /v1/models 展示。
+	AllowedModels []string
 	TokenVersion   int64 // Incremented on password change to invalidate existing tokens
 	// TokenVersionResolved indicates TokenVersion already contains the fingerprint-derived
 	// value expected in JWT claims and refresh-token state.
@@ -64,6 +67,16 @@ type User struct {
 
 func (u *User) IsAdmin() bool {
 	return u.Role == RoleAdmin
+}
+
+// AllowsModel reports whether the per-user model whitelist permits requestedModel.
+// An empty whitelist (the default) means no restriction — all models are allowed.
+// Patterns support a trailing "*" wildcard, matching the account model_mapping syntax.
+func (u *User) AllowsModel(requestedModel string) bool {
+	if u == nil || len(u.AllowedModels) == 0 {
+		return true
+	}
+	return matchModelWhitelist(requestedModel, u.AllowedModels)
 }
 
 func (u *User) IsActive() bool {
