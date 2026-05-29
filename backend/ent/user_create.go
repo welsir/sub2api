@@ -345,6 +345,34 @@ func (_c *UserCreate) SetAllowedModels(v []string) *UserCreate {
 	return _c
 }
 
+// SetWeeklyCostThreshold sets the "weekly_cost_threshold" field.
+func (_c *UserCreate) SetWeeklyCostThreshold(v float64) *UserCreate {
+	_c.mutation.SetWeeklyCostThreshold(v)
+	return _c
+}
+
+// SetNillableWeeklyCostThreshold sets the "weekly_cost_threshold" field if the given value is not nil.
+func (_c *UserCreate) SetNillableWeeklyCostThreshold(v *float64) *UserCreate {
+	if v != nil {
+		_c.SetWeeklyCostThreshold(*v)
+	}
+	return _c
+}
+
+// SetWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field.
+func (_c *UserCreate) SetWeeklyThresholdNotifiedWeek(v string) *UserCreate {
+	_c.mutation.SetWeeklyThresholdNotifiedWeek(v)
+	return _c
+}
+
+// SetNillableWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field if the given value is not nil.
+func (_c *UserCreate) SetNillableWeeklyThresholdNotifiedWeek(v *string) *UserCreate {
+	if v != nil {
+		_c.SetWeeklyThresholdNotifiedWeek(*v)
+	}
+	return _c
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_c *UserCreate) AddAPIKeyIDs(ids ...int64) *UserCreate {
 	_c.mutation.AddAPIKeyIDs(ids...)
@@ -714,6 +742,11 @@ func (_c *UserCreate) check() error {
 	if _, ok := _c.mutation.RpmLimit(); !ok {
 		return &ValidationError{Name: "rpm_limit", err: errors.New(`ent: missing required field "User.rpm_limit"`)}
 	}
+	if v, ok := _c.mutation.WeeklyThresholdNotifiedWeek(); ok {
+		if err := user.WeeklyThresholdNotifiedWeekValidator(v); err != nil {
+			return &ValidationError{Name: "weekly_threshold_notified_week", err: fmt.Errorf(`ent: validator failed for field "User.weekly_threshold_notified_week": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -836,6 +869,14 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.AllowedModels(); ok {
 		_spec.SetField(user.FieldAllowedModels, field.TypeJSON, value)
 		_node.AllowedModels = value
+	}
+	if value, ok := _c.mutation.WeeklyCostThreshold(); ok {
+		_spec.SetField(user.FieldWeeklyCostThreshold, field.TypeFloat64, value)
+		_node.WeeklyCostThreshold = &value
+	}
+	if value, ok := _c.mutation.WeeklyThresholdNotifiedWeek(); ok {
+		_spec.SetField(user.FieldWeeklyThresholdNotifiedWeek, field.TypeString, value)
+		_node.WeeklyThresholdNotifiedWeek = &value
 	}
 	if nodes := _c.mutation.APIKeysIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -1433,6 +1474,48 @@ func (u *UserUpsert) ClearAllowedModels() *UserUpsert {
 	return u
 }
 
+// SetWeeklyCostThreshold sets the "weekly_cost_threshold" field.
+func (u *UserUpsert) SetWeeklyCostThreshold(v float64) *UserUpsert {
+	u.Set(user.FieldWeeklyCostThreshold, v)
+	return u
+}
+
+// UpdateWeeklyCostThreshold sets the "weekly_cost_threshold" field to the value that was provided on create.
+func (u *UserUpsert) UpdateWeeklyCostThreshold() *UserUpsert {
+	u.SetExcluded(user.FieldWeeklyCostThreshold)
+	return u
+}
+
+// AddWeeklyCostThreshold adds v to the "weekly_cost_threshold" field.
+func (u *UserUpsert) AddWeeklyCostThreshold(v float64) *UserUpsert {
+	u.Add(user.FieldWeeklyCostThreshold, v)
+	return u
+}
+
+// ClearWeeklyCostThreshold clears the value of the "weekly_cost_threshold" field.
+func (u *UserUpsert) ClearWeeklyCostThreshold() *UserUpsert {
+	u.SetNull(user.FieldWeeklyCostThreshold)
+	return u
+}
+
+// SetWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field.
+func (u *UserUpsert) SetWeeklyThresholdNotifiedWeek(v string) *UserUpsert {
+	u.Set(user.FieldWeeklyThresholdNotifiedWeek, v)
+	return u
+}
+
+// UpdateWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field to the value that was provided on create.
+func (u *UserUpsert) UpdateWeeklyThresholdNotifiedWeek() *UserUpsert {
+	u.SetExcluded(user.FieldWeeklyThresholdNotifiedWeek)
+	return u
+}
+
+// ClearWeeklyThresholdNotifiedWeek clears the value of the "weekly_threshold_notified_week" field.
+func (u *UserUpsert) ClearWeeklyThresholdNotifiedWeek() *UserUpsert {
+	u.SetNull(user.FieldWeeklyThresholdNotifiedWeek)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create.
 // Using this option is equivalent to using:
 //
@@ -1881,6 +1964,55 @@ func (u *UserUpsertOne) UpdateAllowedModels() *UserUpsertOne {
 func (u *UserUpsertOne) ClearAllowedModels() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.ClearAllowedModels()
+	})
+}
+
+// SetWeeklyCostThreshold sets the "weekly_cost_threshold" field.
+func (u *UserUpsertOne) SetWeeklyCostThreshold(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetWeeklyCostThreshold(v)
+	})
+}
+
+// AddWeeklyCostThreshold adds v to the "weekly_cost_threshold" field.
+func (u *UserUpsertOne) AddWeeklyCostThreshold(v float64) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.AddWeeklyCostThreshold(v)
+	})
+}
+
+// UpdateWeeklyCostThreshold sets the "weekly_cost_threshold" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateWeeklyCostThreshold() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateWeeklyCostThreshold()
+	})
+}
+
+// ClearWeeklyCostThreshold clears the value of the "weekly_cost_threshold" field.
+func (u *UserUpsertOne) ClearWeeklyCostThreshold() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearWeeklyCostThreshold()
+	})
+}
+
+// SetWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field.
+func (u *UserUpsertOne) SetWeeklyThresholdNotifiedWeek(v string) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetWeeklyThresholdNotifiedWeek(v)
+	})
+}
+
+// UpdateWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateWeeklyThresholdNotifiedWeek() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateWeeklyThresholdNotifiedWeek()
+	})
+}
+
+// ClearWeeklyThresholdNotifiedWeek clears the value of the "weekly_threshold_notified_week" field.
+func (u *UserUpsertOne) ClearWeeklyThresholdNotifiedWeek() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearWeeklyThresholdNotifiedWeek()
 	})
 }
 
@@ -2498,6 +2630,55 @@ func (u *UserUpsertBulk) UpdateAllowedModels() *UserUpsertBulk {
 func (u *UserUpsertBulk) ClearAllowedModels() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.ClearAllowedModels()
+	})
+}
+
+// SetWeeklyCostThreshold sets the "weekly_cost_threshold" field.
+func (u *UserUpsertBulk) SetWeeklyCostThreshold(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetWeeklyCostThreshold(v)
+	})
+}
+
+// AddWeeklyCostThreshold adds v to the "weekly_cost_threshold" field.
+func (u *UserUpsertBulk) AddWeeklyCostThreshold(v float64) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.AddWeeklyCostThreshold(v)
+	})
+}
+
+// UpdateWeeklyCostThreshold sets the "weekly_cost_threshold" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateWeeklyCostThreshold() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateWeeklyCostThreshold()
+	})
+}
+
+// ClearWeeklyCostThreshold clears the value of the "weekly_cost_threshold" field.
+func (u *UserUpsertBulk) ClearWeeklyCostThreshold() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearWeeklyCostThreshold()
+	})
+}
+
+// SetWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field.
+func (u *UserUpsertBulk) SetWeeklyThresholdNotifiedWeek(v string) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetWeeklyThresholdNotifiedWeek(v)
+	})
+}
+
+// UpdateWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateWeeklyThresholdNotifiedWeek() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateWeeklyThresholdNotifiedWeek()
+	})
+}
+
+// ClearWeeklyThresholdNotifiedWeek clears the value of the "weekly_threshold_notified_week" field.
+func (u *UserUpsertBulk) ClearWeeklyThresholdNotifiedWeek() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearWeeklyThresholdNotifiedWeek()
 	})
 }
 

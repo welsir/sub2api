@@ -91,6 +91,7 @@ export interface User {
   status: 'active' | 'disabled' // Account status
   allowed_groups: number[] | null // Allowed group IDs (null = all non-exclusive groups)
   allowed_models?: string[] | null // Per-user model whitelist (supports wildcards like "claude-*"); empty/null = no restriction
+  weekly_cost_threshold?: number | null // 周花费阈值（自然周，周六为第一天）；null/<=0 = 不限制
   balance_notify_enabled: boolean
   balance_notify_threshold: number | null
   balance_notify_extra_emails: NotifyEmailEntry[]
@@ -1359,6 +1360,8 @@ export interface UpdateUserRequest {
   allowed_groups?: number[] | null
   // 用户级模型白名单（支持通配符，如 "claude-*"）；空数组 = 不限制
   allowed_models?: string[] | null
+  // 周花费阈值（自然周，周六为第一天）；提供且 >0 设置，提供且 <=0 清除（不限制），省略=不修改
+  weekly_cost_threshold?: number | null
   // 用户专属分组倍率配置 (group_id -> rate_multiplier | null)
   // null 表示删除该分组的专属倍率
   group_rates?: Record<number, number | null>

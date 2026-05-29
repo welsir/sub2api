@@ -34,15 +34,17 @@ func NewUserHandler(adminService service.AdminService, concurrencyService *servi
 
 // CreateUserRequest represents admin create user request
 type CreateUserRequest struct {
-	Email         string  `json:"email" binding:"required,email"`
-	Password      string  `json:"password" binding:"required,min=6"`
-	Username      string  `json:"username"`
-	Notes         string  `json:"notes"`
-	Balance       float64 `json:"balance"`
+	Email         string   `json:"email" binding:"required,email"`
+	Password      string   `json:"password" binding:"required,min=6"`
+	Username      string   `json:"username"`
+	Notes         string   `json:"notes"`
+	Balance       float64  `json:"balance"`
 	Concurrency   int      `json:"concurrency"`
 	RPMLimit      int      `json:"rpm_limit"`
 	AllowedGroups []int64  `json:"allowed_groups"`
 	AllowedModels []string `json:"allowed_models"`
+	// WeeklyCostThreshold 周花费阈值（自然周，周六为第一天）；省略或 <=0 表示不限制。
+	WeeklyCostThreshold *float64 `json:"weekly_cost_threshold"`
 }
 
 // UpdateUserRequest represents admin update user request
@@ -58,6 +60,8 @@ type UpdateUserRequest struct {
 	Status        string    `json:"status" binding:"omitempty,oneof=active disabled"`
 	AllowedGroups *[]int64  `json:"allowed_groups"`
 	AllowedModels *[]string `json:"allowed_models"`
+	// WeeklyCostThreshold 周花费阈值。省略=不修改；提供且 >0=设置；提供且 <=0=清除（不限制）。
+	WeeklyCostThreshold *float64 `json:"weekly_cost_threshold"`
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
 	GroupRates map[int64]*float64 `json:"group_rates"`
@@ -241,15 +245,16 @@ func (h *UserHandler) Create(c *gin.Context) {
 	}
 
 	user, err := h.adminService.CreateUser(c.Request.Context(), &service.CreateUserInput{
-		Email:         req.Email,
-		Password:      req.Password,
-		Username:      req.Username,
-		Notes:         req.Notes,
-		Balance:       req.Balance,
-		Concurrency:   req.Concurrency,
-		RPMLimit:      req.RPMLimit,
-		AllowedGroups: req.AllowedGroups,
-		AllowedModels: req.AllowedModels,
+		Email:               req.Email,
+		Password:            req.Password,
+		Username:            req.Username,
+		Notes:               req.Notes,
+		Balance:             req.Balance,
+		Concurrency:         req.Concurrency,
+		RPMLimit:            req.RPMLimit,
+		AllowedGroups:       req.AllowedGroups,
+		AllowedModels:       req.AllowedModels,
+		WeeklyCostThreshold: req.WeeklyCostThreshold,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)
@@ -276,17 +281,18 @@ func (h *UserHandler) Update(c *gin.Context) {
 
 	// 使用指针类型直接传递，nil 表示未提供该字段
 	user, err := h.adminService.UpdateUser(c.Request.Context(), userID, &service.UpdateUserInput{
-		Email:         req.Email,
-		Password:      req.Password,
-		Username:      req.Username,
-		Notes:         req.Notes,
-		Balance:       req.Balance,
-		Concurrency:   req.Concurrency,
-		RPMLimit:      req.RPMLimit,
-		Status:        req.Status,
-		AllowedGroups: req.AllowedGroups,
-		AllowedModels: req.AllowedModels,
-		GroupRates:    req.GroupRates,
+		Email:               req.Email,
+		Password:            req.Password,
+		Username:            req.Username,
+		Notes:               req.Notes,
+		Balance:             req.Balance,
+		Concurrency:         req.Concurrency,
+		RPMLimit:            req.RPMLimit,
+		Status:              req.Status,
+		AllowedGroups:       req.AllowedGroups,
+		AllowedModels:       req.AllowedModels,
+		WeeklyCostThreshold: req.WeeklyCostThreshold,
+		GroupRates:          req.GroupRates,
 	})
 	if err != nil {
 		response.ErrorFrom(c, err)

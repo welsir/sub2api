@@ -315,6 +315,32 @@ export async function getBatchApiKeysUsage(
   return data
 }
 
+// 目录花费：按 (用户, 工作目录) 聚合 actual_cost，用于发现非公司项目用量（仅管理员）。
+export interface WorkingDirSpendingItem {
+  user_id: number
+  email: string
+  working_directory: string // 空串表示未识别（客户端未上报 cwd）
+  actual_cost: number
+  requests: number
+}
+
+export interface WorkingDirSpendingResponse {
+  items: WorkingDirSpendingItem[]
+  total_actual_cost: number
+  start_date?: string
+  end_date?: string
+}
+
+export async function getWorkingDirSpending(params?: {
+  start_date?: string
+  end_date?: string
+  user_id?: number
+  limit?: number
+}): Promise<WorkingDirSpendingResponse> {
+  const { data } = await apiClient.get<WorkingDirSpendingResponse>('/admin/dashboard/working-dirs', { params })
+  return data
+}
+
 export const dashboardAPI = {
   getStats,
   getRealtimeMetrics,
@@ -325,6 +351,7 @@ export const dashboardAPI = {
   getApiKeyUsageTrend,
   getUserUsageTrend,
   getUserSpendingRanking,
+  getWorkingDirSpending,
   getBatchUsersUsage,
   getBatchApiKeysUsage
 }

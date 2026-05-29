@@ -117,6 +117,20 @@ func (User) Fields() []ent.Field {
 		field.JSON("allowed_models", []string{}).
 			Optional().
 			Comment("Per-user model whitelist (supports wildcards like claude-*); empty = no restriction"),
+
+		// 用户级周花费阈值（自然周，周六为第一天）。NULL 或 <=0 表示不限制。
+		// 本自然周 actual_cost 累计达到该值时告警（邮件通知用户与管理员），不阻断请求。
+		field.Float("weekly_cost_threshold").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Optional().
+			Nillable().
+			Comment("Per-user weekly actual_cost threshold (natural week, Sat start); NULL/<=0 = no limit"),
+		// 上次已就周阈值告警的自然周起始日（YYYY-MM-DD）。用于保证每个自然周最多告警一次。
+		field.String("weekly_threshold_notified_week").
+			MaxLen(10).
+			Optional().
+			Nillable().
+			Comment("Natural-week start date (YYYY-MM-DD) of the last weekly-threshold alert; dedupes per-week alerts"),
 	}
 }
 

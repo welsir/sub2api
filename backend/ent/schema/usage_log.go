@@ -126,6 +126,13 @@ func (UsageLog) Fields() []ent.Field {
 			MaxLen(45). // 支持 IPv6
 			Optional().
 			Nillable(),
+		// working_directory: 客户端发起请求时的工作目录（cwd）。
+		// 由 Claude Code 的 <env> 块（Working directory:）或 Codex 的 <environment_context><cwd> 解析得到；
+		// 取不到时为 NULL。用于按目录归集花费，识别非公司项目用量。
+		field.String("working_directory").
+			MaxLen(1024).
+			Optional().
+			Nillable(),
 
 		// 图片生成字段（仅 gemini-3-pro-image 等图片模型使用）
 		field.Int("image_count").

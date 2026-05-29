@@ -4548,6 +4548,7 @@ type OpenAIRecordUsageInput struct {
 	UserAgent          string // 请求的 User-Agent
 	IPAddress          string // 请求的客户端 IP 地址
 	RequestPayloadHash string
+	RequestBody        []byte // 原始客户端请求体，用于解析工作目录(cwd)；可为 nil
 	APIKeyService      APIKeyQuotaUpdater
 	ChannelUsageFields
 }
@@ -4679,6 +4680,8 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	// 设置渠道信息
 	usageLog.ChannelID = optionalInt64Ptr(input.ChannelID)
 	usageLog.ModelMappingChain = optionalTrimmedStringPtr(input.ModelMappingChain)
+	// 客户端工作目录(cwd)：从原始请求体解析（Codex 的 <cwd> / Claude Code 的 env 块）
+	usageLog.WorkingDirectory = optionalTrimmedStringPtr(ExtractWorkingDirectory(input.RequestBody))
 	// 设置计费模式
 	if cost != nil && cost.BillingMode != "" {
 		billingMode := cost.BillingMode

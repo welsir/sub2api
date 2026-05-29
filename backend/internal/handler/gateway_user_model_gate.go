@@ -8,9 +8,8 @@ import (
 
 // userModelDenied reports whether the per-user model whitelist blocks the
 // requested model. A nil user or empty whitelist means no restriction.
-// Callers should reject the request with HTTP 403 (in the caller's protocol
-// format) and mark service.OpsClientBusinessLimitedReasonLocalPolicyDenied
-// when this returns true.
+// Callers should reject the request with HTTP 403 in the caller's protocol
+// format when this returns true.
 func userModelDenied(apiKey *service.APIKey, model string) bool {
 	if apiKey == nil || apiKey.User == nil {
 		return false

@@ -82,7 +82,6 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 
 	// 用户级模型白名单准入校验（空白名单 = 不限制）
 	if userModelDenied(apiKey, reqModel) {
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalPolicyDenied)
 		h.errorResponse(c, http.StatusForbidden, "permission_error", userModelDenialMessage(reqModel))
 		return
 	}
@@ -284,6 +283,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				UpstreamEndpoint:   GetUpstreamEndpoint(c, account.Platform),
 				UserAgent:          userAgent,
 				IPAddress:          clientIP,
+				RequestBody:        body,
 				APIKeyService:      h.apiKeyService,
 				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {

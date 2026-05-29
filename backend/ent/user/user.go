@@ -63,6 +63,10 @@ const (
 	FieldRpmLimit = "rpm_limit"
 	// FieldAllowedModels holds the string denoting the allowed_models field in the database.
 	FieldAllowedModels = "allowed_models"
+	// FieldWeeklyCostThreshold holds the string denoting the weekly_cost_threshold field in the database.
+	FieldWeeklyCostThreshold = "weekly_cost_threshold"
+	// FieldWeeklyThresholdNotifiedWeek holds the string denoting the weekly_threshold_notified_week field in the database.
+	FieldWeeklyThresholdNotifiedWeek = "weekly_threshold_notified_week"
 	// EdgeAPIKeys holds the string denoting the api_keys edge name in mutations.
 	EdgeAPIKeys = "api_keys"
 	// EdgeRedeemCodes holds the string denoting the redeem_codes edge name in mutations.
@@ -209,6 +213,8 @@ var Columns = []string{
 	FieldTotalRecharged,
 	FieldRpmLimit,
 	FieldAllowedModels,
+	FieldWeeklyCostThreshold,
+	FieldWeeklyThresholdNotifiedWeek,
 }
 
 var (
@@ -279,6 +285,8 @@ var (
 	DefaultTotalRecharged float64
 	// DefaultRpmLimit holds the default value on creation for the "rpm_limit" field.
 	DefaultRpmLimit int
+	// WeeklyThresholdNotifiedWeekValidator is a validator for the "weekly_threshold_notified_week" field. It is called by the builders before save.
+	WeeklyThresholdNotifiedWeekValidator func(string) error
 )
 
 // OrderOption defines the ordering options for the User queries.
@@ -402,6 +410,16 @@ func ByTotalRecharged(opts ...sql.OrderTermOption) OrderOption {
 // ByRpmLimit orders the results by the rpm_limit field.
 func ByRpmLimit(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldRpmLimit, opts...).ToFunc()
+}
+
+// ByWeeklyCostThreshold orders the results by the weekly_cost_threshold field.
+func ByWeeklyCostThreshold(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWeeklyCostThreshold, opts...).ToFunc()
+}
+
+// ByWeeklyThresholdNotifiedWeek orders the results by the weekly_threshold_notified_week field.
+func ByWeeklyThresholdNotifiedWeek(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldWeeklyThresholdNotifiedWeek, opts...).ToFunc()
 }
 
 // ByAPIKeysCount orders the results by api_keys count.

@@ -66,6 +66,10 @@ type User struct {
 	RpmLimit int `json:"rpm_limit,omitempty"`
 	// Per-user model whitelist (supports wildcards like claude-*); empty = no restriction
 	AllowedModels []string `json:"allowed_models,omitempty"`
+	// Per-user weekly actual_cost threshold (natural week, Sat start); NULL/<=0 = no limit
+	WeeklyCostThreshold *float64 `json:"weekly_cost_threshold,omitempty"`
+	// Natural-week start date (YYYY-MM-DD) of the last weekly-threshold alert; dedupes per-week alerts
+	WeeklyThresholdNotifiedWeek *string `json:"weekly_threshold_notified_week,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
 	// The values are being populated by the UserQuery when eager-loading is set.
 	Edges        UserEdges `json:"edges"`
@@ -231,11 +235,11 @@ func (*User) scanValues(columns []string) ([]any, error) {
 			values[i] = new([]byte)
 		case user.FieldTotpEnabled, user.FieldBalanceNotifyEnabled:
 			values[i] = new(sql.NullBool)
-		case user.FieldBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged:
+		case user.FieldBalance, user.FieldBalanceNotifyThreshold, user.FieldTotalRecharged, user.FieldWeeklyCostThreshold:
 			values[i] = new(sql.NullFloat64)
 		case user.FieldID, user.FieldConcurrency, user.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
-		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted, user.FieldSignupSource, user.FieldBalanceNotifyThresholdType, user.FieldBalanceNotifyExtraEmails:
+		case user.FieldEmail, user.FieldPasswordHash, user.FieldRole, user.FieldStatus, user.FieldUsername, user.FieldNotes, user.FieldTotpSecretEncrypted, user.FieldSignupSource, user.FieldBalanceNotifyThresholdType, user.FieldBalanceNotifyExtraEmails, user.FieldWeeklyThresholdNotifiedWeek:
 			values[i] = new(sql.NullString)
 		case user.FieldCreatedAt, user.FieldUpdatedAt, user.FieldDeletedAt, user.FieldTotpEnabledAt, user.FieldLastLoginAt, user.FieldLastActiveAt:
 			values[i] = new(sql.NullTime)
@@ -411,6 +415,20 @@ func (_m *User) assignValues(columns []string, values []any) error {
 				if err := json.Unmarshal(*value, &_m.AllowedModels); err != nil {
 					return fmt.Errorf("unmarshal field allowed_models: %w", err)
 				}
+			}
+		case user.FieldWeeklyCostThreshold:
+			if value, ok := values[i].(*sql.NullFloat64); !ok {
+				return fmt.Errorf("unexpected type %T for field weekly_cost_threshold", values[i])
+			} else if value.Valid {
+				_m.WeeklyCostThreshold = new(float64)
+				*_m.WeeklyCostThreshold = value.Float64
+			}
+		case user.FieldWeeklyThresholdNotifiedWeek:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field weekly_threshold_notified_week", values[i])
+			} else if value.Valid {
+				_m.WeeklyThresholdNotifiedWeek = new(string)
+				*_m.WeeklyThresholdNotifiedWeek = value.String
 			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
@@ -596,6 +614,16 @@ func (_m *User) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("allowed_models=")
 	builder.WriteString(fmt.Sprintf("%v", _m.AllowedModels))
+	builder.WriteString(", ")
+	if v := _m.WeeklyCostThreshold; v != nil {
+		builder.WriteString("weekly_cost_threshold=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.WeeklyThresholdNotifiedWeek; v != nil {
+		builder.WriteString("weekly_threshold_notified_week=")
+		builder.WriteString(*v)
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

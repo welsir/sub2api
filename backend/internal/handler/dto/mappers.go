@@ -22,6 +22,7 @@ func UserFromServiceShallow(u *service.User) *User {
 		Status:                     u.Status,
 		AllowedGroups:              u.AllowedGroups,
 		AllowedModels:              u.AllowedModels,
+		WeeklyCostThreshold:        u.WeeklyCostThreshold,
 		LastActiveAt:               u.LastActiveAt,
 		CreatedAt:                  u.CreatedAt,
 		UpdatedAt:                  u.UpdatedAt,

@@ -429,6 +429,53 @@ func (_u *UserUpdate) ClearAllowedModels() *UserUpdate {
 	return _u
 }
 
+// SetWeeklyCostThreshold sets the "weekly_cost_threshold" field.
+func (_u *UserUpdate) SetWeeklyCostThreshold(v float64) *UserUpdate {
+	_u.mutation.ResetWeeklyCostThreshold()
+	_u.mutation.SetWeeklyCostThreshold(v)
+	return _u
+}
+
+// SetNillableWeeklyCostThreshold sets the "weekly_cost_threshold" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableWeeklyCostThreshold(v *float64) *UserUpdate {
+	if v != nil {
+		_u.SetWeeklyCostThreshold(*v)
+	}
+	return _u
+}
+
+// AddWeeklyCostThreshold adds value to the "weekly_cost_threshold" field.
+func (_u *UserUpdate) AddWeeklyCostThreshold(v float64) *UserUpdate {
+	_u.mutation.AddWeeklyCostThreshold(v)
+	return _u
+}
+
+// ClearWeeklyCostThreshold clears the value of the "weekly_cost_threshold" field.
+func (_u *UserUpdate) ClearWeeklyCostThreshold() *UserUpdate {
+	_u.mutation.ClearWeeklyCostThreshold()
+	return _u
+}
+
+// SetWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field.
+func (_u *UserUpdate) SetWeeklyThresholdNotifiedWeek(v string) *UserUpdate {
+	_u.mutation.SetWeeklyThresholdNotifiedWeek(v)
+	return _u
+}
+
+// SetNillableWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field if the given value is not nil.
+func (_u *UserUpdate) SetNillableWeeklyThresholdNotifiedWeek(v *string) *UserUpdate {
+	if v != nil {
+		_u.SetWeeklyThresholdNotifiedWeek(*v)
+	}
+	return _u
+}
+
+// ClearWeeklyThresholdNotifiedWeek clears the value of the "weekly_threshold_notified_week" field.
+func (_u *UserUpdate) ClearWeeklyThresholdNotifiedWeek() *UserUpdate {
+	_u.mutation.ClearWeeklyThresholdNotifiedWeek()
+	return _u
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdate) AddAPIKeyIDs(ids ...int64) *UserUpdate {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -940,6 +987,11 @@ func (_u *UserUpdate) check() error {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.WeeklyThresholdNotifiedWeek(); ok {
+		if err := user.WeeklyThresholdNotifiedWeekValidator(v); err != nil {
+			return &ValidationError{Name: "weekly_threshold_notified_week", err: fmt.Errorf(`ent: validator failed for field "User.weekly_threshold_notified_week": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -1064,6 +1116,21 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.AllowedModelsCleared() {
 		_spec.ClearField(user.FieldAllowedModels, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.WeeklyCostThreshold(); ok {
+		_spec.SetField(user.FieldWeeklyCostThreshold, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedWeeklyCostThreshold(); ok {
+		_spec.AddField(user.FieldWeeklyCostThreshold, field.TypeFloat64, value)
+	}
+	if _u.mutation.WeeklyCostThresholdCleared() {
+		_spec.ClearField(user.FieldWeeklyCostThreshold, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.WeeklyThresholdNotifiedWeek(); ok {
+		_spec.SetField(user.FieldWeeklyThresholdNotifiedWeek, field.TypeString, value)
+	}
+	if _u.mutation.WeeklyThresholdNotifiedWeekCleared() {
+		_spec.ClearField(user.FieldWeeklyThresholdNotifiedWeek, field.TypeString)
 	}
 	if _u.mutation.APIKeysCleared() {
 		edge := &sqlgraph.EdgeSpec{
@@ -2026,6 +2093,53 @@ func (_u *UserUpdateOne) ClearAllowedModels() *UserUpdateOne {
 	return _u
 }
 
+// SetWeeklyCostThreshold sets the "weekly_cost_threshold" field.
+func (_u *UserUpdateOne) SetWeeklyCostThreshold(v float64) *UserUpdateOne {
+	_u.mutation.ResetWeeklyCostThreshold()
+	_u.mutation.SetWeeklyCostThreshold(v)
+	return _u
+}
+
+// SetNillableWeeklyCostThreshold sets the "weekly_cost_threshold" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableWeeklyCostThreshold(v *float64) *UserUpdateOne {
+	if v != nil {
+		_u.SetWeeklyCostThreshold(*v)
+	}
+	return _u
+}
+
+// AddWeeklyCostThreshold adds value to the "weekly_cost_threshold" field.
+func (_u *UserUpdateOne) AddWeeklyCostThreshold(v float64) *UserUpdateOne {
+	_u.mutation.AddWeeklyCostThreshold(v)
+	return _u
+}
+
+// ClearWeeklyCostThreshold clears the value of the "weekly_cost_threshold" field.
+func (_u *UserUpdateOne) ClearWeeklyCostThreshold() *UserUpdateOne {
+	_u.mutation.ClearWeeklyCostThreshold()
+	return _u
+}
+
+// SetWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field.
+func (_u *UserUpdateOne) SetWeeklyThresholdNotifiedWeek(v string) *UserUpdateOne {
+	_u.mutation.SetWeeklyThresholdNotifiedWeek(v)
+	return _u
+}
+
+// SetNillableWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableWeeklyThresholdNotifiedWeek(v *string) *UserUpdateOne {
+	if v != nil {
+		_u.SetWeeklyThresholdNotifiedWeek(*v)
+	}
+	return _u
+}
+
+// ClearWeeklyThresholdNotifiedWeek clears the value of the "weekly_threshold_notified_week" field.
+func (_u *UserUpdateOne) ClearWeeklyThresholdNotifiedWeek() *UserUpdateOne {
+	_u.mutation.ClearWeeklyThresholdNotifiedWeek()
+	return _u
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_u *UserUpdateOne) AddAPIKeyIDs(ids ...int64) *UserUpdateOne {
 	_u.mutation.AddAPIKeyIDs(ids...)
@@ -2550,6 +2664,11 @@ func (_u *UserUpdateOne) check() error {
 			return &ValidationError{Name: "signup_source", err: fmt.Errorf(`ent: validator failed for field "User.signup_source": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.WeeklyThresholdNotifiedWeek(); ok {
+		if err := user.WeeklyThresholdNotifiedWeekValidator(v); err != nil {
+			return &ValidationError{Name: "weekly_threshold_notified_week", err: fmt.Errorf(`ent: validator failed for field "User.weekly_threshold_notified_week": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -2691,6 +2810,21 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 	}
 	if _u.mutation.AllowedModelsCleared() {
 		_spec.ClearField(user.FieldAllowedModels, field.TypeJSON)
+	}
+	if value, ok := _u.mutation.WeeklyCostThreshold(); ok {
+		_spec.SetField(user.FieldWeeklyCostThreshold, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.AddedWeeklyCostThreshold(); ok {
+		_spec.AddField(user.FieldWeeklyCostThreshold, field.TypeFloat64, value)
+	}
+	if _u.mutation.WeeklyCostThresholdCleared() {
+		_spec.ClearField(user.FieldWeeklyCostThreshold, field.TypeFloat64)
+	}
+	if value, ok := _u.mutation.WeeklyThresholdNotifiedWeek(); ok {
+		_spec.SetField(user.FieldWeeklyThresholdNotifiedWeek, field.TypeString, value)
+	}
+	if _u.mutation.WeeklyThresholdNotifiedWeekCleared() {
+		_spec.ClearField(user.FieldWeeklyThresholdNotifiedWeek, field.TypeString)
 	}
 	if _u.mutation.APIKeysCleared() {
 		edge := &sqlgraph.EdgeSpec{

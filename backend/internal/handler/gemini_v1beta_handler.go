@@ -187,7 +187,6 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 	// 用户级模型白名单准入校验（空白名单 = 不限制）
 	if userModelDenied(apiKey, modelName) {
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalPolicyDenied)
 		googleError(c, http.StatusForbidden, userModelDenialMessage(modelName))
 		return
 	}

@@ -7246,6 +7246,7 @@ func (s *GatewayService) getUserGroupRateMultiplier(ctx context.Context, userID,
 type RecordUsageInput struct {
 	Result             *ForwardResult
 	ParsedRequest      *ParsedRequest
+	RequestBody        []byte // 原始客户端请求体，用于解析工作目录(cwd)；可为 nil
 	APIKey             *APIKey
 	User               *User
 	Account            *Account
@@ -7494,6 +7495,7 @@ func finalizePostUsageBilling(p *postUsageBillingParams, deps *billingDeps, resu
 	// no dependency on the request context or upstream connection.
 	go notifyBalanceLow(p, deps, result)
 	go notifyAccountQuota(p, deps, result)
+	go notifyWeeklyCost(p, deps)
 }
 
 // notifyBalanceLow sends balance low notification after deduction.
@@ -7525,6 +7527,21 @@ func notifyBalanceLow(p *postUsageBillingParams, deps *billingDeps, result *Usag
 		"result_has_new_balance", result != nil && result.NewBalance != nil,
 	)
 	deps.balanceNotifyService.CheckBalanceAfterDeduction(context.Background(), p.User, oldBalance, p.Cost.ActualCost)
+}
+
+// notifyWeeklyCost checks the per-user weekly spending threshold after deduction.
+// Best-effort: only users with a configured threshold incur any work (see
+// BalanceNotifyService.CheckWeeklyCostAfterDeduction), and it never blocks the request.
+func notifyWeeklyCost(p *postUsageBillingParams, deps *billingDeps) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("panic in notifyWeeklyCost", "recover", r)
+		}
+	}()
+	if p.IsSubscriptionBill || p.Cost.ActualCost <= 0 || p.User == nil || deps.balanceNotifyService == nil {
+		return
+	}
+	deps.balanceNotifyService.CheckWeeklyCostAfterDeduction(context.Background(), p.User)
 }
 
 // resolveOldBalance returns the pre-deduction balance.
@@ -7661,6 +7678,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		RequestPayloadHash: input.RequestPayloadHash,
 		ForceCacheBilling:  input.ForceCacheBilling,
 		APIKeyService:      input.APIKeyService,
+		WorkingDirectory:   ExtractWorkingDirectory(input.RequestBody),
 		ChannelUsageFields: input.ChannelUsageFields,
 	}, &recordUsageOpts{
 		EnableClaudePath: true,
@@ -7723,6 +7741,7 @@ type recordUsageCoreInput struct {
 	RequestPayloadHash string
 	ForceCacheBilling  bool
 	APIKeyService      APIKeyQuotaUpdater
+	WorkingDirectory   string // 客户端工作目录(cwd)，已由 RecordUsage 入口从请求体解析
 	ChannelUsageFields
 }
 
@@ -8015,6 +8034,7 @@ func (s *GatewayService) buildRecordUsageLog(
 		ModelMappingChain:     optionalTrimmedStringPtr(input.ModelMappingChain),
 		UserAgent:             optionalTrimmedStringPtr(input.UserAgent),
 		IPAddress:             optionalTrimmedStringPtr(input.IPAddress),
+		WorkingDirectory:      optionalTrimmedStringPtr(input.WorkingDirectory),
 		GroupID:               apiKey.GroupID,
 		SubscriptionID:        optionalSubscriptionID(subscription),
 		CreatedAt:             time.Now(),

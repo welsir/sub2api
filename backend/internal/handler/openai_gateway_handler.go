@@ -199,7 +199,6 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	// 用户级模型白名单准入校验（空白名单 = 不限制）
 	if userModelDenied(apiKey, reqModel) {
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalPolicyDenied)
 		h.errorResponse(c, http.StatusForbidden, "permission_error", userModelDenialMessage(reqModel))
 		return
 	}
@@ -408,6 +407,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				UserAgent:          userAgent,
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
+				RequestBody:        body,
 				APIKeyService:      h.apiKeyService,
 				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
@@ -583,7 +583,6 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 
 	// 用户级模型白名单准入校验（空白名单 = 不限制）
 	if userModelDenied(apiKey, reqModel) {
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalPolicyDenied)
 		h.anthropicErrorResponse(c, http.StatusForbidden, "permission_error", userModelDenialMessage(reqModel))
 		return
 	}
@@ -787,6 +786,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 				UserAgent:          userAgent,
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
+				RequestBody:        body,
 				APIKeyService:      h.apiKeyService,
 				ChannelUsageFields: channelMappingMsg.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
@@ -1133,7 +1133,6 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 	// 用户级模型白名单准入校验（空白名单 = 不限制）。WS 已升级，按策略违规关闭连接。
 	if userModelDenied(apiKey, reqModel) {
-		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalPolicyDenied)
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, userModelDenialMessage(reqModel))
 		return
 	}
@@ -1298,6 +1297,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					UserAgent:          userAgent,
 					IPAddress:          clientIP,
 					RequestPayloadHash: service.HashUsageRequestPayload(firstMessage),
+					RequestBody:        firstMessage,
 					APIKeyService:      h.apiKeyService,
 					ChannelUsageFields: channelMappingWS.ToUsageFields(reqModel, result.UpstreamModel),
 				}); err != nil {

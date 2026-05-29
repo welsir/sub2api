@@ -121,6 +121,8 @@ type CreateUserInput struct {
 	RPMLimit      int
 	AllowedGroups []int64
 	AllowedModels []string
+	// WeeklyCostThreshold 周花费阈值（自然周，周六为第一天）。nil 或 <=0 表示不限制。
+	WeeklyCostThreshold *float64
 }
 
 type UpdateUserInput struct {
@@ -134,6 +136,9 @@ type UpdateUserInput struct {
 	Status        string
 	AllowedGroups *[]int64  // 使用指针区分"未提供"和"设置为空数组"
 	AllowedModels *[]string // 使用指针区分"未提供"和"设置为空数组"
+	// WeeklyCostThreshold 周花费阈值。nil 表示"未提供"（不修改）；
+	// 提供且 >0 表示设置阈值；提供且 <=0 表示清除（不限制）。
+	WeeklyCostThreshold *float64
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
 	GroupRates map[int64]*float64
@@ -655,6 +660,10 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 		AllowedGroups: input.AllowedGroups,
 		AllowedModels: input.AllowedModels,
 	}
+	if input.WeeklyCostThreshold != nil && *input.WeeklyCostThreshold > 0 {
+		v := *input.WeeklyCostThreshold
+		user.WeeklyCostThreshold = &v
+	}
 	if err := user.SetPassword(input.Password); err != nil {
 		return nil, err
 	}
@@ -680,6 +689,14 @@ func (s *adminServiceImpl) assignDefaultSubscriptions(ctx context.Context, userI
 			logger.LegacyPrintf("service.admin", "failed to assign default subscription: user_id=%d group_id=%d err=%v", userID, item.GroupID, err)
 		}
 	}
+}
+
+// float64PtrEqual reports whether two *float64 represent the same value (both nil counts as equal).
+func float64PtrEqual(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error) {
@@ -743,6 +760,20 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 	if input.AllowedModels != nil {
 		user.AllowedModels = *input.AllowedModels
 		allowedModelsChanged = true
+	}
+
+	// 周花费阈值：提供且 >0 设置，提供且 <=0 清除（不限制）。
+	// 阈值变更后清空已告警周标记，使新阈值在本自然周可重新触发告警。
+	if input.WeeklyCostThreshold != nil {
+		var newThreshold *float64
+		if *input.WeeklyCostThreshold > 0 {
+			v := *input.WeeklyCostThreshold
+			newThreshold = &v
+		}
+		if !float64PtrEqual(user.WeeklyCostThreshold, newThreshold) {
+			user.WeeklyCostThreshold = newThreshold
+			user.WeeklyThresholdNotifiedWeek = nil
+		}
 	}
 
 	if err := s.userRepo.Update(ctx, user); err != nil {

@@ -220,6 +220,11 @@ func IPAddress(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldIPAddress, v))
 }
 
+// WorkingDirectory applies equality check predicate on the "working_directory" field. It's identical to WorkingDirectoryEQ.
+func WorkingDirectory(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldWorkingDirectory, v))
+}
+
 // ImageCount applies equality check predicate on the "image_count" field. It's identical to ImageCountEQ.
 func ImageCount(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldImageCount, v))
@@ -1783,6 +1788,81 @@ func IPAddressEqualFold(v string) predicate.UsageLog {
 // IPAddressContainsFold applies the ContainsFold predicate on the "ip_address" field.
 func IPAddressContainsFold(v string) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldContainsFold(FieldIPAddress, v))
+}
+
+// WorkingDirectoryEQ applies the EQ predicate on the "working_directory" field.
+func WorkingDirectoryEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldWorkingDirectory, v))
+}
+
+// WorkingDirectoryNEQ applies the NEQ predicate on the "working_directory" field.
+func WorkingDirectoryNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldWorkingDirectory, v))
+}
+
+// WorkingDirectoryIn applies the In predicate on the "working_directory" field.
+func WorkingDirectoryIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldWorkingDirectory, vs...))
+}
+
+// WorkingDirectoryNotIn applies the NotIn predicate on the "working_directory" field.
+func WorkingDirectoryNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldWorkingDirectory, vs...))
+}
+
+// WorkingDirectoryGT applies the GT predicate on the "working_directory" field.
+func WorkingDirectoryGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldWorkingDirectory, v))
+}
+
+// WorkingDirectoryGTE applies the GTE predicate on the "working_directory" field.
+func WorkingDirectoryGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldWorkingDirectory, v))
+}
+
+// WorkingDirectoryLT applies the LT predicate on the "working_directory" field.
+func WorkingDirectoryLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldWorkingDirectory, v))
+}
+
+// WorkingDirectoryLTE applies the LTE predicate on the "working_directory" field.
+func WorkingDirectoryLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldWorkingDirectory, v))
+}
+
+// WorkingDirectoryContains applies the Contains predicate on the "working_directory" field.
+func WorkingDirectoryContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldWorkingDirectory, v))
+}
+
+// WorkingDirectoryHasPrefix applies the HasPrefix predicate on the "working_directory" field.
+func WorkingDirectoryHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldWorkingDirectory, v))
+}
+
+// WorkingDirectoryHasSuffix applies the HasSuffix predicate on the "working_directory" field.
+func WorkingDirectoryHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldWorkingDirectory, v))
+}
+
+// WorkingDirectoryIsNil applies the IsNil predicate on the "working_directory" field.
+func WorkingDirectoryIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldWorkingDirectory))
+}
+
+// WorkingDirectoryNotNil applies the NotNil predicate on the "working_directory" field.
+func WorkingDirectoryNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldWorkingDirectory))
+}
+
+// WorkingDirectoryEqualFold applies the EqualFold predicate on the "working_directory" field.
+func WorkingDirectoryEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldWorkingDirectory, v))
+}
+
+// WorkingDirectoryContainsFold applies the ContainsFold predicate on the "working_directory" field.
+func WorkingDirectoryContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldWorkingDirectory, v))
 }
 
 // ImageCountEQ applies the EQ predicate on the "image_count" field.

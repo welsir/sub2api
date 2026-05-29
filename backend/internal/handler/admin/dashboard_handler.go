@@ -531,6 +531,28 @@ func (h *DashboardHandler) GetUserSpendingRanking(c *gin.Context) {
 	response.Success(c, payload)
 }
 
+// GetWorkingDirSpending handles per-(user, working directory) spending aggregation.
+// Admin-only. Used to spot AI usage attributed to non-company project directories.
+// GET /api/v1/admin/dashboard/working-dirs?start_date=&end_date=&user_id=&limit=
+func (h *DashboardHandler) GetWorkingDirSpending(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+	limit := parseRankingLimit(c.DefaultQuery("limit", "100"))
+	userID, _ := strconv.ParseInt(c.Query("user_id"), 10, 64)
+
+	resp, err := h.dashboardService.GetWorkingDirSpending(c.Request.Context(), startTime, endTime, userID, limit)
+	if err != nil {
+		response.Error(c, 500, "Failed to get working directory spending")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"items":             resp.Items,
+		"total_actual_cost": resp.TotalActualCost,
+		"start_date":        startTime.Format("2006-01-02"),
+		"end_date":          endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
 // GetBatchUsersUsage handles getting usage stats for multiple users
 // POST /api/v1/admin/dashboard/users-usage
 func (h *DashboardHandler) GetBatchUsersUsage(c *gin.Context) {

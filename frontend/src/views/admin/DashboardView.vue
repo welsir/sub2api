@@ -286,6 +286,9 @@
               </div>
             </div>
           </div>
+
+          <!-- Working Directory Spending (Full Width) -->
+          <AdminWorkingDirSpending :start-date="startDate" :end-date="endDate" />
         </div>
       </template>
     </div>
@@ -314,6 +317,7 @@ import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
+import AdminWorkingDirSpending from '@/components/admin/dashboard/AdminWorkingDirSpending.vue'
 
 import {
   Chart as ChartJS,

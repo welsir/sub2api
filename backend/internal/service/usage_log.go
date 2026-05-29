@@ -157,6 +157,9 @@ type UsageLog struct {
 	FirstTokenMs *int
 	UserAgent    *string
 	IPAddress    *string
+	// WorkingDirectory 客户端工作目录(cwd)，由请求体解析（Claude Code 的 <env> /
+	// Codex 的 <cwd>）。nil 表示未识别。用于按目录归集花费。
+	WorkingDirectory *string
 
 	// Cache TTL Override 标记（管理员强制替换了缓存 TTL 计费）
 	CacheTTLOverridden bool

@@ -162,6 +162,22 @@ type UserSpendingRankingResponse struct {
 	TotalTokens     int64                     `json:"total_tokens"`
 }
 
+// WorkingDirSpendingItem represents one (user, working directory) spending row,
+// used by the admin "directory spending" view to spot AI usage on non-company projects.
+type WorkingDirSpendingItem struct {
+	UserID           int64   `json:"user_id"`
+	Email            string  `json:"email"`
+	WorkingDirectory string  `json:"working_directory"` // 空字符串表示未识别（客户端未上报 cwd）
+	ActualCost       float64 `json:"actual_cost"`       // 实际扣除
+	Requests         int64   `json:"requests"`
+}
+
+// WorkingDirSpendingResponse wraps directory spending rows for the admin dashboard.
+type WorkingDirSpendingResponse struct {
+	Items           []WorkingDirSpendingItem `json:"items"`
+	TotalActualCost float64                  `json:"total_actual_cost"`
+}
+
 // UserBreakdownItem represents per-user usage breakdown within a dimension (group, model, endpoint).
 type UserBreakdownItem struct {
 	UserID      int64   `json:"user_id"`

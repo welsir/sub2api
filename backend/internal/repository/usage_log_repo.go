@@ -28,7 +28,7 @@ import (
 	gocache "github.com/patrickmn/go-cache"
 )
 
-const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, created_at"
+const usageLogSelectColumns = "id, user_id, api_key_id, account_id, request_id, model, requested_model, upstream_model, group_id, subscription_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, cache_creation_5m_tokens, cache_creation_1h_tokens, image_output_tokens, image_output_cost, input_cost, output_cost, cache_creation_cost, cache_read_cost, total_cost, actual_cost, rate_multiplier, account_rate_multiplier, billing_type, request_type, stream, openai_ws_mode, duration_ms, first_token_ms, user_agent, ip_address, image_count, image_size, service_tier, reasoning_effort, inbound_endpoint, upstream_endpoint, cache_ttl_overridden, channel_id, model_mapping_chain, billing_tier, billing_mode, account_stats_cost, created_at, working_directory"
 
 // usageLogInsertArgTypes must stay in the same order as:
 //  1. prepareUsageLogInsert().args
@@ -84,6 +84,7 @@ var usageLogInsertArgTypes = [...]string{
 	"text",        // billing_mode
 	"numeric",     // account_stats_cost
 	"timestamptz", // created_at
+	"text",        // working_directory
 }
 
 const rawUsageLogModelColumn = "model"
@@ -362,14 +363,15 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			created_at
+			created_at,
+			working_directory
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9,
 			$10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46
+			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -800,10 +802,11 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			created_at
+			created_at,
+			working_directory
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(keys)*46)
+	args := make([]any, 0, len(keys)*47)
 	argPos := 1
 	for idx, key := range keys {
 		if idx > 0 {
@@ -877,7 +880,8 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				billing_tier,
 				billing_mode,
 				account_stats_cost,
-				created_at
+				created_at,
+				working_directory
 			)
 			SELECT
 				user_id,
@@ -925,7 +929,8 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				billing_tier,
 				billing_mode,
 				account_stats_cost,
-				created_at
+				created_at,
+				working_directory
 			FROM input
 			ON CONFLICT (request_id, api_key_id) DO NOTHING
 			RETURNING request_id, api_key_id, id, created_at
@@ -1013,10 +1018,11 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			created_at
+			created_at,
+			working_directory
 		) AS (VALUES `)
 
-	args := make([]any, 0, len(preparedList)*46)
+	args := make([]any, 0, len(preparedList)*47)
 	argPos := 1
 	for idx, prepared := range preparedList {
 		if idx > 0 {
@@ -1087,7 +1093,8 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			created_at
+			created_at,
+			working_directory
 		)
 		SELECT
 			user_id,
@@ -1135,7 +1142,8 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			created_at
+			created_at,
+			working_directory
 		FROM input
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`)
@@ -1191,14 +1199,15 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			billing_tier,
 			billing_mode,
 			account_stats_cost,
-			created_at
+			created_at,
+			working_directory
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7,
 			$8, $9,
 			$10, $11, $12, $13,
 			$14, $15, $16, $17,
 			$18, $19, $20, $21, $22, $23,
-			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46
+			$24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`, prepared.args...)
@@ -1224,6 +1233,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 	firstToken := nullInt(log.FirstTokenMs)
 	userAgent := nullString(log.UserAgent)
 	ipAddress := nullString(log.IPAddress)
+	workingDirectory := nullString(log.WorkingDirectory)
 	imageSize := nullString(log.ImageSize)
 	serviceTier := nullString(log.ServiceTier)
 	reasoningEffort := nullString(log.ReasoningEffort)
@@ -1296,6 +1306,7 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			billingMode,
 			log.AccountStatsCost, // account_stats_cost
 			createdAt,
+			workingDirectory,
 		},
 	}
 }
@@ -2347,6 +2358,64 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 		TotalRequests:   totalRequests,
 		TotalTokens:     totalTokens,
 	}, nil
+}
+
+// GetWorkingDirSpending aggregates actual_cost grouped by (user, working_directory)
+// over a time range, ordered by spend desc. userID > 0 restricts to one user.
+// Rows with NULL working_directory (client did not report cwd) are grouped together
+// and returned with an empty WorkingDirectory. Used by the admin directory-spending view.
+func (r *usageLogRepository) GetWorkingDirSpending(ctx context.Context, startTime, endTime time.Time, userID int64, limit int) (items []usagestats.WorkingDirSpendingItem, err error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	conditions := []string{"u.created_at >= $1", "u.created_at < $2"}
+	args := []any{startTime, endTime}
+	if userID > 0 {
+		conditions = append(conditions, fmt.Sprintf("u.user_id = $%d", len(args)+1))
+		args = append(args, userID)
+	}
+	limitPos := len(args) + 1
+	args = append(args, limit)
+
+	query := fmt.Sprintf(`
+		SELECT
+			u.user_id,
+			COALESCE(us.email, '') AS email,
+			COALESCE(u.working_directory, '') AS working_directory,
+			COALESCE(SUM(u.actual_cost), 0) AS actual_cost,
+			COUNT(*) AS requests
+		FROM usage_logs u
+		LEFT JOIN users us ON u.user_id = us.id
+		WHERE %s
+		GROUP BY u.user_id, us.email, u.working_directory
+		ORDER BY actual_cost DESC, requests DESC, u.user_id ASC
+		LIMIT $%d
+	`, strings.Join(conditions, " AND "), limitPos)
+
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			items = nil
+		}
+	}()
+
+	items = make([]usagestats.WorkingDirSpendingItem, 0)
+	for rows.Next() {
+		var row usagestats.WorkingDirSpendingItem
+		if err = rows.Scan(&row.UserID, &row.Email, &row.WorkingDirectory, &row.ActualCost, &row.Requests); err != nil {
+			return nil, err
+		}
+		items = append(items, row)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 // UserDashboardStats 用户仪表盘统计
@@ -4095,6 +4164,7 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		billingMode           sql.NullString
 		accountStatsCost      sql.NullFloat64
 		createdAt             time.Time
+		workingDirectory      sql.NullString
 	)
 
 	if err := scanner.Scan(
@@ -4145,6 +4215,7 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 		&billingMode,
 		&accountStatsCost,
 		&createdAt,
+		&workingDirectory,
 	); err != nil {
 		return nil, err
 	}
@@ -4208,6 +4279,9 @@ func scanUsageLog(scanner interface{ Scan(...any) error }) (*service.UsageLog, e
 	}
 	if ipAddress.Valid {
 		log.IPAddress = &ipAddress.String
+	}
+	if workingDirectory.Valid {
+		log.WorkingDirectory = &workingDirectory.String
 	}
 	if imageSize.Valid {
 		log.ImageSize = &imageSize.String

@@ -25,7 +25,13 @@ type User struct {
 	// AllowedModels 用户级模型白名单（支持通配符，如 "claude-*"）。
 	// 为空表示不限制，放行全部模型。在网关入口处做准入校验，并过滤 /v1/models 展示。
 	AllowedModels []string
-	TokenVersion   int64 // Incremented on password change to invalidate existing tokens
+	// WeeklyCostThreshold 用户级周花费阈值（自然周，周六为第一天）。
+	// nil 或 <=0 表示不限制。本自然周 actual_cost 达到该值时告警（不阻断请求）。
+	WeeklyCostThreshold *float64
+	// WeeklyThresholdNotifiedWeek 上次已就周阈值告警的自然周起始日（YYYY-MM-DD）。
+	// 用于保证每个自然周最多告警一次。
+	WeeklyThresholdNotifiedWeek *string
+	TokenVersion                int64 // Incremented on password change to invalidate existing tokens
 	// TokenVersionResolved indicates TokenVersion already contains the fingerprint-derived
 	// value expected in JWT claims and refresh-token state.
 	TokenVersionResolved bool
@@ -77,6 +83,15 @@ func (u *User) AllowsModel(requestedModel string) bool {
 		return true
 	}
 	return matchModelWhitelist(requestedModel, u.AllowedModels)
+}
+
+// WeeklyThreshold returns the effective per-user weekly cost threshold and whether
+// it is enabled. A nil or non-positive value means no limit (the default).
+func (u *User) WeeklyThreshold() (float64, bool) {
+	if u == nil || u.WeeklyCostThreshold == nil || *u.WeeklyCostThreshold <= 0 {
+		return 0, false
+	}
+	return *u.WeeklyCostThreshold, true
 }
 
 func (u *User) IsActive() bool {
