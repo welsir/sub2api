@@ -324,6 +324,25 @@ func (s *UsageService) GetAPIKeyModelStats(ctx context.Context, apiKeyID int64, 
 	return stats, nil
 }
 
+// GetGlobalUserSpendingRanking returns the company-wide user spending ranking
+// (all users aggregated, ordered by actual_cost desc) for the internal usage dashboard.
+func (s *UsageService) GetGlobalUserSpendingRanking(ctx context.Context, startTime, endTime time.Time, limit int) (*usagestats.UserSpendingRankingResponse, error) {
+	ranking, err := s.usageRepo.GetUserSpendingRanking(ctx, startTime, endTime, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get global user spending ranking: %w", err)
+	}
+	return ranking, nil
+}
+
+// GetGlobalModelStats returns company-wide per-model usage stats (all users aggregated).
+func (s *UsageService) GetGlobalModelStats(ctx context.Context, startTime, endTime time.Time) ([]usagestats.ModelStat, error) {
+	stats, err := s.usageRepo.GetModelStatsWithFilters(ctx, startTime, endTime, 0, 0, 0, 0, nil, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get global model stats: %w", err)
+	}
+	return stats, nil
+}
+
 // GetBatchAPIKeyUsageStats returns today/total actual_cost for given api keys.
 func (s *UsageService) GetBatchAPIKeyUsageStats(ctx context.Context, apiKeyIDs []int64, startTime, endTime time.Time) (map[int64]*usagestats.BatchAPIKeyUsageStats, error) {
 	stats, err := s.usageRepo.GetBatchAPIKeyUsageStats(ctx, apiKeyIDs, startTime, endTime)

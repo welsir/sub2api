@@ -121,16 +121,22 @@
           <tbody>
             <template v-for="model in displayModelStats" :key="model.model">
               <tr
-                class="border-t border-gray-100 cursor-pointer transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-dark-700/40"
-                @click="toggleBreakdown('model', model.model)"
+                class="border-t border-gray-100 transition-colors dark:border-gray-700"
+                :class="disableBreakdown ? '' : 'cursor-pointer hover:bg-gray-50 dark:hover:bg-dark-700/40'"
+                @click="disableBreakdown ? undefined : toggleBreakdown('model', model.model)"
               >
                 <td
-                  class="max-w-[100px] truncate py-1.5 font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                  class="max-w-[100px] truncate py-1.5 font-medium"
+                  :class="disableBreakdown
+                    ? 'text-gray-900 dark:text-white'
+                    : 'text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300'"
                   :title="model.model"
                 >
                   <span class="inline-flex items-center gap-1">
-                    <svg v-if="expandedKey === `model-${model.model}`" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                    <svg v-else class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    <template v-if="!disableBreakdown">
+                      <svg v-if="expandedKey === `model-${model.model}`" class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                      <svg v-else class="h-3 w-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                    </template>
                     {{ model.model }}
                   </span>
                 </td>
@@ -150,7 +156,7 @@
                   ${{ formatCost(model.cost) }}
                 </td>
               </tr>
-              <tr v-if="expandedKey === `model-${model.model}`">
+              <tr v-if="!disableBreakdown && expandedKey === `model-${model.model}`">
                 <td colspan="6" class="p-0">
                   <UserBreakdownSubTable
                     :items="breakdownItems"
@@ -275,6 +281,9 @@ const props = withDefaults(defineProps<{
   startDate?: string
   endDate?: string
   filters?: Record<string, any>
+  // disableBreakdown hides the per-model user drill-down (which calls an admin-only
+  // endpoint). Set true when rendering on non-admin pages.
+  disableBreakdown?: boolean
 }>(), {
   upstreamModelStats: () => [],
   mappingModelStats: () => [],
@@ -289,7 +298,8 @@ const props = withDefaults(defineProps<{
   showSourceToggle: false,
   showMetricToggle: false,
   rankingLoading: false,
-  rankingError: false
+  rankingError: false,
+  disableBreakdown: false
 })
 
 const expandedKey = ref<string | null>(null)
@@ -297,6 +307,7 @@ const breakdownItems = ref<UserBreakdownItem[]>([])
 const breakdownLoading = ref(false)
 
 const toggleBreakdown = async (type: string, id: string) => {
+  if (props.disableBreakdown) return
   const key = `${type}-${id}`
   if (expandedKey.value === key) {
     expandedKey.value = null

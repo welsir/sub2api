@@ -579,6 +579,7 @@ export default {
     day: '按天',
     hour: '按小时',
     modelDistribution: '模型分布',
+    companyUsageTitle: '全公司用量(所有人)',
     groupDistribution: '分组使用分布',
     tokenUsageTrend: 'Token 使用趋势',
     noDataAvailable: '暂无数据',

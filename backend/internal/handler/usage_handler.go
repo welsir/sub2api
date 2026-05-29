@@ -366,6 +366,77 @@ func (h *UsageHandler) DashboardModels(c *gin.Context) {
 	})
 }
 
+const (
+	defaultUsersRankingLimit = 10
+	maxUsersRankingLimit     = 50
+)
+
+func parseUsersRankingLimit(raw string) int {
+	if strings.TrimSpace(raw) == "" {
+		return defaultUsersRankingLimit
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit <= 0 {
+		return defaultUsersRankingLimit
+	}
+	if limit > maxUsersRankingLimit {
+		return maxUsersRankingLimit
+	}
+	return limit
+}
+
+// DashboardUsersRanking handles getting the company-wide user spending ranking.
+// Internal KPI dashboard — visible to any authenticated user.
+// GET /api/v1/usage/dashboard/users-ranking
+func (h *UsageHandler) DashboardUsersRanking(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	startTime, endTime := parseUserTimeRange(c)
+	limit := parseUsersRankingLimit(c.Query("limit"))
+
+	ranking, err := h.usageService.GetGlobalUserSpendingRanking(c.Request.Context(), startTime, endTime, limit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"ranking":           ranking.Ranking,
+		"total_actual_cost": ranking.TotalActualCost,
+		"total_requests":    ranking.TotalRequests,
+		"total_tokens":      ranking.TotalTokens,
+		"start_date":        startTime.Format("2006-01-02"),
+		"end_date":          endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
+// DashboardGlobalModels handles getting company-wide per-model usage statistics.
+// Internal KPI dashboard — visible to any authenticated user.
+// GET /api/v1/usage/dashboard/global-models
+func (h *UsageHandler) DashboardGlobalModels(c *gin.Context) {
+	if _, ok := middleware2.GetAuthSubjectFromContext(c); !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	startTime, endTime := parseUserTimeRange(c)
+
+	stats, err := h.usageService.GetGlobalModelStats(c.Request.Context(), startTime, endTime)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"models":     stats,
+		"start_date": startTime.Format("2006-01-02"),
+		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
 // BatchAPIKeysUsageRequest represents the request for batch API keys usage
 type BatchAPIKeysUsageRequest struct {
 	APIKeyIDs []int64 `json:"api_key_ids" binding:"required"`

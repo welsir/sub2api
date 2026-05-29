@@ -85,6 +85,9 @@ func RegisterUserRoutes(
 			usage.GET("/dashboard/trend", h.Usage.DashboardTrend)
 			usage.GET("/dashboard/models", h.Usage.DashboardModels)
 			usage.POST("/dashboard/api-keys-usage", h.Usage.DashboardAPIKeysUsage)
+			// Company-wide usage stats for internal KPI dashboard (any authenticated user)
+			usage.GET("/dashboard/users-ranking", h.Usage.DashboardUsersRanking)
+			usage.GET("/dashboard/global-models", h.Usage.DashboardGlobalModels)
 		}
 
 		// 公告（用户可见）

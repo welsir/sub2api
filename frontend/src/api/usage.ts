@@ -10,7 +10,8 @@ import type {
   UsageStatsResponse,
   PaginatedResponse,
   TrendDataPoint,
-  ModelStat
+  ModelStat,
+  UserSpendingRankingResponse
 } from '@/types'
 
 // ==================== Dashboard Types ====================
@@ -223,6 +224,35 @@ export async function getDashboardModels(params?: {
   return data
 }
 
+/**
+ * Get company-wide user spending ranking (internal KPI dashboard).
+ * Aggregated across all users, ordered by actual cost desc.
+ * @param params - Date range and result limit
+ * @returns Company-wide user spending ranking
+ */
+export async function getDashboardUsersRanking(params?: {
+  start_date?: string
+  end_date?: string
+  limit?: number
+}): Promise<UserSpendingRankingResponse> {
+  const { data } = await apiClient.get<UserSpendingRankingResponse>('/usage/dashboard/users-ranking', { params })
+  return data
+}
+
+/**
+ * Get company-wide model usage statistics (internal KPI dashboard).
+ * Aggregated across all users.
+ * @param params - Date range
+ * @returns Company-wide model usage statistics
+ */
+export async function getGlobalModels(params?: {
+  start_date?: string
+  end_date?: string
+}): Promise<ModelStatsResponse> {
+  const { data } = await apiClient.get<ModelStatsResponse>('/usage/dashboard/global-models', { params })
+  return data
+}
+
 export interface BatchApiKeyUsageStats {
   api_key_id: number
   today_actual_cost: number
@@ -268,6 +298,8 @@ export const usageAPI = {
   getDashboardStats,
   getDashboardTrend,
   getDashboardModels,
+  getDashboardUsersRanking,
+  getGlobalModels,
   getDashboardApiKeysUsage
 }
 
