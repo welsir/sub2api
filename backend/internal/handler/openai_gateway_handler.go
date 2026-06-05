@@ -242,6 +242,33 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 
+	reservationModel := reqModel
+	if channelMapping.Mapped {
+		reservationModel = channelMapping.MappedModel
+	}
+	preparedReservation, err := h.gatewayService.PrepareUsageReservation(c.Request.Context(), apiKey, subscription, reservationModel, body, service.UsageReservationEndpointResponses)
+	if err != nil {
+		reqLog.Info("openai.usage_reservation_failed", zap.Error(err))
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.handleStreamingAwareError(c, status, code, message, streamStarted)
+		return
+	}
+	reservation := (*service.UsageReservation)(nil)
+	if preparedReservation != nil {
+		body = preparedReservation.Body
+		sessionHashBody = preparedReservation.Body
+		reservation = preparedReservation.Reservation
+	}
+	reservationSubmitted := false
+	defer func() {
+		if !reservationSubmitted && reservation != nil {
+			h.gatewayService.ReleaseUsageReservation(context.Background(), reservation)
+		}
+	}()
+
 	// Generate session hash (header first; fallback to prompt_cache_key)
 	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
 
@@ -395,7 +422,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		requestPayloadHash := service.HashUsageRequestPayload(body)
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
-		h.submitUsageRecordTask(func(ctx context.Context) {
+		submitMode := h.submitUsageRecordTask(func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
@@ -409,6 +436,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				RequestPayloadHash: requestPayloadHash,
 				RequestBody:        body,
 				APIKeyService:      h.apiKeyService,
+				Reservation:        reservation,
 				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
 				logger.L().With(
@@ -419,8 +447,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.String("model", reqModel),
 					zap.Int64("account_id", account.ID),
 				).Error("openai.record_usage_failed", zap.Error(err))
+				h.gatewayService.ReleaseUsageReservation(ctx, reservation)
 			}
 		})
+		if submitMode == service.UsageRecordSubmitModeDropped {
+			h.gatewayService.ReleaseUsageReservation(context.Background(), reservation)
+		} else {
+			reservationSubmitted = true
+		}
 		reqLog.Debug("openai.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
@@ -1440,13 +1474,12 @@ func getContextInt64(c *gin.Context, key string) (int64, bool) {
 	}
 }
 
-func (h *OpenAIGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
+func (h *OpenAIGatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) service.UsageRecordSubmitMode {
 	if task == nil {
-		return
+		return service.UsageRecordSubmitModeDropped
 	}
 	if h.usageRecordWorkerPool != nil {
-		h.usageRecordWorkerPool.Submit(task)
-		return
+		return h.usageRecordWorkerPool.Submit(task)
 	}
 	// 回退路径：worker 池未注入时同步执行，避免退回到无界 goroutine 模式。
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1460,6 +1493,7 @@ func (h *OpenAIGatewayHandler) submitUsageRecordTask(task service.UsageRecordTas
 		}
 	}()
 	task(ctx)
+	return service.UsageRecordSubmitModeSync
 }
 
 // handleConcurrencyError handles concurrency-related errors with proper 429 response

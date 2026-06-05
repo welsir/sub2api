@@ -4550,6 +4550,7 @@ type OpenAIRecordUsageInput struct {
 	RequestPayloadHash string
 	RequestBody        []byte // 原始客户端请求体，用于解析工作目录(cwd)；可为 nil
 	APIKeyService      APIKeyQuotaUpdater
+	Reservation        *UsageReservation // 可选：请求前预冻结额度
 	ChannelUsageFields
 }
 
@@ -4736,6 +4737,7 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 			IsSubscriptionBill:    isSubscriptionBilling,
 			AccountRateMultiplier: accountRateMultiplier,
 			APIKeyService:         input.APIKeyService,
+			Reservation:           input.Reservation,
 		}, s.billingDeps(), s.usageBillingRepo)
 		return err
 	}()

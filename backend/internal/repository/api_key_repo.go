@@ -153,6 +153,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				user.FieldLastLoginAt,
 				user.FieldLastActiveAt,
 				user.FieldRpmLimit,
+				user.FieldAllowedModels,
 			)
 		}).
 		WithGroup(func(q *dbent.GroupQuery) {

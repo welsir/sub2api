@@ -176,16 +176,18 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			if subscription != nil {
 				needsMaintenance, validateErr := subscriptionService.ValidateAndCheckLimits(subscription, apiKey.Group)
 				if validateErr != nil {
-					code := "SUBSCRIPTION_INVALID"
-					status := 403
-					if errors.Is(validateErr, service.ErrDailyLimitExceeded) ||
-						errors.Is(validateErr, service.ErrWeeklyLimitExceeded) ||
-						errors.Is(validateErr, service.ErrMonthlyLimitExceeded) {
-						code = "USAGE_LIMIT_EXCEEDED"
-						status = 429
+					if isSubscriptionUsageLimitError(validateErr) && apiKey.User.Balance > 0 {
+						// Active subscriptions may fall back to wallet balance after the package quota is exhausted.
+					} else {
+						code := "SUBSCRIPTION_INVALID"
+						status := 403
+						if isSubscriptionUsageLimitError(validateErr) {
+							code = "USAGE_LIMIT_EXCEEDED"
+							status = 429
+						}
+						AbortWithError(c, status, code, validateErr.Error())
+						return
 					}
-					AbortWithError(c, status, code, validateErr.Error())
-					return
 				}
 
 				// 窗口维护异步化（不阻塞请求）
@@ -228,6 +230,12 @@ func GetAPIKeyFromContext(c *gin.Context) (*service.APIKey, bool) {
 	}
 	apiKey, ok := value.(*service.APIKey)
 	return apiKey, ok
+}
+
+func isSubscriptionUsageLimitError(err error) bool {
+	return errors.Is(err, service.ErrDailyLimitExceeded) ||
+		errors.Is(err, service.ErrWeeklyLimitExceeded) ||
+		errors.Is(err, service.ErrMonthlyLimitExceeded)
 }
 
 // GetSubscriptionFromContext 从上下文中获取订阅信息

@@ -106,18 +106,28 @@ func (r *usageBillingRepository) claimUsageBillingKey(ctx context.Context, tx *s
 }
 
 func (r *usageBillingRepository) applyUsageBillingEffects(ctx context.Context, tx *sql.Tx, cmd *service.UsageBillingCommand, result *service.UsageBillingApplyResult) error {
-	if cmd.SubscriptionCost > 0 && cmd.SubscriptionID != nil {
-		if err := incrementUsageBillingSubscription(ctx, tx, *cmd.SubscriptionID, cmd.SubscriptionCost); err != nil {
-			return err
-		}
-	}
-
-	if cmd.BalanceCost > 0 {
-		newBalance, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost)
+	if cmd.Reservation != nil && cmd.Reservation.AmountUSD > 0 {
+		settleResult, err := settleUsageReservationTx(ctx, tx, cmd.Reservation, cmd.SubscriptionCost+cmd.BalanceCost)
 		if err != nil {
 			return err
 		}
-		result.NewBalance = &newBalance
+		if settleResult != nil && settleResult.NewBalance != nil {
+			result.NewBalance = settleResult.NewBalance
+		}
+	} else {
+		if cmd.SubscriptionCost > 0 && cmd.SubscriptionID != nil {
+			if err := incrementUsageBillingSubscription(ctx, tx, *cmd.SubscriptionID, cmd.SubscriptionCost); err != nil {
+				return err
+			}
+		}
+
+		if cmd.BalanceCost > 0 {
+			newBalance, err := deductUsageBillingBalance(ctx, tx, cmd.UserID, cmd.BalanceCost)
+			if err != nil {
+				return err
+			}
+			result.NewBalance = &newBalance
+		}
 	}
 
 	if cmd.APIKeyQuotaCost > 0 {

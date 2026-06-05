@@ -7258,6 +7258,7 @@ type RecordUsageInput struct {
 	RequestPayloadHash string             // 请求体语义哈希，用于降低 request_id 误复用时的静默误去重风险
 	ForceCacheBilling  bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
 	APIKeyService      APIKeyQuotaUpdater // 可选：用于更新API Key配额
+	Reservation        *UsageReservation  // 可选：请求前预冻结额度
 
 	ChannelUsageFields // 渠道映射信息（由 handler 在 Forward 前解析）
 }
@@ -7287,6 +7288,7 @@ type postUsageBillingParams struct {
 	IsSubscriptionBill    bool
 	AccountRateMultiplier float64
 	APIKeyService         APIKeyQuotaUpdater
+	Reservation           *UsageReservation
 }
 
 func (p *postUsageBillingParams) shouldDeductAPIKeyQuota() bool {
@@ -7393,6 +7395,7 @@ func buildUsageBillingCommand(requestID string, usageLog *UsageLog, p *postUsage
 		AccountID:          p.Account.ID,
 		AccountType:        p.Account.Type,
 		RequestPayloadHash: strings.TrimSpace(p.RequestPayloadHash),
+		Reservation:        p.Reservation,
 	}
 	if usageLog != nil {
 		cmd.Model = usageLog.Model
@@ -7477,7 +7480,16 @@ func finalizePostUsageBilling(p *postUsageBillingParams, deps *billingDeps, resu
 		return
 	}
 
-	if p.IsSubscriptionBill {
+	if p.Reservation != nil && p.Reservation.AmountUSD > 0 {
+		if p.User != nil {
+			if deps.billingCacheService != nil {
+				_ = deps.billingCacheService.InvalidateUserBalance(context.Background(), p.User.ID)
+			}
+			if deps.billingCacheService != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
+				_ = deps.billingCacheService.InvalidateSubscription(context.Background(), p.User.ID, *p.APIKey.GroupID)
+			}
+		}
+	} else if p.IsSubscriptionBill {
 		if p.Cost.ActualCost > 0 && p.User != nil && p.APIKey != nil && p.APIKey.GroupID != nil {
 			deps.billingCacheService.QueueUpdateSubscriptionUsage(p.User.ID, *p.APIKey.GroupID, p.Cost.ActualCost)
 		}
@@ -7678,6 +7690,7 @@ func (s *GatewayService) RecordUsage(ctx context.Context, input *RecordUsageInpu
 		RequestPayloadHash: input.RequestPayloadHash,
 		ForceCacheBilling:  input.ForceCacheBilling,
 		APIKeyService:      input.APIKeyService,
+		Reservation:        input.Reservation,
 		WorkingDirectory:   ExtractWorkingDirectory(input.RequestBody),
 		ChannelUsageFields: input.ChannelUsageFields,
 	}, &recordUsageOpts{
@@ -7701,6 +7714,7 @@ type RecordUsageLongContextInput struct {
 	LongContextMultiplier float64            // 超出阈值部分的倍率（如 2.0）
 	ForceCacheBilling     bool               // 强制缓存计费：将 input_tokens 转为 cache_read 计费（用于粘性会话切换）
 	APIKeyService         APIKeyQuotaUpdater // API Key 配额服务（可选）
+	Reservation           *UsageReservation  // 可选：请求前预冻结额度
 
 	ChannelUsageFields // 渠道映射信息（由 handler 在 Forward 前解析）
 }
@@ -7720,6 +7734,7 @@ func (s *GatewayService) RecordUsageWithLongContext(ctx context.Context, input *
 		RequestPayloadHash: input.RequestPayloadHash,
 		ForceCacheBilling:  input.ForceCacheBilling,
 		APIKeyService:      input.APIKeyService,
+		Reservation:        input.Reservation,
 		ChannelUsageFields: input.ChannelUsageFields,
 	}, &recordUsageOpts{
 		LongContextThreshold:  input.LongContextThreshold,
@@ -7741,6 +7756,7 @@ type recordUsageCoreInput struct {
 	RequestPayloadHash string
 	ForceCacheBilling  bool
 	APIKeyService      APIKeyQuotaUpdater
+	Reservation        *UsageReservation
 	WorkingDirectory   string // 客户端工作目录(cwd)，已由 RecordUsage 入口从请求体解析
 	ChannelUsageFields
 }
@@ -7847,6 +7863,7 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		IsSubscriptionBill:    isSubscriptionBilling,
 		AccountRateMultiplier: accountRateMultiplier,
 		APIKeyService:         input.APIKeyService,
+		Reservation:           input.Reservation,
 	}, s.billingDeps(), s.usageBillingRepo)
 
 	if billingErr != nil {

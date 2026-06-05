@@ -903,6 +903,7 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 
 	// Get explicitly visible models for the current API key scope.
 	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, "")
+	availableModels = filterModelIDsByUser(apiKey, availableModels)
 
 	if len(availableModels) > 0 {
 		// Build model list from explicit public model declarations.
@@ -1784,13 +1785,12 @@ func (h *GatewayHandler) maybeLogCompatibilityFallbackMetrics(reqLog *zap.Logger
 	)
 }
 
-func (h *GatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
+func (h *GatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) service.UsageRecordSubmitMode {
 	if task == nil {
-		return
+		return service.UsageRecordSubmitModeDropped
 	}
 	if h.usageRecordWorkerPool != nil {
-		h.usageRecordWorkerPool.Submit(task)
-		return
+		return h.usageRecordWorkerPool.Submit(task)
 	}
 	// 回退路径：worker 池未注入时同步执行，避免退回到无界 goroutine 模式。
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1804,6 +1804,7 @@ func (h *GatewayHandler) submitUsageRecordTask(task service.UsageRecordTask) {
 		}
 	}()
 	task(ctx)
+	return service.UsageRecordSubmitModeSync
 }
 
 // getUserMsgQueueMode 获取当前请求的 UMQ 模式
