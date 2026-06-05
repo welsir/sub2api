@@ -32,6 +32,7 @@ export interface PaymentConfig {
   max_pending_orders: number
   order_timeout_minutes: number
   balance_disabled: boolean
+  balance_requires_active_subscription: boolean
   balance_recharge_multiplier: number
   enabled_payment_types: PaymentType[]
   help_image_url: string
@@ -63,6 +64,7 @@ export interface CheckoutInfoResponse {
   global_max: number
   plans: SubscriptionPlan[]
   balance_disabled: boolean
+  balance_requires_active_subscription: boolean
   balance_recharge_multiplier: number
   recharge_fee_rate: number
   help_text: string

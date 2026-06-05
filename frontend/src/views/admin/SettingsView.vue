@@ -4003,10 +4003,45 @@
                       :placeholder="t('admin.settings.payment.noLimit')"
                     />
                   </div>
-                  <div>
-                    <label class="input-label">{{
-                      t("admin.settings.payment.balanceRechargeMultiplier")
-                    }}</label>
+	                  <div>
+	                    <div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 dark:border-dark-700">
+	                      <div>
+	                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{
+	                          t("admin.settings.payment.balancePaymentDisabled")
+	                        }}</label>
+	                        <p class="mt-0.5 text-xs text-gray-400">
+	                          {{ t("admin.settings.payment.balancePaymentDisabledHint") }}
+	                        </p>
+	                      </div>
+	                      <Toggle v-model="form.payment_balance_disabled" />
+	                    </div>
+	                  </div>
+	                  <div>
+	                    <div class="flex items-center justify-between rounded-lg border border-gray-200 px-4 py-3 dark:border-dark-700">
+	                      <div>
+	                        <label class="text-sm font-medium text-gray-700 dark:text-gray-300">{{
+	                          t("admin.settings.payment.balanceRequiresActiveSubscription")
+	                        }}</label>
+	                        <p class="mt-0.5 text-xs text-gray-400">
+	                          {{
+	                            t(
+	                              "admin.settings.payment.balanceRequiresActiveSubscriptionHint",
+	                            )
+	                          }}
+	                        </p>
+	                      </div>
+	                      <Toggle
+	                        v-model="
+	                          form.payment_balance_requires_active_subscription
+	                        "
+	                        :disabled="form.payment_balance_disabled"
+	                      />
+	                    </div>
+	                  </div>
+	                  <div>
+	                    <label class="input-label">{{
+	                      t("admin.settings.payment.balanceRechargeMultiplier")
+	                    }}</label>
                     <input
                       :value="form.payment_balance_recharge_multiplier || ''"
                       @input="
@@ -4990,9 +5025,10 @@ const form = reactive<SettingsForm>({
   payment_max_amount: 10000,
   payment_daily_limit: 50000,
   payment_max_pending_orders: 3,
-  payment_order_timeout_minutes: 30,
-  payment_balance_disabled: false,
-  payment_balance_recharge_multiplier: 1,
+	  payment_order_timeout_minutes: 30,
+	  payment_balance_disabled: false,
+	  payment_balance_requires_active_subscription: false,
+	  payment_balance_recharge_multiplier: 1,
   payment_recharge_fee_rate: 0,
   payment_enabled_types: [],
   payment_help_image_url: "",
@@ -5998,8 +6034,10 @@ async function saveSettings() {
       payment_max_pending_orders: Number(form.payment_max_pending_orders) || 0,
       payment_order_timeout_minutes:
         Number(form.payment_order_timeout_minutes) || 0,
-      payment_balance_disabled: form.payment_balance_disabled,
-      payment_balance_recharge_multiplier:
+	      payment_balance_disabled: form.payment_balance_disabled,
+	      payment_balance_requires_active_subscription:
+	        form.payment_balance_requires_active_subscription,
+	      payment_balance_recharge_multiplier:
         Number(form.payment_balance_recharge_multiplier) || 1,
       payment_recharge_fee_rate: Number(form.payment_recharge_fee_rate) || 0,
       payment_enabled_types: form.payment_enabled_types,

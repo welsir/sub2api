@@ -23,6 +23,7 @@ export interface AdminPaymentConfig {
   max_pending_orders: number
   enabled_payment_types: string[]
   balance_disabled: boolean
+  balance_requires_active_subscription: boolean
   balance_recharge_multiplier: number
   load_balance_strategy: string
   product_name_prefix: string
@@ -41,6 +42,7 @@ export interface UpdatePaymentConfigRequest {
   max_pending_orders?: number
   enabled_payment_types?: string[]
   balance_disabled?: boolean
+  balance_requires_active_subscription?: boolean
   balance_recharge_multiplier?: number
   load_balance_strategy?: string
   product_name_prefix?: string

@@ -94,6 +94,11 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 	if req.OrderType == payment.OrderTypeSubscription {
 		return s.validateSubOrder(ctx, req)
 	}
+	if req.OrderType == payment.OrderTypeBalance && cfg.BalanceRequiresActiveSubscription {
+		if err := s.requireActiveSubscriptionForBalanceOrder(ctx, req.UserID); err != nil {
+			return nil, err
+		}
+	}
 	if math.IsNaN(req.Amount) || math.IsInf(req.Amount, 0) || req.Amount <= 0 {
 		return nil, infraerrors.BadRequest("INVALID_AMOUNT", "amount must be a positive number")
 	}
@@ -102,6 +107,20 @@ func (s *PaymentService) validateOrderInput(ctx context.Context, req CreateOrder
 			WithMetadata(map[string]string{"min": fmt.Sprintf("%.2f", cfg.MinAmount), "max": fmt.Sprintf("%.2f", cfg.MaxAmount)})
 	}
 	return nil, nil
+}
+
+func (s *PaymentService) requireActiveSubscriptionForBalanceOrder(ctx context.Context, userID int64) error {
+	if s == nil || s.subscriptionSvc == nil {
+		return infraerrors.InternalServer("SUBSCRIPTION_SERVICE_UNAVAILABLE", "subscription service is not configured")
+	}
+	subs, err := s.subscriptionSvc.ListActiveUserSubscriptions(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("list active subscriptions: %w", err)
+	}
+	if len(subs) == 0 {
+		return infraerrors.Forbidden("SUBSCRIPTION_REQUIRED", "active subscription is required before buying token packages")
+	}
+	return nil
 }
 
 func (s *PaymentService) validateSubOrder(ctx context.Context, req CreateOrderRequest) (*dbent.SubscriptionPlan, error) {
