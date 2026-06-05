@@ -2387,13 +2387,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				Kind:               "request_error",
 				Message:            safeErr,
 			})
-			c.JSON(http.StatusBadGateway, gin.H{
-				"error": gin.H{
-					"type":    "upstream_error",
-					"message": "Upstream request failed",
-				},
-			})
-			return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+			return nil, &UpstreamFailoverError{
+				StatusCode:   0,
+				ResponseBody: []byte(safeErr),
+			}
 		}
 
 		// Handle error response
@@ -2608,13 +2605,10 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			Kind:               "request_error",
 			Message:            safeErr,
 		})
-		c.JSON(http.StatusBadGateway, gin.H{
-			"error": gin.H{
-				"type":    "upstream_error",
-				"message": "Upstream request failed",
-			},
-		})
-		return nil, fmt.Errorf("upstream request failed: %s", safeErr)
+		return nil, &UpstreamFailoverError{
+			StatusCode:   0,
+			ResponseBody: []byte(safeErr),
+		}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
