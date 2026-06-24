@@ -1252,3 +1252,31 @@ func TestFilterCodexInput_DropsReasoningItemsRegardlessOfPreserveReferences(t *t
 		})
 	}
 }
+
+func TestApplyCodexOAuthTransform_DropsOrphanToolSearchCall(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.5",
+		"input": []any{
+			map[string]any{
+				"type":    "tool_search_call",
+				"call_id": "call_orphan",
+				"status":  "completed",
+			},
+			map[string]any{
+				"type":    "message",
+				"role":    "user",
+				"content": "continue",
+			},
+		},
+		"tool_choice": "auto",
+	}
+
+	applyCodexOAuthTransform(reqBody, false, false)
+
+	input, ok := reqBody["input"].([]any)
+	require.True(t, ok)
+	require.Len(t, input, 1)
+	item, ok := input[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "message", item["type"])
+}

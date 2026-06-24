@@ -717,6 +717,11 @@ type GatewayConfig struct {
 	// OpenAIPassthroughAllowTimeoutHeaders: OpenAI 透传模式是否放行客户端超时头
 	// 关闭（默认）可避免 x-stainless-timeout 等头导致上游提前断流。
 	OpenAIPassthroughAllowTimeoutHeaders bool `mapstructure:"openai_passthrough_allow_timeout_headers"`
+	// OpenAIRequestCompressionEnabled: 对 OpenAI OAuth Codex `/v1/responses` 流式请求启用 zstd 请求体压缩。
+	// 默认关闭，便于按环境灰度验证上游兼容性。
+	OpenAIRequestCompressionEnabled bool `mapstructure:"openai_request_compression_enabled"`
+	// OpenAIRequestCompressionMinBytes: 请求体达到该字节数后才尝试压缩，避免小请求额外 CPU 开销。
+	OpenAIRequestCompressionMinBytes int `mapstructure:"openai_request_compression_min_bytes"`
 	// OpenAIWS: OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`
 	// OpenAIScheduler: OpenAI 高级调度器粘性逃逸配置
@@ -1829,6 +1834,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.force_codex_cli", false)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
+	viper.SetDefault("gateway.openai_request_compression_enabled", false)
+	viper.SetDefault("gateway.openai_request_compression_min_bytes", 64*1024)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
 	viper.SetDefault("gateway.openai_ws.enabled", true)
 	viper.SetDefault("gateway.openai_ws.mode_router_v2_enabled", false)
