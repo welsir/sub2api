@@ -20,6 +20,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/apikeygroup"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
@@ -69,6 +70,8 @@ type Client struct {
 	Announcement *AnnouncementClient
 	// AnnouncementRead is the client for interacting with the AnnouncementRead builders.
 	AnnouncementRead *AnnouncementReadClient
+	// ApiKeyGroup is the client for interacting with the ApiKeyGroup builders.
+	ApiKeyGroup *ApiKeyGroupClient
 	// AuthIdentity is the client for interacting with the AuthIdentity builders.
 	AuthIdentity *AuthIdentityClient
 	// AuthIdentityChannel is the client for interacting with the AuthIdentityChannel builders.
@@ -145,6 +148,7 @@ func (c *Client) init() {
 	c.AccountGroup = NewAccountGroupClient(c.config)
 	c.Announcement = NewAnnouncementClient(c.config)
 	c.AnnouncementRead = NewAnnouncementReadClient(c.config)
+	c.ApiKeyGroup = NewApiKeyGroupClient(c.config)
 	c.AuthIdentity = NewAuthIdentityClient(c.config)
 	c.AuthIdentityChannel = NewAuthIdentityChannelClient(c.config)
 	c.ChannelMonitor = NewChannelMonitorClient(c.config)
@@ -272,6 +276,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		AccountGroup:                  NewAccountGroupClient(cfg),
 		Announcement:                  NewAnnouncementClient(cfg),
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
+		ApiKeyGroup:                   NewApiKeyGroupClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
 		AuthIdentityChannel:           NewAuthIdentityChannelClient(cfg),
 		ChannelMonitor:                NewChannelMonitorClient(cfg),
@@ -326,6 +331,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		AccountGroup:                  NewAccountGroupClient(cfg),
 		Announcement:                  NewAnnouncementClient(cfg),
 		AnnouncementRead:              NewAnnouncementReadClient(cfg),
+		ApiKeyGroup:                   NewApiKeyGroupClient(cfg),
 		AuthIdentity:                  NewAuthIdentityClient(cfg),
 		AuthIdentityChannel:           NewAuthIdentityChannelClient(cfg),
 		ChannelMonitor:                NewChannelMonitorClient(cfg),
@@ -386,7 +392,7 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
+		c.ApiKeyGroup, c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
 		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
 		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
@@ -405,7 +411,7 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.APIKey, c.Account, c.AccountGroup, c.Announcement, c.AnnouncementRead,
-		c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
+		c.ApiKeyGroup, c.AuthIdentity, c.AuthIdentityChannel, c.ChannelMonitor,
 		c.ChannelMonitorDailyRollup, c.ChannelMonitorHistory,
 		c.ChannelMonitorRequestTemplate, c.ErrorPassthroughRule, c.Group,
 		c.IdempotencyRecord, c.IdentityAdoptionDecision, c.PaymentAuditLog,
@@ -432,6 +438,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.Announcement.mutate(ctx, m)
 	case *AnnouncementReadMutation:
 		return c.AnnouncementRead.mutate(ctx, m)
+	case *ApiKeyGroupMutation:
+		return c.ApiKeyGroup.mutate(ctx, m)
 	case *AuthIdentityMutation:
 		return c.AuthIdentity.mutate(ctx, m)
 	case *AuthIdentityChannelMutation:
@@ -637,6 +645,22 @@ func (c *APIKeyClient) QueryGroup(_m *APIKey) *GroupQuery {
 	return query
 }
 
+// QuerySelectedGroups queries the selected_groups edge of a APIKey.
+func (c *APIKeyClient) QuerySelectedGroups(_m *APIKey) *GroupQuery {
+	query := (&GroupClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apikey.Table, apikey.FieldID, id),
+			sqlgraph.To(group.Table, group.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, false, apikey.SelectedGroupsTable, apikey.SelectedGroupsPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryUsageLogs queries the usage_logs edge of a APIKey.
 func (c *APIKeyClient) QueryUsageLogs(_m *APIKey) *UsageLogQuery {
 	query := (&UsageLogClient{config: c.config}).Query()
@@ -646,6 +670,22 @@ func (c *APIKeyClient) QueryUsageLogs(_m *APIKey) *UsageLogQuery {
 			sqlgraph.From(apikey.Table, apikey.FieldID, id),
 			sqlgraph.To(usagelog.Table, usagelog.FieldID),
 			sqlgraph.Edge(sqlgraph.O2M, false, apikey.UsageLogsTable, apikey.UsageLogsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAPIKeyGroups queries the api_key_groups edge of a APIKey.
+func (c *APIKeyClient) QueryAPIKeyGroups(_m *APIKey) *ApiKeyGroupQuery {
+	query := (&ApiKeyGroupClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(apikey.Table, apikey.FieldID, id),
+			sqlgraph.To(apikeygroup.Table, apikeygroup.APIKeyColumn),
+			sqlgraph.Edge(sqlgraph.O2M, true, apikey.APIKeyGroupsTable, apikey.APIKeyGroupsColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil
@@ -1306,6 +1346,122 @@ func (c *AnnouncementReadClient) mutate(ctx context.Context, m *AnnouncementRead
 		return (&AnnouncementReadDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown AnnouncementRead mutation op: %q", m.Op())
+	}
+}
+
+// ApiKeyGroupClient is a client for the ApiKeyGroup schema.
+type ApiKeyGroupClient struct {
+	config
+}
+
+// NewApiKeyGroupClient returns a client for the ApiKeyGroup from the given config.
+func NewApiKeyGroupClient(c config) *ApiKeyGroupClient {
+	return &ApiKeyGroupClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `apikeygroup.Hooks(f(g(h())))`.
+func (c *ApiKeyGroupClient) Use(hooks ...Hook) {
+	c.hooks.ApiKeyGroup = append(c.hooks.ApiKeyGroup, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `apikeygroup.Intercept(f(g(h())))`.
+func (c *ApiKeyGroupClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ApiKeyGroup = append(c.inters.ApiKeyGroup, interceptors...)
+}
+
+// Create returns a builder for creating a ApiKeyGroup entity.
+func (c *ApiKeyGroupClient) Create() *ApiKeyGroupCreate {
+	mutation := newApiKeyGroupMutation(c.config, OpCreate)
+	return &ApiKeyGroupCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ApiKeyGroup entities.
+func (c *ApiKeyGroupClient) CreateBulk(builders ...*ApiKeyGroupCreate) *ApiKeyGroupCreateBulk {
+	return &ApiKeyGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ApiKeyGroupClient) MapCreateBulk(slice any, setFunc func(*ApiKeyGroupCreate, int)) *ApiKeyGroupCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ApiKeyGroupCreateBulk{err: fmt.Errorf("calling to ApiKeyGroupClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ApiKeyGroupCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ApiKeyGroupCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ApiKeyGroup.
+func (c *ApiKeyGroupClient) Update() *ApiKeyGroupUpdate {
+	mutation := newApiKeyGroupMutation(c.config, OpUpdate)
+	return &ApiKeyGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ApiKeyGroupClient) UpdateOne(_m *ApiKeyGroup) *ApiKeyGroupUpdateOne {
+	mutation := newApiKeyGroupMutation(c.config, OpUpdateOne)
+	mutation.api_key = &_m.APIKeyID
+	mutation.group = &_m.GroupID
+	return &ApiKeyGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ApiKeyGroup.
+func (c *ApiKeyGroupClient) Delete() *ApiKeyGroupDelete {
+	mutation := newApiKeyGroupMutation(c.config, OpDelete)
+	return &ApiKeyGroupDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Query returns a query builder for ApiKeyGroup.
+func (c *ApiKeyGroupClient) Query() *ApiKeyGroupQuery {
+	return &ApiKeyGroupQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeApiKeyGroup},
+		inters: c.Interceptors(),
+	}
+}
+
+// QueryAPIKey queries the api_key edge of a ApiKeyGroup.
+func (c *ApiKeyGroupClient) QueryAPIKey(_m *ApiKeyGroup) *APIKeyQuery {
+	return c.Query().
+		Where(apikeygroup.APIKeyID(_m.APIKeyID), apikeygroup.GroupID(_m.GroupID)).
+		QueryAPIKey()
+}
+
+// QueryGroup queries the group edge of a ApiKeyGroup.
+func (c *ApiKeyGroupClient) QueryGroup(_m *ApiKeyGroup) *GroupQuery {
+	return c.Query().
+		Where(apikeygroup.APIKeyID(_m.APIKeyID), apikeygroup.GroupID(_m.GroupID)).
+		QueryGroup()
+}
+
+// Hooks returns the client hooks.
+func (c *ApiKeyGroupClient) Hooks() []Hook {
+	return c.hooks.ApiKeyGroup
+}
+
+// Interceptors returns the client interceptors.
+func (c *ApiKeyGroupClient) Interceptors() []Interceptor {
+	return c.inters.ApiKeyGroup
+}
+
+func (c *ApiKeyGroupClient) mutate(ctx context.Context, m *ApiKeyGroupMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ApiKeyGroupCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ApiKeyGroupUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ApiKeyGroupUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ApiKeyGroupDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ApiKeyGroup mutation op: %q", m.Op())
 	}
 }
 
@@ -2604,6 +2760,22 @@ func (c *GroupClient) QueryAllowedUsers(_m *Group) *UserQuery {
 	return query
 }
 
+// QuerySelectedAPIKeys queries the selected_api_keys edge of a Group.
+func (c *GroupClient) QuerySelectedAPIKeys(_m *Group) *APIKeyQuery {
+	query := (&APIKeyClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(group.Table, group.FieldID, id),
+			sqlgraph.To(apikey.Table, apikey.FieldID),
+			sqlgraph.Edge(sqlgraph.M2M, true, group.SelectedAPIKeysTable, group.SelectedAPIKeysPrimaryKey...),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryAccountGroups queries the account_groups edge of a Group.
 func (c *GroupClient) QueryAccountGroups(_m *Group) *AccountGroupQuery {
 	query := (&AccountGroupClient{config: c.config}).Query()
@@ -2629,6 +2801,22 @@ func (c *GroupClient) QueryUserAllowedGroups(_m *Group) *UserAllowedGroupQuery {
 			sqlgraph.From(group.Table, group.FieldID, id),
 			sqlgraph.To(userallowedgroup.Table, userallowedgroup.GroupColumn),
 			sqlgraph.Edge(sqlgraph.O2M, true, group.UserAllowedGroupsTable, group.UserAllowedGroupsColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryAPIKeyGroups queries the api_key_groups edge of a Group.
+func (c *GroupClient) QueryAPIKeyGroups(_m *Group) *ApiKeyGroupQuery {
+	query := (&ApiKeyGroupClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(group.Table, group.FieldID, id),
+			sqlgraph.To(apikeygroup.Table, apikeygroup.GroupColumn),
+			sqlgraph.Edge(sqlgraph.O2M, true, group.APIKeyGroupsTable, group.APIKeyGroupsColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil
@@ -6209,8 +6397,8 @@ func (c *UserSubscriptionClient) mutate(ctx context.Context, m *UserSubscription
 // hooks and interceptors per client, for fast access.
 type (
 	hooks struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
+		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, ApiKeyGroup,
+		AuthIdentity, AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
 		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
@@ -6220,8 +6408,8 @@ type (
 		UserSubscription []ent.Hook
 	}
 	inters struct {
-		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, AuthIdentity,
-		AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
+		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, ApiKeyGroup,
+		AuthIdentity, AuthIdentityChannel, ChannelMonitor, ChannelMonitorDailyRollup,
 		ChannelMonitorHistory, ChannelMonitorRequestTemplate, ErrorPassthroughRule,
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,

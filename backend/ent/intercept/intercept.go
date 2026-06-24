@@ -13,6 +13,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/apikeygroup"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
@@ -235,6 +236,33 @@ func (f TraverseAnnouncementRead) Traverse(ctx context.Context, q ent.Query) err
 		return f(ctx, q)
 	}
 	return fmt.Errorf("unexpected query type %T. expect *ent.AnnouncementReadQuery", q)
+}
+
+// The ApiKeyGroupFunc type is an adapter to allow the use of ordinary function as a Querier.
+type ApiKeyGroupFunc func(context.Context, *ent.ApiKeyGroupQuery) (ent.Value, error)
+
+// Query calls f(ctx, q).
+func (f ApiKeyGroupFunc) Query(ctx context.Context, q ent.Query) (ent.Value, error) {
+	if q, ok := q.(*ent.ApiKeyGroupQuery); ok {
+		return f(ctx, q)
+	}
+	return nil, fmt.Errorf("unexpected query type %T. expect *ent.ApiKeyGroupQuery", q)
+}
+
+// The TraverseApiKeyGroup type is an adapter to allow the use of ordinary function as Traverser.
+type TraverseApiKeyGroup func(context.Context, *ent.ApiKeyGroupQuery) error
+
+// Intercept is a dummy implementation of Intercept that returns the next Querier in the pipeline.
+func (f TraverseApiKeyGroup) Intercept(next ent.Querier) ent.Querier {
+	return next
+}
+
+// Traverse calls f(ctx, q).
+func (f TraverseApiKeyGroup) Traverse(ctx context.Context, q ent.Query) error {
+	if q, ok := q.(*ent.ApiKeyGroupQuery); ok {
+		return f(ctx, q)
+	}
+	return fmt.Errorf("unexpected query type %T. expect *ent.ApiKeyGroupQuery", q)
 }
 
 // The AuthIdentityFunc type is an adapter to allow the use of ordinary function as a Querier.
@@ -1060,6 +1088,8 @@ func NewQuery(q ent.Query) (Query, error) {
 		return &query[*ent.AnnouncementQuery, predicate.Announcement, announcement.OrderOption]{typ: ent.TypeAnnouncement, tq: q}, nil
 	case *ent.AnnouncementReadQuery:
 		return &query[*ent.AnnouncementReadQuery, predicate.AnnouncementRead, announcementread.OrderOption]{typ: ent.TypeAnnouncementRead, tq: q}, nil
+	case *ent.ApiKeyGroupQuery:
+		return &query[*ent.ApiKeyGroupQuery, predicate.ApiKeyGroup, apikeygroup.OrderOption]{typ: ent.TypeApiKeyGroup, tq: q}, nil
 	case *ent.AuthIdentityQuery:
 		return &query[*ent.AuthIdentityQuery, predicate.AuthIdentity, authidentity.OrderOption]{typ: ent.TypeAuthIdentity, tq: q}, nil
 	case *ent.AuthIdentityChannelQuery:

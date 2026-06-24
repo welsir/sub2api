@@ -10,6 +10,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/announcement"
 	"github.com/Wei-Shaw/sub2api/ent/announcementread"
 	"github.com/Wei-Shaw/sub2api/ent/apikey"
+	"github.com/Wei-Shaw/sub2api/ent/apikeygroup"
 	"github.com/Wei-Shaw/sub2api/ent/authidentity"
 	"github.com/Wei-Shaw/sub2api/ent/authidentitychannel"
 	"github.com/Wei-Shaw/sub2api/ent/channelmonitor"
@@ -318,6 +319,12 @@ func init() {
 	announcementreadDescCreatedAt := announcementreadFields[3].Descriptor()
 	// announcementread.DefaultCreatedAt holds the default value on creation for the created_at field.
 	announcementread.DefaultCreatedAt = announcementreadDescCreatedAt.Default.(func() time.Time)
+	apikeygroupFields := schema.ApiKeyGroup{}.Fields()
+	_ = apikeygroupFields
+	// apikeygroupDescCreatedAt is the schema descriptor for created_at field.
+	apikeygroupDescCreatedAt := apikeygroupFields[2].Descriptor()
+	// apikeygroup.DefaultCreatedAt holds the default value on creation for the created_at field.
+	apikeygroup.DefaultCreatedAt = apikeygroupDescCreatedAt.Default.(func() time.Time)
 	authidentityMixin := schema.AuthIdentity{}.Mixin()
 	authidentityMixinFields0 := authidentityMixin[0].Fields()
 	_ = authidentityMixinFields0

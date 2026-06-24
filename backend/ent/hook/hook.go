@@ -69,6 +69,18 @@ func (f AnnouncementReadFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.V
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.AnnouncementReadMutation", m)
 }
 
+// The ApiKeyGroupFunc type is an adapter to allow the use of ordinary
+// function as ApiKeyGroup mutator.
+type ApiKeyGroupFunc func(context.Context, *ent.ApiKeyGroupMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ApiKeyGroupFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ApiKeyGroupMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ApiKeyGroupMutation", m)
+}
+
 // The AuthIdentityFunc type is an adapter to allow the use of ordinary
 // function as AuthIdentity mutator.
 type AuthIdentityFunc func(context.Context, *ent.AuthIdentityMutation) (ent.Value, error)

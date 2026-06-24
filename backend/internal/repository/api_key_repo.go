@@ -17,6 +17,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 
+	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 )
 
@@ -82,7 +83,11 @@ func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIK
 		}
 		return nil, err
 	}
-	return apiKeyEntityToService(m), nil
+	out := apiKeyEntityToService(m)
+	if err := r.hydrateAPIKeyGroupIDs(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // GetKeyAndOwnerID 根据 API Key ID 获取其 key 与所有者（用户）ID。
@@ -120,7 +125,11 @@ func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.A
 		}
 		return nil, err
 	}
-	return apiKeyEntityToService(m), nil
+	out := apiKeyEntityToService(m)
+	if err := r.hydrateAPIKeyGroupIDs(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*service.APIKey, error) {
@@ -203,7 +212,11 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 		}
 		return nil, err
 	}
-	return apiKeyEntityToService(m), nil
+	out := apiKeyEntityToService(m)
+	if err := r.hydrateAPIKeyGroupIDs(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) error {
@@ -426,6 +439,9 @@ func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, param
 	for i := range keys {
 		outKeys = append(outKeys, *apiKeyEntityToService(keys[i]))
 	}
+	if err := r.hydrateAPIKeyGroupIDsForValues(ctx, outKeys); err != nil {
+		return nil, nil, err
+	}
 
 	return outKeys, paginationResultFromTotal(int64(total), params), nil
 }
@@ -479,6 +495,9 @@ func (r *apiKeyRepository) ListByGroupID(ctx context.Context, groupID int64, par
 	for i := range keys {
 		outKeys = append(outKeys, *apiKeyEntityToService(keys[i]))
 	}
+	if err := r.hydrateAPIKeyGroupIDsForValues(ctx, outKeys); err != nil {
+		return nil, nil, err
+	}
 
 	return outKeys, paginationResultFromTotal(int64(total), params), nil
 }
@@ -528,6 +547,9 @@ func (r *apiKeyRepository) SearchAPIKeys(ctx context.Context, userID int64, keyw
 	outKeys := make([]service.APIKey, 0, len(keys))
 	for i := range keys {
 		outKeys = append(outKeys, *apiKeyEntityToService(keys[i]))
+	}
+	if err := r.hydrateAPIKeyGroupIDsForValues(ctx, outKeys); err != nil {
+		return nil, err
 	}
 	return outKeys, nil
 }
@@ -668,6 +690,173 @@ func (r *apiKeyRepository) ResetRateLimitWindows(ctx context.Context, id int64) 
 	return err
 }
 
+func (r *apiKeyRepository) SetGroupIDs(ctx context.Context, apiKeyID int64, groupIDs []int64) error {
+	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+	if exec == nil {
+		return fmt.Errorf("sql executor is not configured")
+	}
+
+	if _, err := exec.ExecContext(ctx, `DELETE FROM api_key_groups WHERE api_key_id = $1`, apiKeyID); err != nil {
+		return err
+	}
+
+	groupIDs = normalizeRepoAPIKeyGroupIDs(groupIDs)
+	if len(groupIDs) == 0 {
+		return nil
+	}
+
+	query, args := buildAPIKeyGroupsInsertSQL(r.sqlDialect(), apiKeyID, groupIDs)
+	_, err := exec.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (r *apiKeyRepository) ListGroupIDs(ctx context.Context, apiKeyID int64) ([]int64, error) {
+	groupIDsByKey, err := r.loadAPIKeyGroupIDs(ctx, []int64{apiKeyID})
+	if err != nil {
+		return nil, err
+	}
+	return groupIDsByKey[apiKeyID], nil
+}
+
+func normalizeRepoAPIKeyGroupIDs(groupIDs []int64) []int64 {
+	if len(groupIDs) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(groupIDs))
+	out := make([]int64, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		out = append(out, groupID)
+	}
+	return out
+}
+
+func (r *apiKeyRepository) hydrateAPIKeyGroupIDs(ctx context.Context, keys ...*service.APIKey) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(keys))
+	for _, key := range keys {
+		if key != nil && key.ID > 0 {
+			ids = append(ids, key.ID)
+		}
+	}
+	groupIDsByKey, err := r.loadAPIKeyGroupIDs(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, key := range keys {
+		if key == nil {
+			continue
+		}
+		key.GroupIDs = normalizeRepoAPIKeyGroupIDs(groupIDsByKey[key.ID])
+		if len(key.GroupIDs) == 0 && key.GroupID != nil && *key.GroupID > 0 {
+			key.GroupIDs = []int64{*key.GroupID}
+		}
+	}
+	return nil
+}
+
+func (r *apiKeyRepository) hydrateAPIKeyGroupIDsForValues(ctx context.Context, keys []service.APIKey) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	ptrs := make([]*service.APIKey, 0, len(keys))
+	for i := range keys {
+		ptrs = append(ptrs, &keys[i])
+	}
+	return r.hydrateAPIKeyGroupIDs(ctx, ptrs...)
+}
+
+func (r *apiKeyRepository) loadAPIKeyGroupIDs(ctx context.Context, apiKeyIDs []int64) (map[int64][]int64, error) {
+	out := make(map[int64][]int64, len(apiKeyIDs))
+	apiKeyIDs = normalizeRepoAPIKeyGroupIDs(apiKeyIDs)
+	if len(apiKeyIDs) == 0 {
+		return out, nil
+	}
+
+	exec := txAwareSQLExecutor(ctx, r.sql, r.client)
+	if exec == nil {
+		return nil, fmt.Errorf("sql executor is not configured")
+	}
+
+	query, args := buildAPIKeyGroupsSelectSQL(r.sqlDialect(), apiKeyIDs)
+	rows, err := exec.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var apiKeyID, groupID int64
+		if err := rows.Scan(&apiKeyID, &groupID); err != nil {
+			return nil, err
+		}
+		out[apiKeyID] = append(out[apiKeyID], groupID)
+	}
+	return out, rows.Err()
+}
+
+func (r *apiKeyRepository) sqlDialect() string {
+	if r != nil && r.client != nil && r.client.Driver() != nil {
+		return r.client.Driver().Dialect()
+	}
+	return dialect.Postgres
+}
+
+func sqlPlaceholder(dialectName string, pos int) string {
+	if dialectName == dialect.Postgres {
+		return fmt.Sprintf("$%d", pos)
+	}
+	return "?"
+}
+
+func buildAPIKeyGroupsInsertSQL(dialectName string, apiKeyID int64, groupIDs []int64) (string, []any) {
+	values := make([]string, 0, len(groupIDs))
+	var args []any
+	if dialectName == dialect.Postgres {
+		args = append(args, apiKeyID)
+		for i, groupID := range groupIDs {
+			values = append(values, fmt.Sprintf("($1, $%d)", i+2))
+			args = append(args, groupID)
+		}
+	} else {
+		args = make([]any, 0, len(groupIDs)*2)
+		for _, groupID := range groupIDs {
+			values = append(values, "(?, ?)")
+			args = append(args, apiKeyID, groupID)
+		}
+	}
+
+	return fmt.Sprintf(`
+		INSERT INTO api_key_groups (api_key_id, group_id)
+		VALUES %s
+		ON CONFLICT (api_key_id, group_id) DO NOTHING
+	`, strings.Join(values, ", ")), args
+}
+
+func buildAPIKeyGroupsSelectSQL(dialectName string, apiKeyIDs []int64) (string, []any) {
+	placeholders := make([]string, 0, len(apiKeyIDs))
+	args := make([]any, 0, len(apiKeyIDs))
+	for i, apiKeyID := range apiKeyIDs {
+		placeholders = append(placeholders, sqlPlaceholder(dialectName, i+1))
+		args = append(args, apiKeyID)
+	}
+
+	return fmt.Sprintf(`
+		SELECT api_key_id, group_id
+		FROM api_key_groups
+		WHERE api_key_id IN (%s)
+		ORDER BY api_key_id, group_id
+	`, strings.Join(placeholders, ", ")), args
+}
+
 // GetRateLimitData returns the current rate limit usage and window start times for an API key.
 func (r *apiKeyRepository) GetRateLimitData(ctx context.Context, id int64) (result *service.APIKeyRateLimitData, err error) {
 	rows, err := r.sql.QueryContext(ctx, `
@@ -709,6 +898,7 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		CreatedAt:     m.CreatedAt,
 		UpdatedAt:     m.UpdatedAt,
 		GroupID:       m.GroupID,
+		GroupIDs:      nil,
 		Quota:         m.Quota,
 		QuotaUsed:     m.QuotaUsed,
 		ExpiresAt:     m.ExpiresAt,

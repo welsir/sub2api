@@ -154,6 +154,7 @@ type APIKeyAuthCacheInvalidator interface {
 type CreateAPIKeyRequest struct {
 	Name        string   `json:"name"`
 	GroupID     *int64   `json:"group_id"`
+	GroupIDs    []int64  `json:"group_ids"`
 	CustomKey   *string  `json:"custom_key"`   // 可选的自定义key
 	IPWhitelist []string `json:"ip_whitelist"` // IP 白名单
 	IPBlacklist []string `json:"ip_blacklist"` // IP 黑名单
@@ -172,6 +173,7 @@ type CreateAPIKeyRequest struct {
 type UpdateAPIKeyRequest struct {
 	Name        *string  `json:"name"`
 	GroupID     *int64   `json:"group_id"`
+	GroupIDs    *[]int64 `json:"group_ids"`
 	Status      *string  `json:"status"`
 	IPWhitelist []string `json:"ip_whitelist"` // IP 白名单（空数组清空）
 	IPBlacklist []string `json:"ip_blacklist"` // IP 黑名单（空数组清空）
@@ -321,11 +323,89 @@ func (s *APIKeyService) incrementAPIKeyErrorCount(ctx context.Context, userID in
 func (s *APIKeyService) canUserBindGroup(ctx context.Context, user *User, group *Group) bool {
 	// 订阅类型分组：需要有效订阅
 	if group.IsSubscriptionType() {
+		if s.userSubRepo == nil {
+			return false
+		}
 		_, err := s.userSubRepo.GetActiveByUserIDAndGroupID(ctx, user.ID, group.ID)
 		return err == nil // 有有效订阅则允许
 	}
 	// 标准类型分组：使用原有逻辑
 	return user.CanBindGroup(group.ID, group.IsExclusive)
+}
+
+type apiKeyGroupIDWriter interface {
+	SetGroupIDs(ctx context.Context, apiKeyID int64, groupIDs []int64) error
+}
+
+func normalizeAPIKeyGroupIDs(groupIDs []int64) []int64 {
+	if len(groupIDs) == 0 {
+		return nil
+	}
+	seen := make(map[int64]struct{}, len(groupIDs))
+	out := make([]int64, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		out = append(out, groupID)
+	}
+	return out
+}
+
+func appendAPIKeyGroupID(groupIDs []int64, groupID *int64) []int64 {
+	if groupID == nil || *groupID <= 0 {
+		return normalizeAPIKeyGroupIDs(groupIDs)
+	}
+	out := normalizeAPIKeyGroupIDs(groupIDs)
+	for _, id := range out {
+		if id == *groupID {
+			return out
+		}
+	}
+	return append(out, *groupID)
+}
+
+func containsAPIKeyGroupID(groupIDs []int64, groupID int64) bool {
+	for _, id := range groupIDs {
+		if id == groupID {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *APIKeyService) validateAPIKeyGroupIDs(ctx context.Context, user *User, groupIDs []int64) error {
+	if len(groupIDs) == 0 {
+		return nil
+	}
+	if s.groupRepo == nil {
+		return fmt.Errorf("group repository is not configured")
+	}
+	for _, groupID := range groupIDs {
+		group, err := s.groupRepo.GetByID(ctx, groupID)
+		if err != nil {
+			return fmt.Errorf("get group: %w", err)
+		}
+		if !s.canUserBindGroup(ctx, user, group) {
+			return ErrGroupNotAllowed
+		}
+	}
+	return nil
+}
+
+func (s *APIKeyService) setAPIKeyGroupIDs(ctx context.Context, apiKeyID int64, groupIDs []int64) error {
+	writer, ok := s.apiKeyRepo.(apiKeyGroupIDWriter)
+	if !ok {
+		if len(groupIDs) == 0 {
+			return nil
+		}
+		return fmt.Errorf("api key group repository is not configured")
+	}
+	return writer.SetGroupIDs(ctx, apiKeyID, normalizeAPIKeyGroupIDs(groupIDs))
 }
 
 // Create 创建API Key
@@ -350,17 +430,13 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		}
 	}
 
-	// 验证分组权限（如果指定了分组）
-	if req.GroupID != nil {
-		group, err := s.groupRepo.GetByID(ctx, *req.GroupID)
-		if err != nil {
-			return nil, fmt.Errorf("get group: %w", err)
-		}
-
-		// 检查用户是否可以绑定该分组
-		if !s.canUserBindGroup(ctx, user, group) {
-			return nil, ErrGroupNotAllowed
-		}
+	selectedGroupIDs := appendAPIKeyGroupID(req.GroupIDs, req.GroupID)
+	if req.GroupID == nil && len(selectedGroupIDs) > 0 {
+		defaultGroupID := selectedGroupIDs[0]
+		req.GroupID = &defaultGroupID
+	}
+	if err := s.validateAPIKeyGroupIDs(ctx, user, selectedGroupIDs); err != nil {
+		return nil, err
 	}
 
 	var key string
@@ -404,6 +480,7 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 		Key:         key,
 		Name:        html.EscapeString(req.Name),
 		GroupID:     req.GroupID,
+		GroupIDs:    selectedGroupIDs,
 		Status:      StatusActive,
 		IPWhitelist: req.IPWhitelist,
 		IPBlacklist: req.IPBlacklist,
@@ -422,6 +499,9 @@ func (s *APIKeyService) Create(ctx context.Context, userID int64, req CreateAPIK
 
 	if err := s.apiKeyRepo.Create(ctx, apiKey); err != nil {
 		return nil, fmt.Errorf("create api key: %w", err)
+	}
+	if err := s.setAPIKeyGroupIDs(ctx, apiKey.ID, selectedGroupIDs); err != nil {
+		return nil, fmt.Errorf("set api key groups: %w", err)
 	}
 
 	s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
@@ -544,23 +624,35 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 		apiKey.Name = html.EscapeString(*req.Name)
 	}
 
+	selectedGroupIDs := normalizeAPIKeyGroupIDs(apiKey.GroupIDs)
+	shouldUpdateGroupIDs := req.GroupIDs != nil
+	if req.GroupIDs != nil {
+		selectedGroupIDs = normalizeAPIKeyGroupIDs(*req.GroupIDs)
+	}
 	if req.GroupID != nil {
-		// 验证分组权限
+		selectedGroupIDs = appendAPIKeyGroupID(selectedGroupIDs, req.GroupID)
+		shouldUpdateGroupIDs = true
+		apiKey.GroupID = req.GroupID
+	} else if req.GroupIDs != nil {
+		switch {
+		case apiKey.GroupID != nil && containsAPIKeyGroupID(selectedGroupIDs, *apiKey.GroupID):
+			// keep current default group
+		case len(selectedGroupIDs) > 0:
+			defaultGroupID := selectedGroupIDs[0]
+			apiKey.GroupID = &defaultGroupID
+		case apiKey.GroupID != nil:
+			selectedGroupIDs = appendAPIKeyGroupID(selectedGroupIDs, apiKey.GroupID)
+		}
+	}
+	if shouldUpdateGroupIDs {
 		user, err := s.userRepo.GetByID(ctx, userID)
 		if err != nil {
 			return nil, fmt.Errorf("get user: %w", err)
 		}
-
-		group, err := s.groupRepo.GetByID(ctx, *req.GroupID)
-		if err != nil {
-			return nil, fmt.Errorf("get group: %w", err)
+		if err := s.validateAPIKeyGroupIDs(ctx, user, selectedGroupIDs); err != nil {
+			return nil, err
 		}
-
-		if !s.canUserBindGroup(ctx, user, group) {
-			return nil, ErrGroupNotAllowed
-		}
-
-		apiKey.GroupID = req.GroupID
+		apiKey.GroupIDs = selectedGroupIDs
 	}
 
 	if req.Status != nil {
@@ -626,6 +718,11 @@ func (s *APIKeyService) Update(ctx context.Context, id int64, userID int64, req 
 
 	if err := s.apiKeyRepo.Update(ctx, apiKey); err != nil {
 		return nil, fmt.Errorf("update api key: %w", err)
+	}
+	if shouldUpdateGroupIDs {
+		if err := s.setAPIKeyGroupIDs(ctx, apiKey.ID, apiKey.GroupIDs); err != nil {
+			return nil, fmt.Errorf("set api key groups: %w", err)
+		}
 	}
 
 	s.InvalidateAuthCacheByKey(ctx, apiKey.Key)
@@ -777,6 +874,85 @@ func (s *APIKeyService) GetAvailableGroups(ctx context.Context, userID int64) ([
 	}
 
 	return availableGroups, nil
+}
+
+// ResolveEffectiveGroupForPlatform returns the request-local group that should
+// back an API key for the target platform. The persisted API key group remains
+// the default/fallback group; this method only resolves runtime intent.
+func (s *APIKeyService) ResolveEffectiveGroupForPlatform(ctx context.Context, apiKey *APIKey, platform string) (*Group, bool, error) {
+	platform = strings.TrimSpace(platform)
+	if apiKey == nil || platform == "" {
+		return nil, false, nil
+	}
+	selectedGroupIDs := normalizeAPIKeyGroupIDs(apiKey.GroupIDs)
+	if len(selectedGroupIDs) == 0 {
+		selectedGroupIDs = appendAPIKeyGroupID(selectedGroupIDs, apiKey.GroupID)
+	}
+	selectedGroupIDSet := make(map[int64]struct{}, len(selectedGroupIDs))
+	for _, groupID := range selectedGroupIDs {
+		selectedGroupIDSet[groupID] = struct{}{}
+	}
+	if apiKey.Group != nil && apiKey.Group.Platform == platform {
+		if _, ok := selectedGroupIDSet[apiKey.Group.ID]; ok {
+			return apiKey.Group, false, nil
+		}
+		if len(selectedGroupIDSet) == 0 {
+			return apiKey.Group, false, nil
+		}
+	}
+	if len(selectedGroupIDSet) == 0 {
+		return apiKey.Group, false, nil
+	}
+	if s == nil || s.groupRepo == nil {
+		return apiKey.Group, false, nil
+	}
+
+	user := apiKey.User
+	if s.userRepo != nil {
+		loadedUser, err := s.userRepo.GetByID(ctx, apiKey.UserID)
+		if err != nil {
+			return nil, false, fmt.Errorf("get user: %w", err)
+		}
+		user = loadedUser
+	}
+	if user == nil {
+		return apiKey.Group, false, nil
+	}
+
+	allGroups, err := s.groupRepo.ListActive(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("list active groups: %w", err)
+	}
+
+	subscribedGroupIDs := make(map[int64]bool)
+	if s.userSubRepo != nil {
+		activeSubscriptions, err := s.userSubRepo.ListActiveByUserID(ctx, user.ID)
+		if err != nil {
+			return nil, false, fmt.Errorf("list active subscriptions: %w", err)
+		}
+		for _, sub := range activeSubscriptions {
+			subscribedGroupIDs[sub.GroupID] = true
+		}
+	}
+
+	for i := range allGroups {
+		group := allGroups[i]
+		if group.Platform != platform {
+			continue
+		}
+		if _, ok := selectedGroupIDSet[group.ID]; !ok {
+			continue
+		}
+		if !group.IsActive() {
+			continue
+		}
+		if !s.canUserBindGroupInternal(user, &group, subscribedGroupIDs) {
+			continue
+		}
+		return &group, true, nil
+	}
+
+	return apiKey.Group, false, nil
 }
 
 // canUserBindGroupInternal 内部方法，检查用户是否可以绑定分组（使用预加载的订阅数据）

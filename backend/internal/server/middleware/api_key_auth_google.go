@@ -64,6 +64,13 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 			return
 		}
 
+		apiKey, err = applyEffectiveAPIKeyGroup(c, apiKeyService, apiKey)
+		if err != nil {
+			abortWithGoogleError(c, 500, "Failed to resolve effective API key group")
+			return
+		}
+		SetOpsFallbackAPIKey(c, apiKey)
+
 		// 简易模式：跳过余额和订阅检查
 		if cfg.RunMode == config.RunModeSimple {
 			c.Set(string(ContextKeyAPIKey), apiKey)

@@ -127,6 +127,13 @@ func apiKeyAuthWithSubscription(apiKeyService *service.APIKeyService, subscripti
 			return
 		}
 
+		apiKey, err = applyEffectiveAPIKeyGroup(c, apiKeyService, apiKey)
+		if err != nil {
+			AbortWithError(c, 500, "INTERNAL_ERROR", "Failed to resolve effective API key group")
+			return
+		}
+		SetOpsFallbackAPIKey(c, apiKey)
+
 		// ── 4. SimpleMode → early return ─────────────────────────────
 
 		if cfg.RunMode == config.RunModeSimple {
