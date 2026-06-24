@@ -1095,6 +1095,7 @@ func filterCodexInput(input []any, preserveReferences bool) []any {
 
 func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) []any {
 	filtered := make([]any, 0, len(input))
+	toolSearchOutputCallIDs := codexToolSearchOutputCallIDs(input, opts.PreserveCallIDs)
 	for _, item := range input {
 		m, ok := item.(map[string]any)
 		if !ok {
@@ -1124,6 +1125,13 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) []an
 				return "fc_" + strings.TrimPrefix(id, "call_")
 			}
 			return "fc_" + id
+		}
+
+		if typ == "tool_search_call" {
+			callID := firstNonEmptyString(m["call_id"], m["id"])
+			if _, ok := toolSearchOutputCallIDs[fixCallIDPrefix(callID)]; !ok {
+				continue
+			}
 		}
 
 		if typ == "item_reference" {
@@ -1203,6 +1211,36 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) []an
 		filtered = append(filtered, newItem)
 	}
 	return filtered
+}
+
+func codexToolSearchOutputCallIDs(input []any, preserveCallIDs bool) map[string]struct{} {
+	ids := make(map[string]struct{})
+	fixCallIDPrefix := func(id string) string {
+		id = strings.TrimSpace(id)
+		if preserveCallIDs || id == "" || strings.HasPrefix(id, "fc") {
+			return id
+		}
+		if strings.HasPrefix(id, "call_") {
+			return "fc_" + strings.TrimPrefix(id, "call_")
+		}
+		return "fc_" + id
+	}
+	for _, item := range input {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if typ, _ := m["type"].(string); typ != "tool_search_output" {
+			continue
+		}
+		callID := firstNonEmptyString(m["call_id"], m["id"])
+		callID = fixCallIDPrefix(callID)
+		if callID == "" {
+			continue
+		}
+		ids[callID] = struct{}{}
+	}
+	return ids
 }
 
 func isCodexToolCallItemType(typ string) bool {
