@@ -11,6 +11,8 @@ import (
 
 var ErrUsageBillingRequestIDRequired = errors.New("usage billing request_id is required")
 var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")
+var ErrUsageReservationInsufficientFunds = errors.New("usage reservation insufficient funds")
+var ErrUsageReservationExceeded = errors.New("usage reservation actual cost exceeds reserved amount")
 
 // UsageBillingCommand describes one billable request that must be applied at most once.
 type UsageBillingCommand struct {
@@ -39,6 +41,7 @@ type UsageBillingCommand struct {
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
 	AccountQuotaCost    float64
+	Reservation         *UsageReservation
 }
 
 func (c *UsageBillingCommand) Normalize() {
@@ -120,4 +123,26 @@ type UsageBillingApplyResult struct {
 
 type UsageBillingRepository interface {
 	Apply(ctx context.Context, cmd *UsageBillingCommand) (*UsageBillingApplyResult, error)
+}
+
+type UsageReservationRequest struct {
+	UserID         int64
+	GroupID        *int64
+	SubscriptionID *int64
+	AmountUSD      float64
+}
+
+type UsageReservation struct {
+	UserID                int64
+	GroupID               *int64
+	SubscriptionID        *int64
+	AmountUSD             float64
+	SubscriptionAmountUSD float64
+	BalanceAmountUSD      float64
+}
+
+type UsageReservationRepository interface {
+	ReserveUsage(ctx context.Context, req *UsageReservationRequest) (*UsageReservation, error)
+	SettleUsageReservation(ctx context.Context, reservation *UsageReservation, actualCostUSD float64) (*UsageBillingApplyResult, error)
+	ReleaseUsageReservation(ctx context.Context, reservation *UsageReservation) error
 }

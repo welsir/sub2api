@@ -306,6 +306,33 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 
+	reservationModel := reqModel
+	if channelMapping.Mapped {
+		reservationModel = channelMapping.MappedModel
+	}
+	preparedReservation, err := h.gatewayService.PrepareUsageReservation(c.Request.Context(), apiKey, subscription, reservationModel, body, service.UsageReservationEndpointResponses)
+	if err != nil {
+		reqLog.Info("openai.usage_reservation_failed", zap.Error(err))
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.handleStreamingAwareError(c, status, code, message, streamStarted)
+		return
+	}
+	var usageReservation *service.UsageReservation
+	reservationSubmitted := false
+	if preparedReservation != nil {
+		body = preparedReservation.Body
+		forwardBody = openAIModelMappedBody(body, channelMapping.Mapped, channelMapping.MappedModel, h.gatewayService.ReplaceModelInBody)
+		usageReservation = preparedReservation.Reservation
+	}
+	defer func() {
+		if !reservationSubmitted && usageReservation != nil {
+			h.gatewayService.ReleaseUsageReservation(context.Background(), usageReservation)
+		}
+	}()
+
 	// Generate session hash (header first; fallback to prompt_cache_key)
 	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
 	if h.rejectIfCyberSessionBlocked(c, apiKey, sessionHashBody, reqModel, cyberBlockFormatResponses) {
@@ -500,7 +527,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-		h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
+		submitMode := h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
@@ -513,6 +540,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				Reservation:        usageReservation,
 				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 				CyberBlocked:       cyberBlocked,
 			}); err != nil {
@@ -524,8 +552,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					zap.String("model", reqModel),
 					zap.Int64("account_id", account.ID),
 				).Error("openai.record_usage_failed", zap.Error(err))
+				h.gatewayService.ReleaseUsageReservation(ctx, usageReservation)
 			}
 		})
+		if submitMode == service.UsageRecordSubmitModeDropped {
+			h.gatewayService.ReleaseUsageReservation(context.Background(), usageReservation)
+		} else {
+			reservationSubmitted = true
+		}
 		reqLog.Debug("openai.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
@@ -1699,14 +1733,13 @@ func getContextInt64(c *gin.Context, key string) (int64, bool) {
 	}
 }
 
-func (h *OpenAIGatewayHandler) submitUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
+func (h *OpenAIGatewayHandler) submitUsageRecordTask(parent context.Context, task service.UsageRecordTask) service.UsageRecordSubmitMode {
 	if task == nil {
-		return
+		return service.UsageRecordSubmitModeDropped
 	}
 	task = wrapUsageRecordTaskContext(parent, task)
 	if h.usageRecordWorkerPool != nil {
-		h.usageRecordWorkerPool.Submit(task)
-		return
+		return h.usageRecordWorkerPool.Submit(task)
 	}
 	// 回退路径：worker 池未注入时同步执行，避免退回到无界 goroutine 模式。
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -1720,24 +1753,24 @@ func (h *OpenAIGatewayHandler) submitUsageRecordTask(parent context.Context, tas
 		}
 	}()
 	task(ctx)
+	return service.UsageRecordSubmitModeSync
 }
 
-func (h *OpenAIGatewayHandler) submitOpenAIUsageRecordTask(parent context.Context, result *service.OpenAIForwardResult, task service.UsageRecordTask) {
+func (h *OpenAIGatewayHandler) submitOpenAIUsageRecordTask(parent context.Context, result *service.OpenAIForwardResult, task service.UsageRecordTask) service.UsageRecordSubmitMode {
 	if result != nil && result.ImageCount > 0 {
-		h.submitMandatoryUsageRecordTask(parent, task)
-		return
+		return h.submitMandatoryUsageRecordTask(parent, task)
 	}
-	h.submitUsageRecordTask(parent, task)
+	return h.submitUsageRecordTask(parent, task)
 }
 
-func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, task service.UsageRecordTask) {
+func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(parent context.Context, task service.UsageRecordTask) service.UsageRecordSubmitMode {
 	if task == nil {
-		return
+		return service.UsageRecordSubmitModeDropped
 	}
 	task = wrapUsageRecordTaskContext(parent, task)
 	if h.usageRecordWorkerPool != nil {
 		if mode := h.usageRecordWorkerPool.Submit(task); mode != service.UsageRecordSubmitModeDropped {
-			return
+			return mode
 		}
 		logger.L().With(
 			zap.String("component", "handler.openai_gateway.usage"),
@@ -1754,6 +1787,7 @@ func (h *OpenAIGatewayHandler) submitMandatoryUsageRecordTask(parent context.Con
 		}
 	}()
 	task(ctx)
+	return service.UsageRecordSubmitModeSync
 }
 
 func (h *OpenAIGatewayHandler) acquireImageGenerationSlot(c *gin.Context, streamStarted bool) (func(), bool) {

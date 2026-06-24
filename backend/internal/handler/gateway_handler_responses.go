@@ -140,6 +140,32 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 
+	reservationModel := reqModel
+	if channelMapping.Mapped {
+		reservationModel = channelMapping.MappedModel
+	}
+	preparedReservation, err := h.gatewayService.PrepareUsageReservation(c.Request.Context(), apiKey, subscription, reservationModel, body, service.UsageReservationEndpointResponses)
+	if err != nil {
+		reqLog.Info("gateway.responses.usage_reservation_failed", zap.Error(err))
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.responsesErrorResponse(c, status, code, message)
+		return
+	}
+	var usageReservation *service.UsageReservation
+	reservationSubmitted := false
+	if preparedReservation != nil {
+		body = preparedReservation.Body
+		usageReservation = preparedReservation.Reservation
+	}
+	defer func() {
+		if !reservationSubmitted && usageReservation != nil {
+			h.gatewayService.ReleaseUsageReservation(context.Background(), usageReservation)
+		}
+	}()
+
 	// Parse request for session hash
 	bodyRef := service.NewRequestBodyRef(body)
 	parsedReq, _ := service.ParseGatewayRequest(bodyRef, "responses")
@@ -259,7 +285,7 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
-		h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
+		submitMode := h.submitUsageRecordTask(c.Request.Context(), func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.RecordUsageInput{
 				Result:             result,
 				QuotaPlatform:      quotaPlatform,
@@ -273,14 +299,21 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 				IPAddress:          clientIP,
 				RequestPayloadHash: requestPayloadHash,
 				APIKeyService:      h.apiKeyService,
+				Reservation:        usageReservation,
 				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 			}); err != nil {
 				reqLog.Error("gateway.responses.record_usage_failed",
 					zap.Int64("account_id", account.ID),
 					zap.Error(err),
 				)
+				h.gatewayService.ReleaseUsageReservation(ctx, usageReservation)
 			}
 		})
+		if submitMode == service.UsageRecordSubmitModeDropped {
+			h.gatewayService.ReleaseUsageReservation(context.Background(), usageReservation)
+		} else {
+			reservationSubmitted = true
+		}
 		return
 	}
 }

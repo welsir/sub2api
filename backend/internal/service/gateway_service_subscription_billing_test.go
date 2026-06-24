@@ -83,3 +83,27 @@ func TestBuildUsageBillingCommand_SubscriptionAppliesRateMultiplier(t *testing.T
 		})
 	}
 }
+
+func TestBuildUsageBillingCommand_AttachesReservationForSettlement(t *testing.T) {
+	t.Parallel()
+
+	reservation := &UsageReservation{UserID: 1, AmountUSD: 0.51, BalanceAmountUSD: 0.51}
+	p := &postUsageBillingParams{
+		Cost:        &CostBreakdown{TotalCost: 0.10, ActualCost: 0.10},
+		User:        &User{ID: 1},
+		APIKey:      &APIKey{ID: 2},
+		Account:     &Account{ID: 3},
+		Reservation: reservation,
+	}
+
+	cmd := buildUsageBillingCommand("req-reserved", nil, p)
+	if cmd == nil {
+		t.Fatal("buildUsageBillingCommand returned nil")
+	}
+	if cmd.Reservation != reservation {
+		t.Fatalf("cmd.Reservation was not preserved")
+	}
+	if cmd.BalanceCost != 0.10 {
+		t.Fatalf("BalanceCost = %v, want 0.10", cmd.BalanceCost)
+	}
+}

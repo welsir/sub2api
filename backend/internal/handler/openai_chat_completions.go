@@ -123,6 +123,32 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 
+	reservationModel := reqModel
+	if channelMapping.Mapped {
+		reservationModel = channelMapping.MappedModel
+	}
+	preparedReservation, err := h.gatewayService.PrepareUsageReservation(c.Request.Context(), apiKey, subscription, reservationModel, body, service.UsageReservationEndpointChatCompletions)
+	if err != nil {
+		reqLog.Info("openai_chat_completions.usage_reservation_failed", zap.Error(err))
+		status, code, message, retryAfter := billingErrorDetails(err)
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.Itoa(retryAfter))
+		}
+		h.handleStreamingAwareError(c, status, code, message, streamStarted)
+		return
+	}
+	var usageReservation *service.UsageReservation
+	reservationSubmitted := false
+	if preparedReservation != nil {
+		body = preparedReservation.Body
+		usageReservation = preparedReservation.Reservation
+	}
+	defer func() {
+		if !reservationSubmitted && usageReservation != nil {
+			h.gatewayService.ReleaseUsageReservation(context.Background(), usageReservation)
+		}
+	}()
+
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
 
@@ -292,7 +318,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account)
 
 		cyberBlocked := service.GetOpsCyberPolicy(c) != nil
-		h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
+		submitMode := h.submitOpenAIUsageRecordTask(c.Request.Context(), result, func(ctx context.Context) {
 			if err := h.gatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
 				Result:             result,
 				APIKey:             apiKey,
@@ -304,6 +330,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 				UserAgent:          userAgent,
 				IPAddress:          clientIP,
 				APIKeyService:      h.apiKeyService,
+				Reservation:        usageReservation,
 				ChannelUsageFields: channelMapping.ToUsageFields(reqModel, result.UpstreamModel),
 				CyberBlocked:       cyberBlocked,
 			}); err != nil {
@@ -315,8 +342,14 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 					zap.String("model", reqModel),
 					zap.Int64("account_id", account.ID),
 				).Error("openai_chat_completions.record_usage_failed", zap.Error(err))
+				h.gatewayService.ReleaseUsageReservation(ctx, usageReservation)
 			}
 		})
+		if submitMode == service.UsageRecordSubmitModeDropped {
+			h.gatewayService.ReleaseUsageReservation(context.Background(), usageReservation)
+		} else {
+			reservationSubmitted = true
+		}
 		reqLog.Debug("openai_chat_completions.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("switch_count", switchCount),
