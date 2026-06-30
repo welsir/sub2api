@@ -75,6 +75,105 @@ func TestAPIKeyAuthAppliesEffectiveOpenAIGroupFromRequestModel(t *testing.T) {
 	require.Equal(t, anthropicGroup.ID, *apiKey.GroupID, "effective group must not mutate the cached API key")
 }
 
+func TestAPIKeyAuthAppliesEffectiveClaudeGroupFromOpenAICompatModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	openAIGroup := service.Group{ID: 2, Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true, IsExclusive: true, SubscriptionType: service.SubscriptionTypeStandard}
+	claudeGroup := service.Group{ID: 4, Platform: service.PlatformAnthropic, Status: service.StatusActive, Hydrated: true, IsExclusive: true, SubscriptionType: service.SubscriptionTypeStandard}
+	user := &service.User{ID: 7, Role: service.RoleUser, Status: service.StatusActive, Balance: 10, AllowedGroups: []int64{openAIGroup.ID, claudeGroup.ID}}
+	apiKey := &service.APIKey{
+		ID:       100,
+		UserID:   user.ID,
+		Key:      "omni-key",
+		Status:   service.StatusActive,
+		User:     user,
+		GroupID:  &openAIGroup.ID,
+		GroupIDs: []int64{openAIGroup.ID, claudeGroup.ID},
+		Group:    &openAIGroup,
+	}
+	apiKeyService := service.NewAPIKeyService(
+		fakeAPIKeyRepo{getByKey: cloneAPIKeyForEffectiveGroupTest(apiKey)},
+		&effectiveAuthUserRepoStub{user: user},
+		&effectiveAuthGroupRepoStub{active: []service.Group{openAIGroup, claudeGroup}},
+		nil,
+		nil,
+		nil,
+		&config.Config{RunMode: config.RunModeSimple},
+	)
+
+	router := gin.New()
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, &config.Config{RunMode: config.RunModeSimple})))
+	router.POST("/v1/responses", func(c *gin.Context) {
+		requestAPIKey, ok := GetAPIKeyFromContext(c)
+		require.True(t, ok)
+		require.NotNil(t, requestAPIKey.GroupID)
+		require.Equal(t, claudeGroup.ID, *requestAPIKey.GroupID)
+		require.NotNil(t, requestAPIKey.Group)
+		require.Equal(t, service.PlatformAnthropic, requestAPIKey.Group.Platform)
+
+		groupFromContext, ok := c.Request.Context().Value(ctxkey.Group).(*service.Group)
+		require.True(t, ok)
+		require.Equal(t, claudeGroup.ID, groupFromContext.ID)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"claude-sonnet-4-20250514","input":"hi"}`))
+	req.Header.Set("x-api-key", apiKey.Key)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, openAIGroup.ID, *apiKey.GroupID, "effective group must not mutate the cached API key")
+}
+
+func TestAPIKeyAuthAppliesEffectiveClaudeGroupFromOpenAICompatAliasModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	openAIGroup := service.Group{ID: 2, Platform: service.PlatformOpenAI, Status: service.StatusActive, Hydrated: true, IsExclusive: true, SubscriptionType: service.SubscriptionTypeStandard}
+	claudeGroup := service.Group{ID: 4, Platform: service.PlatformAnthropic, Status: service.StatusActive, Hydrated: true, IsExclusive: true, SubscriptionType: service.SubscriptionTypeStandard}
+	user := &service.User{ID: 7, Role: service.RoleUser, Status: service.StatusActive, Balance: 10, AllowedGroups: []int64{openAIGroup.ID, claudeGroup.ID}}
+	apiKey := &service.APIKey{
+		ID:       100,
+		UserID:   user.ID,
+		Key:      "omni-key",
+		Status:   service.StatusActive,
+		User:     user,
+		GroupID:  &openAIGroup.ID,
+		GroupIDs: []int64{openAIGroup.ID, claudeGroup.ID},
+		Group:    &openAIGroup,
+	}
+	apiKeyService := service.NewAPIKeyService(
+		fakeAPIKeyRepo{getByKey: cloneAPIKeyForEffectiveGroupTest(apiKey)},
+		&effectiveAuthUserRepoStub{user: user},
+		&effectiveAuthGroupRepoStub{active: []service.Group{openAIGroup, claudeGroup}},
+		nil,
+		nil,
+		nil,
+		&config.Config{RunMode: config.RunModeSimple},
+	)
+
+	router := gin.New()
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, &config.Config{RunMode: config.RunModeSimple})))
+	router.POST("/v1/responses", func(c *gin.Context) {
+		requestAPIKey, ok := GetAPIKeyFromContext(c)
+		require.True(t, ok)
+		require.NotNil(t, requestAPIKey.GroupID)
+		require.Equal(t, claudeGroup.ID, *requestAPIKey.GroupID)
+		require.NotNil(t, requestAPIKey.Group)
+		require.Equal(t, service.PlatformAnthropic, requestAPIKey.Group.Platform)
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"sonnet-4","input":"hi"}`))
+	req.Header.Set("x-api-key", apiKey.Key)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
 func TestAPIKeyAuthWithSubscriptionGoogleAppliesEffectiveGeminiGroupFromNativePath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

@@ -115,7 +115,11 @@ func inferPlatformFromModel(model string) string {
 	switch {
 	case strings.HasPrefix(normalized, "gemini-"):
 		return service.PlatformGemini
-	case strings.HasPrefix(normalized, "claude-"):
+	case strings.HasPrefix(normalized, "claude-"),
+		strings.HasPrefix(normalized, "anthropic/claude-"),
+		strings.HasPrefix(normalized, "sonnet-"),
+		strings.HasPrefix(normalized, "opus-"),
+		strings.HasPrefix(normalized, "haiku-"):
 		return service.PlatformAnthropic
 	case strings.HasPrefix(normalized, "gpt-"),
 		strings.HasPrefix(normalized, "chatgpt-"),
