@@ -131,6 +131,60 @@ func TestGatewayModels_GeminiGroupFiltersMappedModelsByPlatform(t *testing.T) {
 	require.Equal(t, []string{"gemini-2.5-flash"}, modelIDsForTest(got.Data))
 }
 
+func TestGatewayModels_APIKeySelectedGroupsReturnModelUnion(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	openAIGroupID := int64(30)
+	geminiGroupID := int64(31)
+	h := newGatewayModelsHandlerForTest(
+		&gatewayModelsAccountRepoStub{
+			byGroup: map[int64][]service.Account{
+				openAIGroupID: {
+					{
+						ID:       1,
+						Platform: service.PlatformOpenAI,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{
+								"gpt-5.4": "gpt-5.4",
+								"shared":  "shared",
+							},
+						},
+					},
+				},
+				geminiGroupID: {
+					{
+						ID:       2,
+						Platform: service.PlatformGemini,
+						Credentials: map[string]any{
+							"model_mapping": map[string]any{
+								"gemini-2.5-flash": "gemini-2.5-flash",
+								"shared":           "shared",
+							},
+						},
+					},
+				},
+			},
+		},
+	)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	c.Set(string(middleware2.ContextKeyAPIKey), &service.APIKey{
+		GroupID:  &openAIGroupID,
+		GroupIDs: []int64{openAIGroupID, geminiGroupID},
+		Group:    &service.Group{ID: openAIGroupID, Platform: service.PlatformOpenAI},
+	})
+
+	h.Models(c)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var got gatewayModelsResponseForTest
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.Equal(t, []string{"gemini-2.5-flash", "gpt-5.4", "shared"}, modelIDsForTest(got.Data))
+}
+
 func TestGatewayModels_CustomModelsListDisabledKeepsOriginalModels(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

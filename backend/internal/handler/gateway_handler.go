@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -982,12 +983,16 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		groupID = &apiKey.Group.ID
 		platform = apiKey.Group.Platform
 	}
+	forcedPlatformSet := false
 	if forcedPlatform, ok := middleware2.GetForcePlatformFromContext(c); ok && strings.TrimSpace(forcedPlatform) != "" {
 		platform = forcedPlatform
+		forcedPlatformSet = true
 	}
 
 	// Get available models from account configurations for the selected group platform.
-	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
+	// When an API key is bound to multiple groups, /v1/models should expose the
+	// union of those groups so clients can discover every model this key may use.
+	availableModels := h.availableModelsForAPIKey(c.Request.Context(), apiKey, groupID, platform, forcedPlatformSet)
 	if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
 		availableModels = filterModelsByCustomList(availableModels, defaultModelIDsForPlatform(platform), apiKey.Group.ModelsListConfig.Models)
 		writeCustomModelsList(c, platform, availableModels)
@@ -1020,6 +1025,65 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		"object": "list",
 		"data":   claude.DefaultModels,
 	})
+}
+
+func (h *GatewayHandler) availableModelsForAPIKey(ctx context.Context, apiKey *service.APIKey, groupID *int64, platform string, forcedPlatform bool) []string {
+	if h == nil || h.gatewayService == nil {
+		return nil
+	}
+	if forcedPlatform || apiKey == nil || len(apiKey.GroupIDs) == 0 {
+		return h.gatewayService.GetAvailableModels(ctx, groupID, platform)
+	}
+
+	groupIDs := append([]int64(nil), apiKey.GroupIDs...)
+	if apiKey.GroupID != nil && *apiKey.GroupID > 0 {
+		groupIDs = append(groupIDs, *apiKey.GroupID)
+	} else if apiKey.Group != nil && apiKey.Group.ID > 0 {
+		groupIDs = append(groupIDs, apiKey.Group.ID)
+	}
+	groupIDs = normalizeGatewayModelGroupIDs(groupIDs)
+	if len(groupIDs) <= 1 {
+		return h.gatewayService.GetAvailableModels(ctx, groupID, platform)
+	}
+
+	modelSet := make(map[string]struct{})
+	for _, selectedGroupID := range groupIDs {
+		selectedGroupID := selectedGroupID
+		models := h.gatewayService.GetAvailableModels(ctx, &selectedGroupID, "")
+		for _, model := range models {
+			model = strings.TrimSpace(model)
+			if model == "" {
+				continue
+			}
+			modelSet[model] = struct{}{}
+		}
+	}
+	if len(modelSet) == 0 {
+		return nil
+	}
+
+	models := make([]string, 0, len(modelSet))
+	for model := range modelSet {
+		models = append(models, model)
+	}
+	sort.Strings(models)
+	return models
+}
+
+func normalizeGatewayModelGroupIDs(groupIDs []int64) []int64 {
+	seen := make(map[int64]struct{}, len(groupIDs))
+	out := make([]int64, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			continue
+		}
+		if _, ok := seen[groupID]; ok {
+			continue
+		}
+		seen[groupID] = struct{}{}
+		out = append(out, groupID)
+	}
+	return out
 }
 
 func writeModelsList(c *gin.Context, modelIDs []string) {
