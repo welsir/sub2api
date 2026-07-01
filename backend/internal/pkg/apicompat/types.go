@@ -253,6 +253,8 @@ type ResponsesTool struct {
 	Description string          `json:"description,omitempty"`
 	Parameters  json.RawMessage `json:"parameters,omitempty"`
 	Strict      *bool           `json:"strict,omitempty"`
+	Tools       []ResponsesTool `json:"tools,omitempty"`    // type=namespace
+	Function    *ResponsesTool  `json:"function,omitempty"` // legacy/chat-style function wrapper
 }
 
 // ResponsesResponse is the non-streaming response from POST /v1/responses.

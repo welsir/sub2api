@@ -1,6 +1,7 @@
 package apicompat
 
 import (
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -51,50 +52,7 @@ func ResponsesToAnthropicRequest(req *ResponsesRequest) (*AnthropicRequest, erro
 		out.ToolChoice = tc
 	}
 
-	// reasoning.effort → output_config.effort + thinking
-	if req.Reasoning != nil && req.Reasoning.Effort != "" {
-		effort := mapResponsesEffortToAnthropic(req.Reasoning.Effort)
-		out.OutputConfig = &AnthropicOutputConfig{Effort: effort}
-		// Enable thinking for non-low efforts
-		if effort != "low" {
-			out.Thinking = &AnthropicThinking{
-				Type:         "enabled",
-				BudgetTokens: defaultThinkingBudget(effort),
-			}
-		}
-	}
-
 	return out, nil
-}
-
-// defaultThinkingBudget returns a sensible thinking budget based on effort level.
-func defaultThinkingBudget(effort string) int {
-	switch effort {
-	case "low":
-		return 1024
-	case "medium":
-		return 4096
-	case "high":
-		return 10240
-	case "max":
-		return 32768
-	default:
-		return 10240
-	}
-}
-
-// mapResponsesEffortToAnthropic converts OpenAI Responses reasoning effort to
-// Anthropic effort levels. Reverse of mapAnthropicEffortToResponses.
-//
-//	low    → low
-//	medium → medium
-//	high   → high
-//	xhigh  → max
-func mapResponsesEffortToAnthropic(effort string) string {
-	if effort == "xhigh" {
-		return "max"
-	}
-	return effort // low→low, medium→medium, high→high, unknown→passthrough
 }
 
 // convertResponsesInputToAnthropic extracts system prompt and messages from
@@ -511,30 +469,136 @@ func parseContentBlocks(raw json.RawMessage) []AnthropicContentBlock {
 // Reverse of convertAnthropicToolsToResponses.
 func convertResponsesToAnthropicTools(tools []ResponsesTool) []AnthropicTool {
 	var out []AnthropicTool
-	for _, t := range tools {
-		switch t.Type {
-		case "web_search", "google_search", "web_search_20250305":
+	seen := make(map[string]struct{})
+	var appendTool func(ResponsesTool, string)
+	appendTool = func(t ResponsesTool, namespace string) {
+		toolType := strings.ToLower(strings.TrimSpace(t.Type))
+		switch toolType {
+		case "namespace":
+			nextNamespace := anthropicNamespacePrefix(namespace, t.Name)
+			for _, inner := range t.Tools {
+				appendTool(inner, nextNamespace)
+			}
+			return
+		case "web_search", "web_search_preview", "google_search", "web_search_20250305":
+			return
+		case "tool_search":
+			name := anthropicToolName(firstNonEmpty(t.Name, "tool_search"), namespace)
+			if name == "" {
+				return
+			}
+			if _, ok := seen[name]; ok {
+				return
+			}
+			seen[name] = struct{}{}
+			parameters := t.Parameters
+			if len(parameters) == 0 {
+				parameters = json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`)
+			}
 			out = append(out, AnthropicTool{
-				Type: "web_search_20250305",
-				Name: "web_search",
+				Name:        name,
+				Description: firstNonEmpty(t.Description, "Search for deferred local tools."),
+				InputSchema: normalizeAnthropicInputSchema(parameters),
 			})
-		case "function":
-			out = append(out, AnthropicTool{
-				Name:        t.Name,
-				Description: t.Description,
-				InputSchema: normalizeAnthropicInputSchema(t.Parameters),
-			})
-		default:
-			// Pass through unknown tool types
-			out = append(out, AnthropicTool{
-				Type:        t.Type,
-				Name:        t.Name,
-				Description: t.Description,
-				InputSchema: t.Parameters,
-			})
+			return
 		}
+
+		fnName, description, parameters, ok := responsesToolFunctionShape(t)
+		if !ok {
+			return
+		}
+		name := anthropicToolName(fnName, namespace)
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		if len(parameters) == 0 && toolType == "custom" {
+			parameters = json.RawMessage(`{"type":"object","properties":{"input":{"type":"string","description":"Free-form input passed verbatim to the tool."}},"required":["input"]}`)
+		}
+		out = append(out, AnthropicTool{
+			Name:        name,
+			Description: description,
+			InputSchema: normalizeAnthropicInputSchema(parameters),
+		})
+	}
+
+	for _, t := range tools {
+		appendTool(t, "")
 	}
 	return out
+}
+
+func responsesToolFunctionShape(t ResponsesTool) (name string, description string, parameters json.RawMessage, ok bool) {
+	if t.Function != nil {
+		t = *t.Function
+	}
+	name = strings.TrimSpace(t.Name)
+	if name == "" {
+		return "", "", nil, false
+	}
+	description = t.Description
+	parameters = t.Parameters
+	return name, description, parameters, true
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func anthropicNamespacePrefix(parent string, name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return parent
+	}
+	name = strings.TrimSuffix(name, "__")
+	prefix := name + "__"
+	if parent == "" {
+		return prefix
+	}
+	return parent + prefix
+}
+
+func anthropicToolName(name string, namespace string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if namespace != "" && !strings.HasPrefix(name, namespace) {
+		name = namespace + name
+	}
+	name = strings.Map(func(r rune) rune {
+		switch {
+		case r >= 'a' && r <= 'z':
+			return r
+		case r >= 'A' && r <= 'Z':
+			return r
+		case r >= '0' && r <= '9':
+			return r
+		case r == '_' || r == '-':
+			return r
+		default:
+			return '_'
+		}
+	}, name)
+	name = strings.Trim(name, "_-")
+	if len(name) <= 64 {
+		return name
+	}
+	sum := sha1.Sum([]byte(name))
+	suffix := fmt.Sprintf("_%x", sum[:4])
+	prefixLen := 64 - len(suffix)
+	if prefixLen < 1 {
+		return fmt.Sprintf("%x", sum[:8])
+	}
+	return name[:prefixLen] + suffix
 }
 
 // normalizeAnthropicInputSchema ensures the input_schema has a "type" field.

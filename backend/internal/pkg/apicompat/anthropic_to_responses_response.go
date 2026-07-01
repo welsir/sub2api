@@ -151,6 +151,7 @@ type AnthropicEventToResponsesState struct {
 
 	// For message output: accumulate text parts
 	ContentIndex int
+	CurrentText  string
 
 	// For function_call: track per-output info
 	CurrentCallID string
@@ -278,6 +279,7 @@ func anthToResHandleContentBlockStart(evt *AnthropicStreamEvent, state *Anthropi
 			state.CurrentItemID = generateItemID()
 			state.CurrentItemType = "message"
 			state.ContentIndex = 0
+			state.CurrentText = ""
 
 			events = append(events, makeResponsesEvent(state, "response.output_item.added", &ResponsesStreamEvent{
 				OutputIndex: state.OutputIndex,
@@ -324,6 +326,7 @@ func anthToResHandleContentBlockDelta(evt *AnthropicStreamEvent, state *Anthropi
 		if evt.Delta.Text == "" {
 			return nil
 		}
+		state.CurrentText += evt.Delta.Text
 		return []ResponsesStreamEvent{makeResponsesEvent(state, "response.output_text.delta", &ResponsesStreamEvent{
 			OutputIndex:  state.OutputIndex,
 			ContentIndex: state.ContentIndex,
@@ -396,6 +399,7 @@ func anthToResHandleContentBlockStop(evt *AnthropicStreamEvent, state *Anthropic
 				OutputIndex:  state.OutputIndex,
 				ContentIndex: state.ContentIndex,
 				ItemID:       state.CurrentItemID,
+				Text:         state.CurrentText,
 			}),
 		}
 	}
@@ -450,23 +454,37 @@ func closeCurrentResponsesItem(state *AnthropicEventToResponsesState) []Response
 
 	itemType := state.CurrentItemType
 	itemID := state.CurrentItemID
+	itemContent := []ResponsesContentPart(nil)
+	if itemType == "message" {
+		itemContent = []ResponsesContentPart{{Type: "output_text", Text: state.CurrentText}}
+	}
 
 	// Reset
 	state.CurrentItemType = ""
 	state.CurrentItemID = ""
 	state.CurrentCallID = ""
 	state.CurrentName = ""
+	state.CurrentText = ""
 	state.OutputIndex++
 	state.ContentIndex = 0
 
 	return []ResponsesStreamEvent{makeResponsesEvent(state, "response.output_item.done", &ResponsesStreamEvent{
 		OutputIndex: state.OutputIndex - 1, // Use the index before increment
 		Item: &ResponsesOutput{
-			Type:   itemType,
-			ID:     itemID,
-			Status: "completed",
+			Type:    itemType,
+			ID:      itemID,
+			Role:    roleForResponsesItem(itemType),
+			Content: itemContent,
+			Status:  "completed",
 		},
 	})}
+}
+
+func roleForResponsesItem(itemType string) string {
+	if itemType == "message" {
+		return "assistant"
+	}
+	return ""
 }
 
 func makeResponsesCreatedEvent(state *AnthropicEventToResponsesState) ResponsesStreamEvent {

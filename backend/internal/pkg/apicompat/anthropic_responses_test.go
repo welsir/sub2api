@@ -1256,6 +1256,83 @@ func TestResponsesToAnthropicRequest_ToolChoiceLegacyFunctionName(t *testing.T) 
 	assert.Equal(t, "get_weather", tc["name"])
 }
 
+func TestResponsesToAnthropicRequest_CodexNamespaceAndCustomTools(t *testing.T) {
+	req := &ResponsesRequest{
+		Model: "claude-sonnet-4-6",
+		Input: json.RawMessage(`[{"role":"user","content":"Hello"}]`),
+		Tools: []ResponsesTool{
+			{
+				Type: "namespace",
+				Name: "mcp__browser",
+				Tools: []ResponsesTool{
+					{
+						Type:        "function",
+						Name:        "open",
+						Description: "Open a browser URL.",
+						Parameters:  json.RawMessage(`{"type":"object","properties":{"url":{"type":"string","description":"URL to open"}},"required":["url"]}`),
+					},
+				},
+			},
+			{
+				Type:        "custom",
+				Name:        "apply_patch",
+				Description: "Apply a patch.",
+			},
+			{
+				Type:       "tool_search",
+				Parameters: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`),
+			},
+			{
+				Type: "web_search",
+			},
+			{
+				Type:        "computer_use",
+				Name:        "click",
+				Description: "Click a UI element.",
+				Parameters:  json.RawMessage(`{"type":"object","properties":{"x":{"type":"integer"},"y":{"type":"integer"}}}`),
+			},
+			{
+				Type:        "namespace",
+				Name:        "empty",
+				Description: "Container-only tools must not be forwarded.",
+			},
+		},
+	}
+
+	resp, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+	require.Len(t, resp.Tools, 4)
+
+	assert.Equal(t, "mcp__browser__open", resp.Tools[0].Name)
+	assert.Empty(t, resp.Tools[0].Type)
+	assert.Equal(t, "Open a browser URL.", resp.Tools[0].Description)
+	assert.JSONEq(t, `{"type":"object","properties":{"url":{"type":"string","description":"URL to open"}},"required":["url"]}`, string(resp.Tools[0].InputSchema))
+
+	assert.Equal(t, "apply_patch", resp.Tools[1].Name)
+	assert.Empty(t, resp.Tools[1].Type)
+	assert.JSONEq(t, `{"type":"object","properties":{"input":{"type":"string","description":"Free-form input passed verbatim to the tool."}},"required":["input"]}`, string(resp.Tools[1].InputSchema))
+
+	assert.Equal(t, "tool_search", resp.Tools[2].Name)
+	assert.Empty(t, resp.Tools[2].Type)
+	assert.JSONEq(t, `{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`, string(resp.Tools[2].InputSchema))
+
+	assert.Equal(t, "click", resp.Tools[3].Name)
+	assert.Empty(t, resp.Tools[3].Type)
+}
+
+func TestResponsesToAnthropicRequest_DoesNotMapReasoningToThinking(t *testing.T) {
+	req := &ResponsesRequest{
+		Model:     "claude-sonnet-4-6",
+		Input:     json.RawMessage(`"Only output OK"`),
+		Reasoning: &ResponsesReasoning{Effort: "medium"},
+	}
+
+	resp, err := ResponsesToAnthropicRequest(req)
+	require.NoError(t, err)
+	assert.Nil(t, resp.Thinking)
+	assert.Nil(t, resp.OutputConfig)
+}
+
 // ---------------------------------------------------------------------------
 // Image content block conversion tests
 // ---------------------------------------------------------------------------
@@ -1732,4 +1809,54 @@ func TestAnthropicEventToResponses_CacheTokensFromMessageDelta(t *testing.T) {
 	assert.Equal(t, 8, completed.Response.Usage.OutputTokens)
 	require.NotNil(t, completed.Response.Usage.InputTokensDetails)
 	assert.Equal(t, 11, completed.Response.Usage.InputTokensDetails.CachedTokens)
+}
+
+func TestAnthropicEventToResponses_TextDoneCarriesAccumulatedText(t *testing.T) {
+	state := NewAnthropicEventToResponsesState()
+	idx := 0
+
+	AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type: "message_start",
+		Message: &AnthropicResponse{
+			ID:    "msg_text_done",
+			Model: "claude-sonnet-4-6",
+		},
+	}, state)
+	AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:         "content_block_start",
+		Index:        &idx,
+		ContentBlock: &AnthropicContentBlock{Type: "text"},
+	}, state)
+	AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_delta",
+		Index: &idx,
+		Delta: &AnthropicDelta{Type: "text_delta", Text: "O"},
+	}, state)
+	AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_delta",
+		Index: &idx,
+		Delta: &AnthropicDelta{Type: "text_delta", Text: "K"},
+	}, state)
+
+	doneEvents := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{
+		Type:  "content_block_stop",
+		Index: &idx,
+	}, state)
+	require.Len(t, doneEvents, 1)
+	assert.Equal(t, "response.output_text.done", doneEvents[0].Type)
+	assert.Equal(t, "OK", doneEvents[0].Text)
+
+	stopEvents := AnthropicEventToResponsesEvents(&AnthropicStreamEvent{Type: "message_stop"}, state)
+	require.NotEmpty(t, stopEvents)
+	var itemDone *ResponsesStreamEvent
+	for i := range stopEvents {
+		if stopEvents[i].Type == "response.output_item.done" {
+			itemDone = &stopEvents[i]
+			break
+		}
+	}
+	require.NotNil(t, itemDone)
+	require.NotNil(t, itemDone.Item)
+	require.Len(t, itemDone.Item.Content, 1)
+	assert.Equal(t, "OK", itemDone.Item.Content[0].Text)
 }
