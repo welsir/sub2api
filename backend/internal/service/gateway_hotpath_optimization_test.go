@@ -580,6 +580,34 @@ func TestGetAvailableModels_ErrorAndGlobalListBranches(t *testing.T) {
 	require.Equal(t, int64(1), okRepo.listAllCalls.Load())
 }
 
+func TestGetAvailableModels_IgnoresImplicitPlatformDefaults(t *testing.T) {
+	resetGatewayHotpathStatsForTest()
+
+	groupID := int64(10)
+	repo := &modelsListAccountRepoStub{
+		byGroup: map[int64][]Account{
+			groupID: {
+				{
+					ID:          1,
+					Platform:    PlatformAntigravity,
+					Status:      StatusActive,
+					Schedulable: true,
+					Credentials: map[string]any{},
+				},
+			},
+		},
+	}
+
+	svc := &GatewayService{
+		accountRepo:        repo,
+		modelsListCache:    gocache.New(time.Minute, time.Minute),
+		modelsListCacheTTL: time.Minute,
+	}
+
+	require.Nil(t, svc.GetAvailableModels(context.Background(), &groupID, ""))
+	require.Equal(t, int64(1), repo.listByGroupCalls.Load())
+}
+
 func TestGatewayHotpathHelpers_CacheTTLAndStickyContext(t *testing.T) {
 	t.Run("resolve_user_group_rate_cache_ttl", func(t *testing.T) {
 		require.Equal(t, defaultUserGroupRateCacheTTL, resolveUserGroupRateCacheTTL(nil))

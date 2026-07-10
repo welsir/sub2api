@@ -105,7 +105,7 @@ func TestAccountHandlerGetAvailableModels_GrokUsesXAIModels(t *testing.T) {
 	require.Equal(t, "grok-4.3", resp.Data[0].ID)
 }
 
-func TestAccountHandlerGetAvailableModels_GrokDefaultsToXAIModelsWithoutMapping(t *testing.T) {
+func TestAccountHandlerGetAvailableModels_GrokWithoutExplicitMappingReturnsEmptyList(t *testing.T) {
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
@@ -130,16 +130,7 @@ func TestAccountHandlerGetAvailableModels_GrokDefaultsToXAIModelsWithoutMapping(
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.NotEmpty(t, resp.Data)
-
-	var ids []string
-	for _, model := range resp.Data {
-		id := model.ID
-		ids = append(ids, id)
-		require.NotContains(t, strings.ToLower(id), "claude")
-	}
-	require.Contains(t, ids, "grok-4.3")
-	require.Contains(t, ids, "grok-build-0.1")
+	require.Empty(t, resp.Data)
 }
 
 func TestAccountHandlerGetAvailableModels_OpenAIOAuthUsesExplicitModelMapping(t *testing.T) {
@@ -176,7 +167,7 @@ func TestAccountHandlerGetAvailableModels_OpenAIOAuthUsesExplicitModelMapping(t 
 	require.Equal(t, "gpt-5", resp.Data[0].ID)
 }
 
-func TestAccountHandlerGetAvailableModels_OpenAIOAuthPassthroughFallsBackToDefaults(t *testing.T) {
+func TestAccountHandlerGetAvailableModels_OpenAIOAuthPassthroughUsesExplicitMapping(t *testing.T) {
 	svc := &availableModelsAdminService{
 		stubAdminService: newStubAdminService(),
 		account: service.Account{
@@ -209,8 +200,62 @@ func TestAccountHandlerGetAvailableModels_OpenAIOAuthPassthroughFallsBackToDefau
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
-	require.NotEmpty(t, resp.Data)
-	require.NotEqual(t, "gpt-5", resp.Data[0].ID)
+	require.Len(t, resp.Data, 1)
+	require.Equal(t, "gpt-5", resp.Data[0].ID)
+}
+
+func TestAccountHandlerGetAvailableModels_OpenAIWithoutExplicitMappingReturnsEmptyList(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       46,
+			Name:     "openai-empty",
+			Platform: service.PlatformOpenAI,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusActive,
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/46/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Empty(t, resp.Data)
+}
+
+func TestAccountHandlerGetAvailableModels_AntigravityWithoutExplicitMappingReturnsEmptyList(t *testing.T) {
+	svc := &availableModelsAdminService{
+		stubAdminService: newStubAdminService(),
+		account: service.Account{
+			ID:       47,
+			Name:     "antigravity-empty",
+			Platform: service.PlatformAntigravity,
+			Type:     service.AccountTypeOAuth,
+			Status:   service.StatusActive,
+		},
+	}
+	router := setupAvailableModelsRouter(svc)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/accounts/47/models", nil)
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Empty(t, resp.Data)
 }
 
 func TestAccountHandlerGetAvailableModels_OpenAISparkShadowReturnsMappingModels(t *testing.T) {

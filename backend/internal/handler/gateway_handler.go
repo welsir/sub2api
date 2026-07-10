@@ -987,8 +987,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 
 // Models handles listing available models
 // GET /v1/models
-// Returns models based on account configurations (model_mapping whitelist)
-// Falls back to default models if no whitelist is configured
+// Returns only models explicitly declared by accounts in the API key scope.
 func (h *GatewayHandler) Models(c *gin.Context) {
 	apiKey, _ := middleware2.GetAPIKeyFromContext(c)
 
@@ -1003,41 +1002,31 @@ func (h *GatewayHandler) Models(c *gin.Context) {
 		platform = forcedPlatform
 	}
 
-	// Get available models from account configurations for the selected group platform.
 	availableModels := h.gatewayService.GetAvailableModels(c.Request.Context(), groupID, platform)
 	if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
-		fallbackModels := defaultModelIDsForPlatform(platform)
-		availableModels = filterModelsByCustomList(customModelsListSource(platform, availableModels, fallbackModels), fallbackModels, apiKey.Group.ModelsListConfig.Models)
-		writeCustomModelsList(c, platform, availableModels)
-		return
+		availableModels = filterModelsByCustomList(availableModels, nil, apiKey.Group.ModelsListConfig.Models)
 	}
 
 	if len(availableModels) > 0 {
-		writeModelsList(c, availableModels)
+		if apiKey != nil && apiKey.Group != nil && apiKey.Group.CustomModelsListEnabled() {
+			writeCustomModelsList(c, platform, availableModels)
+		} else {
+			writeModelsList(c, availableModels)
+		}
 		return
 	}
 
-	// Fallback to default models
+	message := "No models available for this API key"
 	if platform == service.PlatformOpenAI {
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   openai.DefaultModels,
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"error": gin.H{
+				"type":    "service_unavailable",
+				"message": message,
+			},
 		})
 		return
 	}
-
-	if platform == service.PlatformGemini {
-		c.JSON(http.StatusOK, gin.H{
-			"object": "list",
-			"data":   geminicli.DefaultModels,
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"object": "list",
-		"data":   claude.DefaultModels,
-	})
+	h.errorResponse(c, http.StatusServiceUnavailable, "api_error", message)
 }
 
 func writeModelsList(c *gin.Context, modelIDs []string) {

@@ -1127,22 +1127,23 @@ func (s *GatewayService) GetAvailableModels(ctx context.Context, groupID *int64,
 		accounts = filtered
 	}
 
-	// Collect unique models from all accounts
+	// Collect only model mappings explicitly stored on accounts. Runtime
+	// platform defaults remain valid for forwarding but must not expand the
+	// public model catalog.
 	modelSet := make(map[string]struct{})
-	hasAnyMapping := false
+	hasAnyExplicitMapping := false
 
 	for _, acc := range accounts {
-		mapping := acc.GetModelMapping()
+		mapping := acc.GetExplicitModelMapping()
 		if len(mapping) > 0 {
-			hasAnyMapping = true
+			hasAnyExplicitMapping = true
 			for model := range mapping {
 				modelSet[model] = struct{}{}
 			}
 		}
 	}
 
-	// If no account has model_mapping, return nil (use default)
-	if !hasAnyMapping {
+	if !hasAnyExplicitMapping {
 		if s.modelsListCache != nil {
 			s.modelsListCache.Set(cacheKey, []string(nil), s.modelsListCacheTTL)
 			modelsListCacheStoreTotal.Add(1)

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/Wei-Shaw/sub2api/internal/domain"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMatchWildcard(t *testing.T) {
@@ -347,6 +348,30 @@ func TestAccountGetModelMapping_AntigravityNormalizesGemini31ProAliases(t *testi
 	if got := mapping["gemini-3.1-pro-preview"]; got != domain.AntigravityGemini31ProAgentModel {
 		t.Fatalf("expected gemini-3.1-pro-preview to map to %q, got %q", domain.AntigravityGemini31ProAgentModel, got)
 	}
+}
+
+func TestAccountGetExplicitModelMappingDoesNotInjectPlatformDefaults(t *testing.T) {
+	account := &Account{
+		Platform:    PlatformAntigravity,
+		Credentials: map[string]any{},
+	}
+
+	require.Nil(t, account.GetExplicitModelMapping())
+}
+
+func TestAccountGetExplicitModelMappingReturnsStoredEntries(t *testing.T) {
+	account := &Account{
+		Platform: PlatformAntigravity,
+		Credentials: map[string]any{
+			"model_mapping": map[string]any{
+				"claude-sonnet-4-6": "claude-sonnet-4-6-thinking",
+			},
+		},
+	}
+
+	require.Equal(t, map[string]string{
+		"claude-sonnet-4-6": "claude-sonnet-4-6-thinking",
+	}, account.GetExplicitModelMapping())
 }
 
 func TestAccountGetModelMapping_AntigravityPreservesGemini31ProOverrides(t *testing.T) {

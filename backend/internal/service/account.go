@@ -552,6 +552,16 @@ func (a *Account) GetModelMapping() map[string]string {
 	return mapping
 }
 
+// GetExplicitModelMapping returns only the model_mapping stored on the account.
+// Runtime platform defaults remain available for forwarding but are not public
+// model catalog entries for company-scoped API keys.
+func (a *Account) GetExplicitModelMapping() map[string]string {
+	if a == nil || a.Credentials == nil {
+		return nil
+	}
+	return stringMappingFromRaw(a.Credentials["model_mapping"])
+}
+
 func (a *Account) resolveModelMapping(rawMapping map[string]any) map[string]string {
 	if a.Credentials == nil {
 		// Antigravity 平台使用默认映射
