@@ -354,6 +354,12 @@ func (_c *UserCreate) SetNillableRpmLimit(v *int) *UserCreate {
 	return _c
 }
 
+// SetAllowedModels sets the "allowed_models" field.
+func (_c *UserCreate) SetAllowedModels(v []string) *UserCreate {
+	_c.mutation.SetAllowedModels(v)
+	return _c
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by IDs.
 func (_c *UserCreate) AddAPIKeyIDs(ids ...int64) *UserCreate {
 	_c.mutation.AddAPIKeyIDs(ids...)
@@ -867,6 +873,10 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.RpmLimit(); ok {
 		_spec.SetField(user.FieldRpmLimit, field.TypeInt, value)
 		_node.RpmLimit = value
+	}
+	if value, ok := _c.mutation.AllowedModels(); ok {
+		_spec.SetField(user.FieldAllowedModels, field.TypeJSON, value)
+		_node.AllowedModels = value
 	}
 	if nodes := _c.mutation.APIKeysIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
@@ -1480,6 +1490,24 @@ func (u *UserUpsert) AddRpmLimit(v int) *UserUpsert {
 	return u
 }
 
+// SetAllowedModels sets the "allowed_models" field.
+func (u *UserUpsert) SetAllowedModels(v []string) *UserUpsert {
+	u.Set(user.FieldAllowedModels, v)
+	return u
+}
+
+// UpdateAllowedModels sets the "allowed_models" field to the value that was provided on create.
+func (u *UserUpsert) UpdateAllowedModels() *UserUpsert {
+	u.SetExcluded(user.FieldAllowedModels)
+	return u
+}
+
+// ClearAllowedModels clears the value of the "allowed_models" field.
+func (u *UserUpsert) ClearAllowedModels() *UserUpsert {
+	u.SetNull(user.FieldAllowedModels)
+	return u
+}
+
 // UpdateNewValues updates the mutable fields using the new values that were set on create.
 // Using this option is equivalent to using:
 //
@@ -1928,6 +1956,27 @@ func (u *UserUpsertOne) AddRpmLimit(v int) *UserUpsertOne {
 func (u *UserUpsertOne) UpdateRpmLimit() *UserUpsertOne {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateRpmLimit()
+	})
+}
+
+// SetAllowedModels sets the "allowed_models" field.
+func (u *UserUpsertOne) SetAllowedModels(v []string) *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.SetAllowedModels(v)
+	})
+}
+
+// UpdateAllowedModels sets the "allowed_models" field to the value that was provided on create.
+func (u *UserUpsertOne) UpdateAllowedModels() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateAllowedModels()
+	})
+}
+
+// ClearAllowedModels clears the value of the "allowed_models" field.
+func (u *UserUpsertOne) ClearAllowedModels() *UserUpsertOne {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearAllowedModels()
 	})
 }
 
@@ -2545,6 +2594,27 @@ func (u *UserUpsertBulk) AddRpmLimit(v int) *UserUpsertBulk {
 func (u *UserUpsertBulk) UpdateRpmLimit() *UserUpsertBulk {
 	return u.Update(func(s *UserUpsert) {
 		s.UpdateRpmLimit()
+	})
+}
+
+// SetAllowedModels sets the "allowed_models" field.
+func (u *UserUpsertBulk) SetAllowedModels(v []string) *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.SetAllowedModels(v)
+	})
+}
+
+// UpdateAllowedModels sets the "allowed_models" field to the value that was provided on create.
+func (u *UserUpsertBulk) UpdateAllowedModels() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.UpdateAllowedModels()
+	})
+}
+
+// ClearAllowedModels clears the value of the "allowed_models" field.
+func (u *UserUpsertBulk) ClearAllowedModels() *UserUpsertBulk {
+	return u.Update(func(s *UserUpsert) {
+		s.ClearAllowedModels()
 	})
 }
 

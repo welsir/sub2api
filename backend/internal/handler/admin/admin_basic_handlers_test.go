@@ -160,6 +160,35 @@ func TestUserHandlerBindAuthIdentityMapsRequest(t *testing.T) {
 	require.Equal(t, float64(12), adminSvc.boundAuthIdentity.Metadata["report_id"])
 }
 
+func TestUserHandlerMapsAllowedModelsOnCreateAndUpdate(t *testing.T) {
+	router, adminSvc := setupAdminRouter()
+
+	body, err := json.Marshal(map[string]any{
+		"email":          "models@example.com",
+		"password":       "pass123",
+		"allowed_models": []string{"gpt-5*", "claude-sonnet-4-6"},
+	})
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, adminSvc.createdUserInput)
+	require.Equal(t, []string{"gpt-5*", "claude-sonnet-4-6"}, adminSvc.createdUserInput.AllowedModels)
+
+	body, err = json.Marshal(map[string]any{"allowed_models": []string{"gpt-5.4"}})
+	require.NoError(t, err)
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, adminSvc.updatedUserInput)
+	require.NotNil(t, adminSvc.updatedUserInput.AllowedModels)
+	require.Equal(t, []string{"gpt-5.4"}, *adminSvc.updatedUserInput.AllowedModels)
+}
+
 func TestGroupHandlerEndpoints(t *testing.T) {
 	router, _ := setupAdminRouter()
 

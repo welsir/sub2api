@@ -675,6 +675,14 @@
                 {{ t('admin.users.groups') }}
               </button>
 
+              <button
+                @click="handleAllowedModels(user); closeActionMenu()"
+                class="flex w-full items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-dark-700"
+              >
+                <Icon name="cpu" size="sm" class="text-gray-400" :stroke-width="2" />
+                {{ t('admin.users.modelWhitelist') }}
+              </button>
+
               <div class="my-1 border-t border-gray-100 dark:border-dark-700"></div>
 
               <!-- Deposit -->
@@ -743,6 +751,7 @@
     />
     <UserApiKeysModal :show="showApiKeysModal" :user="viewingUser" @close="closeApiKeysModal" />
     <UserAllowedGroupsModal :show="showAllowedGroupsModal" :user="allowedGroupsUser" @close="closeAllowedGroupsModal" @success="loadUsers" />
+    <UserAllowedModelsModal :show="showAllowedModelsModal" :user="allowedModelsUser" @close="closeAllowedModelsModal" @success="loadUsers" />
     <UserBalanceModal :show="showBalanceModal" :user="balanceUser" :operation="balanceOperation" @close="closeBalanceModal" @success="loadUsers" />
     <UserBalanceHistoryModal :show="showBalanceHistoryModal" :user="balanceHistoryUser" @close="closeBalanceHistoryModal" @deposit="handleDepositFromHistory" @withdraw="handleWithdrawFromHistory" />
     <GroupReplaceModal :show="showGroupReplaceModal" :user="groupReplaceUser" :old-group="groupReplaceOldGroup" :all-groups="allGroups" @close="closeGroupReplaceModal" @success="loadUsers" />
@@ -784,6 +793,7 @@ import UserEditModal from '@/components/admin/user/UserEditModal.vue'
 import UserPlatformQuotaModal from '@/components/admin/user/UserPlatformQuotaModal.vue'
 import UserApiKeysModal from '@/components/admin/user/UserApiKeysModal.vue'
 import UserAllowedGroupsModal from '@/components/admin/user/UserAllowedGroupsModal.vue'
+import UserAllowedModelsModal from '@/components/admin/user/UserAllowedModelsModal.vue'
 import UserBalanceModal from '@/components/admin/user/UserBalanceModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
@@ -1475,6 +1485,9 @@ const handleClickOutside = (event: MouseEvent) => {
 const showAllowedGroupsModal = ref(false)
 const allowedGroupsUser = ref<AdminUser | null>(null)
 
+const showAllowedModelsModal = ref(false)
+const allowedModelsUser = ref<AdminUser | null>(null)
+
 // Expanded group dropdown state (click to show exclusive groups list)
 const expandedGroupUserId = ref<number | null>(null)
 const toggleExpandedGroup = (userId: number) => {
@@ -1705,6 +1718,16 @@ const handleAllowedGroups = (user: AdminUser) => {
 const closeAllowedGroupsModal = () => {
   showAllowedGroupsModal.value = false
   allowedGroupsUser.value = null
+}
+
+const handleAllowedModels = (user: AdminUser) => {
+  allowedModelsUser.value = user
+  showAllowedModelsModal.value = true
+}
+
+const closeAllowedModelsModal = () => {
+  showAllowedModelsModal.value = false
+  allowedModelsUser.value = null
 }
 
 const openGroupReplace = (user: AdminUser, group: { id: number; name: string }) => {

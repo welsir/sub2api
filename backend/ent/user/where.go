@@ -1385,6 +1385,16 @@ func RpmLimitLTE(v int) predicate.User {
 	return predicate.User(sql.FieldLTE(FieldRpmLimit, v))
 }
 
+// AllowedModelsIsNil applies the IsNil predicate on the "allowed_models" field.
+func AllowedModelsIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldAllowedModels))
+}
+
+// AllowedModelsNotNil applies the NotNil predicate on the "allowed_models" field.
+func AllowedModelsNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldAllowedModels))
+}
+
 // HasAPIKeys applies the HasEdge predicate on the "api_keys" edge.
 func HasAPIKeys() predicate.User {
 	return predicate.User(func(s *sql.Selector) {
