@@ -852,9 +852,17 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	}
 	targetURL = appendOpenAIResponsesRequestPathSuffix(targetURL, openAIResponsesRequestPathSuffix(c))
 
-	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
+	requestBody, compressed, err := s.maybeCompressOpenAIRequestBody(account, targetURL, body, isStream)
 	if err != nil {
 		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, err
+	}
+	if compressed {
+		req.Header.Set("Content-Encoding", "zstd")
+		req.ContentLength = int64(len(requestBody))
 	}
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 
