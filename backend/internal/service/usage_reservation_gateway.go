@@ -102,9 +102,9 @@ func prepareUsageReservation(ctx context.Context, deps usageReservationDeps, api
 		return nil, err
 	}
 	if deps.billingCache != nil {
-		deps.billingCache.InvalidateUserBalance(ctx, apiKey.User.ID)
+		_ = deps.billingCache.InvalidateUserBalance(ctx, apiKey.User.ID)
 		if groupID != nil {
-			deps.billingCache.InvalidateSubscription(ctx, apiKey.User.ID, *groupID)
+			_ = deps.billingCache.InvalidateSubscription(ctx, apiKey.User.ID, *groupID)
 		}
 	}
 	return &PreparedUsageReservation{Body: quote.Body, Quote: quote, Reservation: reservation}, nil
@@ -126,9 +126,9 @@ func releaseUsageReservation(ctx context.Context, repo UsageBillingRepository, c
 		_ = reservationRepo.ReleaseUsageReservation(ctx, reservation)
 	}
 	if cache != nil {
-		cache.InvalidateUserBalance(ctx, reservation.UserID)
+		_ = cache.InvalidateUserBalance(ctx, reservation.UserID)
 		if reservation.GroupID != nil {
-			cache.InvalidateSubscription(ctx, reservation.UserID, *reservation.GroupID)
+			_ = cache.InvalidateSubscription(ctx, reservation.UserID, *reservation.GroupID)
 		}
 	}
 }

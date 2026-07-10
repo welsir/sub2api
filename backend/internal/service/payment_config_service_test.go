@@ -115,7 +115,6 @@ func TestParsePaymentConfig(t *testing.T) {
 			SettingMaxPendingOrders:    "5",
 			SettingEnabledPaymentTypes: "alipay,wxpay,stripe",
 			SettingBalancePayDisabled:  "true",
-			SettingBalanceRequiresSub:  "true",
 			SettingLoadBalanceStrategy: "least_amount",
 			SettingProductNamePrefix:   "PRE",
 			SettingProductNameSuffix:   "SUF",
@@ -148,9 +147,6 @@ func TestParsePaymentConfig(t *testing.T) {
 		}
 		if !cfg.BalanceDisabled {
 			t.Fatal("expected BalanceDisabled=true")
-		}
-		if !cfg.BalanceRequiresActiveSubscription {
-			t.Fatal("expected BalanceRequiresActiveSubscription=true")
 		}
 		if cfg.LoadBalanceStrategy != "least_amount" {
 			t.Fatalf("LoadBalanceStrategy = %q, want %q", cfg.LoadBalanceStrategy, "least_amount")
@@ -188,6 +184,23 @@ func TestParsePaymentConfig(t *testing.T) {
 		}
 		if cfg.EnabledTypes[0] != "alipay" || cfg.EnabledTypes[1] != "wxpay" {
 			t.Fatalf("EnabledTypes = %v, want [alipay wxpay]", cfg.EnabledTypes)
+		}
+	})
+
+	t.Run("custom enabled types are preserved", func(t *testing.T) {
+		t.Parallel()
+		vals := map[string]string{
+			SettingEnabledPaymentTypes: "alipay,ldc,usdt_trc20",
+		}
+		cfg := svc.parsePaymentConfig(vals)
+		want := []string{"alipay", "ldc", "usdt_trc20"}
+		if len(cfg.EnabledTypes) != len(want) {
+			t.Fatalf("EnabledTypes len = %d, want %d (%v)", len(cfg.EnabledTypes), len(want), cfg.EnabledTypes)
+		}
+		for i := range want {
+			if cfg.EnabledTypes[i] != want[i] {
+				t.Fatalf("EnabledTypes[%d] = %q, want %q (full=%v)", i, cfg.EnabledTypes[i], want[i], cfg.EnabledTypes)
+			}
 		}
 	})
 

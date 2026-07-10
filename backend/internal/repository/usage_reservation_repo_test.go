@@ -14,7 +14,7 @@ func TestUsageBillingRepositoryReserveUsage_BalanceRequiresSufficientFunds(t *te
 	if err != nil {
 		t.Fatalf("sqlmock.New: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repo := &usageBillingRepository{db: db}
 	mock.ExpectBegin()
@@ -43,7 +43,7 @@ func TestUsageBillingRepositoryReserveUsage_SubscriptionThenBalanceFallback(t *t
 	if err != nil {
 		t.Fatalf("sqlmock.New: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	repo := &usageBillingRepository{db: db}
 	subID := int64(99)
