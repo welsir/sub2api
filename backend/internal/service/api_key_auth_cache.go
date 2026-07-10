@@ -52,6 +52,9 @@ type APIKeyAuthUserSnapshot struct {
 	// AllowedModels 用户级模型白名单；为空表示不限制。
 	AllowedModels []string `json:"allowed_models,omitempty"`
 
+	WeeklyCostThreshold         *float64 `json:"weekly_cost_threshold,omitempty"`
+	WeeklyThresholdNotifiedWeek *string  `json:"weekly_threshold_notified_week,omitempty"`
+
 	// UserGroupRPMOverride 该 API Key 对应的 (user, group) 专属 RPM 覆盖值。
 	// nil = 无 override（回退到 group/user 级）；0 = 不限流；>0 = 专属上限。
 	UserGroupRPMOverride *int `json:"user_group_rpm_override,omitempty"`

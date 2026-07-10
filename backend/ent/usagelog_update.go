@@ -698,6 +698,26 @@ func (_u *UsageLogUpdate) ClearIPAddress() *UsageLogUpdate {
 	return _u
 }
 
+// SetWorkingDirectory sets the "working_directory" field.
+func (_u *UsageLogUpdate) SetWorkingDirectory(v string) *UsageLogUpdate {
+	_u.mutation.SetWorkingDirectory(v)
+	return _u
+}
+
+// SetNillableWorkingDirectory sets the "working_directory" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableWorkingDirectory(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetWorkingDirectory(*v)
+	}
+	return _u
+}
+
+// ClearWorkingDirectory clears the value of the "working_directory" field.
+func (_u *UsageLogUpdate) ClearWorkingDirectory() *UsageLogUpdate {
+	_u.mutation.ClearWorkingDirectory()
+	return _u
+}
+
 // SetImageCount sets the "image_count" field.
 func (_u *UsageLogUpdate) SetImageCount(v int) *UsageLogUpdate {
 	_u.mutation.ResetImageCount()
@@ -1027,6 +1047,11 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "ip_address", err: fmt.Errorf(`ent: validator failed for field "UsageLog.ip_address": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.WorkingDirectory(); ok {
+		if err := usagelog.WorkingDirectoryValidator(v); err != nil {
+			return &ValidationError{Name: "working_directory", err: fmt.Errorf(`ent: validator failed for field "UsageLog.working_directory": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ImageSize(); ok {
 		if err := usagelog.ImageSizeValidator(v); err != nil {
 			return &ValidationError{Name: "image_size", err: fmt.Errorf(`ent: validator failed for field "UsageLog.image_size": %w`, err)}
@@ -1246,6 +1271,12 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.IPAddressCleared() {
 		_spec.ClearField(usagelog.FieldIPAddress, field.TypeString)
+	}
+	if value, ok := _u.mutation.WorkingDirectory(); ok {
+		_spec.SetField(usagelog.FieldWorkingDirectory, field.TypeString, value)
+	}
+	if _u.mutation.WorkingDirectoryCleared() {
+		_spec.ClearField(usagelog.FieldWorkingDirectory, field.TypeString)
 	}
 	if value, ok := _u.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)
@@ -2138,6 +2169,26 @@ func (_u *UsageLogUpdateOne) ClearIPAddress() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetWorkingDirectory sets the "working_directory" field.
+func (_u *UsageLogUpdateOne) SetWorkingDirectory(v string) *UsageLogUpdateOne {
+	_u.mutation.SetWorkingDirectory(v)
+	return _u
+}
+
+// SetNillableWorkingDirectory sets the "working_directory" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableWorkingDirectory(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetWorkingDirectory(*v)
+	}
+	return _u
+}
+
+// ClearWorkingDirectory clears the value of the "working_directory" field.
+func (_u *UsageLogUpdateOne) ClearWorkingDirectory() *UsageLogUpdateOne {
+	_u.mutation.ClearWorkingDirectory()
+	return _u
+}
+
 // SetImageCount sets the "image_count" field.
 func (_u *UsageLogUpdateOne) SetImageCount(v int) *UsageLogUpdateOne {
 	_u.mutation.ResetImageCount()
@@ -2480,6 +2531,11 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "ip_address", err: fmt.Errorf(`ent: validator failed for field "UsageLog.ip_address": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.WorkingDirectory(); ok {
+		if err := usagelog.WorkingDirectoryValidator(v); err != nil {
+			return &ValidationError{Name: "working_directory", err: fmt.Errorf(`ent: validator failed for field "UsageLog.working_directory": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.ImageSize(); ok {
 		if err := usagelog.ImageSizeValidator(v); err != nil {
 			return &ValidationError{Name: "image_size", err: fmt.Errorf(`ent: validator failed for field "UsageLog.image_size": %w`, err)}
@@ -2716,6 +2772,12 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.IPAddressCleared() {
 		_spec.ClearField(usagelog.FieldIPAddress, field.TypeString)
+	}
+	if value, ok := _u.mutation.WorkingDirectory(); ok {
+		_spec.SetField(usagelog.FieldWorkingDirectory, field.TypeString, value)
+	}
+	if _u.mutation.WorkingDirectoryCleared() {
+		_spec.ClearField(usagelog.FieldWorkingDirectory, field.TypeString)
 	}
 	if value, ok := _u.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)

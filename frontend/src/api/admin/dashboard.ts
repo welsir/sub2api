@@ -324,6 +324,36 @@ export async function getBatchApiKeysUsage(
   return data
 }
 
+export interface WorkingDirSpendingParams {
+  start_date?: string
+  end_date?: string
+  user_id?: number
+  limit?: number
+}
+
+export interface WorkingDirSpendingItem {
+  user_id: number
+  email: string
+  working_directory: string
+  actual_cost: number
+  requests: number
+}
+
+export interface WorkingDirSpendingResponse {
+  items: WorkingDirSpendingItem[]
+  total_actual_cost: number
+}
+
+export async function getWorkingDirSpending(
+  params?: WorkingDirSpendingParams
+): Promise<WorkingDirSpendingResponse> {
+  const { data } = await apiClient.get<WorkingDirSpendingResponse>(
+    '/admin/dashboard/working-dirs',
+    { params }
+  )
+  return data
+}
+
 export const dashboardAPI = {
   getStats,
   getRealtimeMetrics,
@@ -334,6 +364,7 @@ export const dashboardAPI = {
   getApiKeyUsageTrend,
   getUserUsageTrend,
   getUserSpendingRanking,
+  getWorkingDirSpending,
   getBatchUsersUsage,
   getBatchApiKeysUsage
 }

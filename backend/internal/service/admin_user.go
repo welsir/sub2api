@@ -143,6 +143,10 @@ func (s *adminServiceImpl) CreateUser(ctx context.Context, input *CreateUserInpu
 		AllowedGroups: input.AllowedGroups,
 		AllowedModels: input.AllowedModels,
 	}
+	if input.WeeklyCostThreshold != nil && *input.WeeklyCostThreshold > 0 {
+		value := *input.WeeklyCostThreshold
+		user.WeeklyCostThreshold = &value
+	}
 	if err := user.SetPassword(input.Password); err != nil {
 		return nil, err
 	}
@@ -191,6 +195,13 @@ func (s *adminServiceImpl) assignDefaultSubscriptions(ctx context.Context, userI
 			logger.LegacyPrintf("service.admin", "failed to assign default subscription: user_id=%d group_id=%d err=%v", userID, item.GroupID, err)
 		}
 	}
+}
+
+func float64PtrEqual(a, b *float64) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error) {
@@ -273,6 +284,20 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		allowedModelsChanged = true
 	}
 
+	weeklyThresholdChanged := false
+	if input.WeeklyCostThreshold != nil {
+		var threshold *float64
+		if *input.WeeklyCostThreshold > 0 {
+			value := *input.WeeklyCostThreshold
+			threshold = &value
+		}
+		if !float64PtrEqual(user.WeeklyCostThreshold, threshold) {
+			user.WeeklyCostThreshold = threshold
+			user.WeeklyThresholdNotifiedWeek = nil
+			weeklyThresholdChanged = true
+		}
+	}
+
 	if err := s.userRepo.Update(ctx, user); err != nil {
 		return nil, err
 	}
@@ -294,7 +319,7 @@ func (s *adminServiceImpl) UpdateUser(ctx context.Context, id int64, input *Upda
 		// RPMLimit 直接参与 billing_cache_service.checkRPM 的三级级联，
 		// allowed_groups 参与 API Key 专属分组授权判断，allowed_models 参与网关模型准入；
 		// 不失效缓存会让修改在一个 L2 TTL 内失去效果。
-		if user.Concurrency != oldConcurrency || user.Status != oldStatus || user.Role != oldRole || user.RPMLimit != oldRPMLimit || !sameInt64Set(user.AllowedGroups, oldAllowedGroups) || allowedModelsChanged {
+		if user.Concurrency != oldConcurrency || user.Status != oldStatus || user.Role != oldRole || user.RPMLimit != oldRPMLimit || !sameInt64Set(user.AllowedGroups, oldAllowedGroups) || allowedModelsChanged || weeklyThresholdChanged {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, user.ID)
 		}
 	}

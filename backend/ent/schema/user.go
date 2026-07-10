@@ -120,6 +120,17 @@ func (User) Fields() []ent.Field {
 		field.JSON("allowed_models", []string{}).
 			Optional().
 			Comment("Per-user model whitelist; empty means unrestricted"),
+
+		field.Float("weekly_cost_threshold").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Optional().
+			Nillable().
+			Comment("Per-user weekly actual_cost threshold; Saturday is the first day"),
+		field.String("weekly_threshold_notified_week").
+			MaxLen(10).
+			Optional().
+			Nillable().
+			Comment("Start date of the last natural week whose threshold notification was claimed"),
 	}
 }
 

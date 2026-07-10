@@ -54,6 +54,28 @@ func newGatewayRecordUsageServiceWithBillingRepoForTest(usageRepo UsageLogReposi
 	return svc
 }
 
+func TestGatewayServiceRecordUsage_PersistsWorkingDirectorySnapshot(t *testing.T) {
+	usageRepo := &openAIRecordUsageLogRepoStub{inserted: true}
+	svc := newGatewayRecordUsageServiceForTest(usageRepo, &openAIRecordUsageUserRepoStub{}, &openAIRecordUsageSubRepoStub{})
+
+	err := svc.RecordUsage(context.Background(), &RecordUsageInput{
+		Result: &ForwardResult{
+			RequestID: "gateway_working_directory",
+			Model:     "claude-sonnet-4",
+			Duration:  time.Second,
+		},
+		APIKey:           &APIKey{ID: 501},
+		User:             &User{ID: 601},
+		Account:          &Account{ID: 701},
+		WorkingDirectory: "/work/company",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, usageRepo.lastLog)
+	require.NotNil(t, usageRepo.lastLog.WorkingDirectory)
+	require.Equal(t, "/work/company", *usageRepo.lastLog.WorkingDirectory)
+}
+
 type openAIRecordUsageBestEffortLogRepoStub struct {
 	UsageLogRepository
 

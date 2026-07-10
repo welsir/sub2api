@@ -41705,6 +41705,7 @@ type UsageLogMutation struct {
 	addfirst_token_ms           *int
 	user_agent                  *string
 	ip_address                  *string
+	working_directory           *string
 	image_count                 *int
 	addimage_count              *int
 	image_size                  *string
@@ -43554,6 +43555,55 @@ func (m *UsageLogMutation) ResetIPAddress() {
 	delete(m.clearedFields, usagelog.FieldIPAddress)
 }
 
+// SetWorkingDirectory sets the "working_directory" field.
+func (m *UsageLogMutation) SetWorkingDirectory(s string) {
+	m.working_directory = &s
+}
+
+// WorkingDirectory returns the value of the "working_directory" field in the mutation.
+func (m *UsageLogMutation) WorkingDirectory() (r string, exists bool) {
+	v := m.working_directory
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWorkingDirectory returns the old "working_directory" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldWorkingDirectory(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWorkingDirectory is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWorkingDirectory requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWorkingDirectory: %w", err)
+	}
+	return oldValue.WorkingDirectory, nil
+}
+
+// ClearWorkingDirectory clears the value of the "working_directory" field.
+func (m *UsageLogMutation) ClearWorkingDirectory() {
+	m.working_directory = nil
+	m.clearedFields[usagelog.FieldWorkingDirectory] = struct{}{}
+}
+
+// WorkingDirectoryCleared returns if the "working_directory" field was cleared in this mutation.
+func (m *UsageLogMutation) WorkingDirectoryCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldWorkingDirectory]
+	return ok
+}
+
+// ResetWorkingDirectory resets all changes to the "working_directory" field.
+func (m *UsageLogMutation) ResetWorkingDirectory() {
+	m.working_directory = nil
+	delete(m.clearedFields, usagelog.FieldWorkingDirectory)
+}
+
 // SetImageCount sets the "image_count" field.
 func (m *UsageLogMutation) SetImageCount(i int) {
 	m.image_count = &i
@@ -44271,7 +44321,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 44)
+	fields := make([]string, 0, 45)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -44370,6 +44420,9 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.ip_address != nil {
 		fields = append(fields, usagelog.FieldIPAddress)
+	}
+	if m.working_directory != nil {
+		fields = append(fields, usagelog.FieldWorkingDirectory)
 	}
 	if m.image_count != nil {
 		fields = append(fields, usagelog.FieldImageCount)
@@ -44478,6 +44531,8 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.UserAgent()
 	case usagelog.FieldIPAddress:
 		return m.IPAddress()
+	case usagelog.FieldWorkingDirectory:
+		return m.WorkingDirectory()
 	case usagelog.FieldImageCount:
 		return m.ImageCount()
 	case usagelog.FieldImageSize:
@@ -44575,6 +44630,8 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldUserAgent(ctx)
 	case usagelog.FieldIPAddress:
 		return m.OldIPAddress(ctx)
+	case usagelog.FieldWorkingDirectory:
+		return m.OldWorkingDirectory(ctx)
 	case usagelog.FieldImageCount:
 		return m.OldImageCount(ctx)
 	case usagelog.FieldImageSize:
@@ -44836,6 +44893,13 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetIPAddress(v)
+		return nil
+	case usagelog.FieldWorkingDirectory:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWorkingDirectory(v)
 		return nil
 	case usagelog.FieldImageCount:
 		v, ok := value.(int)
@@ -45238,6 +45302,9 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldIPAddress) {
 		fields = append(fields, usagelog.FieldIPAddress)
 	}
+	if m.FieldCleared(usagelog.FieldWorkingDirectory) {
+		fields = append(fields, usagelog.FieldWorkingDirectory)
+	}
 	if m.FieldCleared(usagelog.FieldImageSize) {
 		fields = append(fields, usagelog.FieldImageSize)
 	}
@@ -45311,6 +45378,9 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldIPAddress:
 		m.ClearIPAddress()
+		return nil
+	case usagelog.FieldWorkingDirectory:
+		m.ClearWorkingDirectory()
 		return nil
 	case usagelog.FieldImageSize:
 		m.ClearImageSize()
@@ -45439,6 +45509,9 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldIPAddress:
 		m.ResetIPAddress()
+		return nil
+	case usagelog.FieldWorkingDirectory:
+		m.ResetWorkingDirectory()
 		return nil
 	case usagelog.FieldImageCount:
 		m.ResetImageCount()
@@ -45626,84 +45699,87 @@ func (m *UsageLogMutation) ResetEdge(name string) error {
 // UserMutation represents an operation that mutates the User nodes in the graph.
 type UserMutation struct {
 	config
-	op                            Op
-	typ                           string
-	id                            *int64
-	created_at                    *time.Time
-	updated_at                    *time.Time
-	deleted_at                    *time.Time
-	email                         *string
-	password_hash                 *string
-	role                          *string
-	balance                       *float64
-	addbalance                    *float64
-	frozen_balance                *float64
-	addfrozen_balance             *float64
-	concurrency                   *int
-	addconcurrency                *int
-	status                        *string
-	username                      *string
-	notes                         *string
-	totp_secret_encrypted         *string
-	totp_enabled                  *bool
-	totp_enabled_at               *time.Time
-	signup_source                 *string
-	last_login_at                 *time.Time
-	last_active_at                *time.Time
-	balance_notify_enabled        *bool
-	balance_notify_threshold_type *string
-	balance_notify_threshold      *float64
-	addbalance_notify_threshold   *float64
-	balance_notify_extra_emails   *string
-	total_recharged               *float64
-	addtotal_recharged            *float64
-	rpm_limit                     *int
-	addrpm_limit                  *int
-	allowed_models                *[]string
-	appendallowed_models          []string
-	clearedFields                 map[string]struct{}
-	api_keys                      map[int64]struct{}
-	removedapi_keys               map[int64]struct{}
-	clearedapi_keys               bool
-	redeem_codes                  map[int64]struct{}
-	removedredeem_codes           map[int64]struct{}
-	clearedredeem_codes           bool
-	subscriptions                 map[int64]struct{}
-	removedsubscriptions          map[int64]struct{}
-	clearedsubscriptions          bool
-	assigned_subscriptions        map[int64]struct{}
-	removedassigned_subscriptions map[int64]struct{}
-	clearedassigned_subscriptions bool
-	announcement_reads            map[int64]struct{}
-	removedannouncement_reads     map[int64]struct{}
-	clearedannouncement_reads     bool
-	allowed_groups                map[int64]struct{}
-	removedallowed_groups         map[int64]struct{}
-	clearedallowed_groups         bool
-	usage_logs                    map[int64]struct{}
-	removedusage_logs             map[int64]struct{}
-	clearedusage_logs             bool
-	attribute_values              map[int64]struct{}
-	removedattribute_values       map[int64]struct{}
-	clearedattribute_values       bool
-	promo_code_usages             map[int64]struct{}
-	removedpromo_code_usages      map[int64]struct{}
-	clearedpromo_code_usages      bool
-	payment_orders                map[int64]struct{}
-	removedpayment_orders         map[int64]struct{}
-	clearedpayment_orders         bool
-	auth_identities               map[int64]struct{}
-	removedauth_identities        map[int64]struct{}
-	clearedauth_identities        bool
-	pending_auth_sessions         map[int64]struct{}
-	removedpending_auth_sessions  map[int64]struct{}
-	clearedpending_auth_sessions  bool
-	platform_quotas               map[int64]struct{}
-	removedplatform_quotas        map[int64]struct{}
-	clearedplatform_quotas        bool
-	done                          bool
-	oldValue                      func(context.Context) (*User, error)
-	predicates                    []predicate.User
+	op                             Op
+	typ                            string
+	id                             *int64
+	created_at                     *time.Time
+	updated_at                     *time.Time
+	deleted_at                     *time.Time
+	email                          *string
+	password_hash                  *string
+	role                           *string
+	balance                        *float64
+	addbalance                     *float64
+	frozen_balance                 *float64
+	addfrozen_balance              *float64
+	concurrency                    *int
+	addconcurrency                 *int
+	status                         *string
+	username                       *string
+	notes                          *string
+	totp_secret_encrypted          *string
+	totp_enabled                   *bool
+	totp_enabled_at                *time.Time
+	signup_source                  *string
+	last_login_at                  *time.Time
+	last_active_at                 *time.Time
+	balance_notify_enabled         *bool
+	balance_notify_threshold_type  *string
+	balance_notify_threshold       *float64
+	addbalance_notify_threshold    *float64
+	balance_notify_extra_emails    *string
+	total_recharged                *float64
+	addtotal_recharged             *float64
+	rpm_limit                      *int
+	addrpm_limit                   *int
+	allowed_models                 *[]string
+	appendallowed_models           []string
+	weekly_cost_threshold          *float64
+	addweekly_cost_threshold       *float64
+	weekly_threshold_notified_week *string
+	clearedFields                  map[string]struct{}
+	api_keys                       map[int64]struct{}
+	removedapi_keys                map[int64]struct{}
+	clearedapi_keys                bool
+	redeem_codes                   map[int64]struct{}
+	removedredeem_codes            map[int64]struct{}
+	clearedredeem_codes            bool
+	subscriptions                  map[int64]struct{}
+	removedsubscriptions           map[int64]struct{}
+	clearedsubscriptions           bool
+	assigned_subscriptions         map[int64]struct{}
+	removedassigned_subscriptions  map[int64]struct{}
+	clearedassigned_subscriptions  bool
+	announcement_reads             map[int64]struct{}
+	removedannouncement_reads      map[int64]struct{}
+	clearedannouncement_reads      bool
+	allowed_groups                 map[int64]struct{}
+	removedallowed_groups          map[int64]struct{}
+	clearedallowed_groups          bool
+	usage_logs                     map[int64]struct{}
+	removedusage_logs              map[int64]struct{}
+	clearedusage_logs              bool
+	attribute_values               map[int64]struct{}
+	removedattribute_values        map[int64]struct{}
+	clearedattribute_values        bool
+	promo_code_usages              map[int64]struct{}
+	removedpromo_code_usages       map[int64]struct{}
+	clearedpromo_code_usages       bool
+	payment_orders                 map[int64]struct{}
+	removedpayment_orders          map[int64]struct{}
+	clearedpayment_orders          bool
+	auth_identities                map[int64]struct{}
+	removedauth_identities         map[int64]struct{}
+	clearedauth_identities         bool
+	pending_auth_sessions          map[int64]struct{}
+	removedpending_auth_sessions   map[int64]struct{}
+	clearedpending_auth_sessions   bool
+	platform_quotas                map[int64]struct{}
+	removedplatform_quotas         map[int64]struct{}
+	clearedplatform_quotas         bool
+	done                           bool
+	oldValue                       func(context.Context) (*User, error)
+	predicates                     []predicate.User
 }
 
 var _ ent.Mutation = (*UserMutation)(nil)
@@ -46932,6 +47008,125 @@ func (m *UserMutation) ResetAllowedModels() {
 	delete(m.clearedFields, user.FieldAllowedModels)
 }
 
+// SetWeeklyCostThreshold sets the "weekly_cost_threshold" field.
+func (m *UserMutation) SetWeeklyCostThreshold(f float64) {
+	m.weekly_cost_threshold = &f
+	m.addweekly_cost_threshold = nil
+}
+
+// WeeklyCostThreshold returns the value of the "weekly_cost_threshold" field in the mutation.
+func (m *UserMutation) WeeklyCostThreshold() (r float64, exists bool) {
+	v := m.weekly_cost_threshold
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWeeklyCostThreshold returns the old "weekly_cost_threshold" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldWeeklyCostThreshold(ctx context.Context) (v *float64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWeeklyCostThreshold is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWeeklyCostThreshold requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWeeklyCostThreshold: %w", err)
+	}
+	return oldValue.WeeklyCostThreshold, nil
+}
+
+// AddWeeklyCostThreshold adds f to the "weekly_cost_threshold" field.
+func (m *UserMutation) AddWeeklyCostThreshold(f float64) {
+	if m.addweekly_cost_threshold != nil {
+		*m.addweekly_cost_threshold += f
+	} else {
+		m.addweekly_cost_threshold = &f
+	}
+}
+
+// AddedWeeklyCostThreshold returns the value that was added to the "weekly_cost_threshold" field in this mutation.
+func (m *UserMutation) AddedWeeklyCostThreshold() (r float64, exists bool) {
+	v := m.addweekly_cost_threshold
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearWeeklyCostThreshold clears the value of the "weekly_cost_threshold" field.
+func (m *UserMutation) ClearWeeklyCostThreshold() {
+	m.weekly_cost_threshold = nil
+	m.addweekly_cost_threshold = nil
+	m.clearedFields[user.FieldWeeklyCostThreshold] = struct{}{}
+}
+
+// WeeklyCostThresholdCleared returns if the "weekly_cost_threshold" field was cleared in this mutation.
+func (m *UserMutation) WeeklyCostThresholdCleared() bool {
+	_, ok := m.clearedFields[user.FieldWeeklyCostThreshold]
+	return ok
+}
+
+// ResetWeeklyCostThreshold resets all changes to the "weekly_cost_threshold" field.
+func (m *UserMutation) ResetWeeklyCostThreshold() {
+	m.weekly_cost_threshold = nil
+	m.addweekly_cost_threshold = nil
+	delete(m.clearedFields, user.FieldWeeklyCostThreshold)
+}
+
+// SetWeeklyThresholdNotifiedWeek sets the "weekly_threshold_notified_week" field.
+func (m *UserMutation) SetWeeklyThresholdNotifiedWeek(s string) {
+	m.weekly_threshold_notified_week = &s
+}
+
+// WeeklyThresholdNotifiedWeek returns the value of the "weekly_threshold_notified_week" field in the mutation.
+func (m *UserMutation) WeeklyThresholdNotifiedWeek() (r string, exists bool) {
+	v := m.weekly_threshold_notified_week
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWeeklyThresholdNotifiedWeek returns the old "weekly_threshold_notified_week" field's value of the User entity.
+// If the User object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserMutation) OldWeeklyThresholdNotifiedWeek(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWeeklyThresholdNotifiedWeek is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWeeklyThresholdNotifiedWeek requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWeeklyThresholdNotifiedWeek: %w", err)
+	}
+	return oldValue.WeeklyThresholdNotifiedWeek, nil
+}
+
+// ClearWeeklyThresholdNotifiedWeek clears the value of the "weekly_threshold_notified_week" field.
+func (m *UserMutation) ClearWeeklyThresholdNotifiedWeek() {
+	m.weekly_threshold_notified_week = nil
+	m.clearedFields[user.FieldWeeklyThresholdNotifiedWeek] = struct{}{}
+}
+
+// WeeklyThresholdNotifiedWeekCleared returns if the "weekly_threshold_notified_week" field was cleared in this mutation.
+func (m *UserMutation) WeeklyThresholdNotifiedWeekCleared() bool {
+	_, ok := m.clearedFields[user.FieldWeeklyThresholdNotifiedWeek]
+	return ok
+}
+
+// ResetWeeklyThresholdNotifiedWeek resets all changes to the "weekly_threshold_notified_week" field.
+func (m *UserMutation) ResetWeeklyThresholdNotifiedWeek() {
+	m.weekly_threshold_notified_week = nil
+	delete(m.clearedFields, user.FieldWeeklyThresholdNotifiedWeek)
+}
+
 // AddAPIKeyIDs adds the "api_keys" edge to the APIKey entity by ids.
 func (m *UserMutation) AddAPIKeyIDs(ids ...int64) {
 	if m.api_keys == nil {
@@ -47668,7 +47863,7 @@ func (m *UserMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UserMutation) Fields() []string {
-	fields := make([]string, 0, 25)
+	fields := make([]string, 0, 27)
 	if m.created_at != nil {
 		fields = append(fields, user.FieldCreatedAt)
 	}
@@ -47744,6 +47939,12 @@ func (m *UserMutation) Fields() []string {
 	if m.allowed_models != nil {
 		fields = append(fields, user.FieldAllowedModels)
 	}
+	if m.weekly_cost_threshold != nil {
+		fields = append(fields, user.FieldWeeklyCostThreshold)
+	}
+	if m.weekly_threshold_notified_week != nil {
+		fields = append(fields, user.FieldWeeklyThresholdNotifiedWeek)
+	}
 	return fields
 }
 
@@ -47802,6 +48003,10 @@ func (m *UserMutation) Field(name string) (ent.Value, bool) {
 		return m.RpmLimit()
 	case user.FieldAllowedModels:
 		return m.AllowedModels()
+	case user.FieldWeeklyCostThreshold:
+		return m.WeeklyCostThreshold()
+	case user.FieldWeeklyThresholdNotifiedWeek:
+		return m.WeeklyThresholdNotifiedWeek()
 	}
 	return nil, false
 }
@@ -47861,6 +48066,10 @@ func (m *UserMutation) OldField(ctx context.Context, name string) (ent.Value, er
 		return m.OldRpmLimit(ctx)
 	case user.FieldAllowedModels:
 		return m.OldAllowedModels(ctx)
+	case user.FieldWeeklyCostThreshold:
+		return m.OldWeeklyCostThreshold(ctx)
+	case user.FieldWeeklyThresholdNotifiedWeek:
+		return m.OldWeeklyThresholdNotifiedWeek(ctx)
 	}
 	return nil, fmt.Errorf("unknown User field %s", name)
 }
@@ -48045,6 +48254,20 @@ func (m *UserMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetAllowedModels(v)
 		return nil
+	case user.FieldWeeklyCostThreshold:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWeeklyCostThreshold(v)
+		return nil
+	case user.FieldWeeklyThresholdNotifiedWeek:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWeeklyThresholdNotifiedWeek(v)
+		return nil
 	}
 	return fmt.Errorf("unknown User field %s", name)
 }
@@ -48071,6 +48294,9 @@ func (m *UserMutation) AddedFields() []string {
 	if m.addrpm_limit != nil {
 		fields = append(fields, user.FieldRpmLimit)
 	}
+	if m.addweekly_cost_threshold != nil {
+		fields = append(fields, user.FieldWeeklyCostThreshold)
+	}
 	return fields
 }
 
@@ -48091,6 +48317,8 @@ func (m *UserMutation) AddedField(name string) (ent.Value, bool) {
 		return m.AddedTotalRecharged()
 	case user.FieldRpmLimit:
 		return m.AddedRpmLimit()
+	case user.FieldWeeklyCostThreshold:
+		return m.AddedWeeklyCostThreshold()
 	}
 	return nil, false
 }
@@ -48142,6 +48370,13 @@ func (m *UserMutation) AddField(name string, value ent.Value) error {
 		}
 		m.AddRpmLimit(v)
 		return nil
+	case user.FieldWeeklyCostThreshold:
+		v, ok := value.(float64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddWeeklyCostThreshold(v)
+		return nil
 	}
 	return fmt.Errorf("unknown User numeric field %s", name)
 }
@@ -48170,6 +48405,12 @@ func (m *UserMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(user.FieldAllowedModels) {
 		fields = append(fields, user.FieldAllowedModels)
+	}
+	if m.FieldCleared(user.FieldWeeklyCostThreshold) {
+		fields = append(fields, user.FieldWeeklyCostThreshold)
+	}
+	if m.FieldCleared(user.FieldWeeklyThresholdNotifiedWeek) {
+		fields = append(fields, user.FieldWeeklyThresholdNotifiedWeek)
 	}
 	return fields
 }
@@ -48205,6 +48446,12 @@ func (m *UserMutation) ClearField(name string) error {
 		return nil
 	case user.FieldAllowedModels:
 		m.ClearAllowedModels()
+		return nil
+	case user.FieldWeeklyCostThreshold:
+		m.ClearWeeklyCostThreshold()
+		return nil
+	case user.FieldWeeklyThresholdNotifiedWeek:
+		m.ClearWeeklyThresholdNotifiedWeek()
 		return nil
 	}
 	return fmt.Errorf("unknown User nullable field %s", name)
@@ -48288,6 +48535,12 @@ func (m *UserMutation) ResetField(name string) error {
 		return nil
 	case user.FieldAllowedModels:
 		m.ResetAllowedModels()
+		return nil
+	case user.FieldWeeklyCostThreshold:
+		m.ResetWeeklyCostThreshold()
+		return nil
+	case user.FieldWeeklyThresholdNotifiedWeek:
+		m.ResetWeeklyThresholdNotifiedWeek()
 		return nil
 	}
 	return fmt.Errorf("unknown User field %s", name)

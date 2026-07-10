@@ -316,6 +316,8 @@
             <TokenUsageTrend :trend-data="trendData" :loading="chartsLoading" />
           </div>
 
+          <AdminWorkingDirSpending :start-date="startDate" :end-date="endDate" />
+
           <!-- User Usage Trend (Full Width) -->
           <div class="card p-4">
             <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
@@ -362,6 +364,7 @@ import DateRangePicker from '@/components/common/DateRangePicker.vue'
 import Select from '@/components/common/Select.vue'
 import ModelDistributionChart from '@/components/charts/ModelDistributionChart.vue'
 import TokenUsageTrend from '@/components/charts/TokenUsageTrend.vue'
+import AdminWorkingDirSpending from '@/components/admin/dashboard/AdminWorkingDirSpending.vue'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
 
 import {

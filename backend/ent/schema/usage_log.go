@@ -126,6 +126,11 @@ func (UsageLog) Fields() []ent.Field {
 			MaxLen(45). // 支持 IPv6
 			Optional().
 			Nillable(),
+		field.String("working_directory").
+			MaxLen(1024).
+			Optional().
+			Nillable().
+			Comment("Client working directory extracted from supported CLI request context"),
 
 		// 图片生成字段（仅 gemini-3-pro-image 等图片模型使用）
 		field.Int("image_count").

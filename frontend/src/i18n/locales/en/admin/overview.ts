@@ -77,6 +77,18 @@ export default {
       groupPricingDesc: 'Configure batch discount and hold ratio',
       systemSettings: 'System Settings',
       configureSystem: 'Configure system settings',
+      workingDirectories: {
+        title: 'Working Directory Spending',
+        subtitle: 'Actual cost attributed to client working directories for the selected range.',
+        total: 'Attributed spend',
+        user: 'User',
+        directory: 'Working directory',
+        requests: 'Requests',
+        spend: 'Spend',
+        unknown: 'Unknown directory',
+        empty: 'No working-directory attribution in this range.',
+        failed: 'Failed to load working-directory spending.'
+      },
       failedToLoad: 'Failed to load dashboard statistics'
     },
 
@@ -578,6 +590,16 @@ export default {
       allowedModelsList: 'Allowed Models',
       modelWhitelistEmpty: 'No restriction: all available models are allowed.',
       modelWhitelistUpdated: 'Model whitelist updated successfully',
+      weeklyThreshold: {
+        title: 'Weekly Spend Threshold',
+        menuItem: 'Weekly spend alert',
+        hint: 'Send one warning per Sat-Fri week when this user reaches the configured actual spend.',
+        label: 'Weekly threshold (USD)',
+        disableHint: 'Set to 0 to disable the weekly warning.',
+        invalid: 'Enter a valid non-negative amount.',
+        updated: 'Weekly spend threshold updated',
+        failed: 'Failed to update weekly spend threshold'
+      },
       // User Group Configuration
       groupConfig: 'User Group Configuration',
       groupConfigHint: 'Configure custom rate multipliers for user {email} (overrides group defaults)',

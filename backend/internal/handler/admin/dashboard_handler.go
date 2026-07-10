@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -529,6 +530,26 @@ func (h *DashboardHandler) GetUserSpendingRanking(c *gin.Context) {
 	dashboardUsersRankingCache.Set(cacheKey, payload)
 	c.Header("X-Snapshot-Cache", "miss")
 	response.Success(c, payload)
+}
+
+// GetWorkingDirSpending returns spending grouped by user and client cwd.
+func (h *DashboardHandler) GetWorkingDirSpending(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+	limit := parseRankingLimit(c.DefaultQuery("limit", "100"))
+	userID, _ := strconv.ParseInt(c.Query("user_id"), 10, 64)
+
+	result, err := h.dashboardService.GetWorkingDirSpending(c.Request.Context(), startTime, endTime, userID, limit)
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "Failed to get working directory spending")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"items":             result.Items,
+		"total_actual_cost": result.TotalActualCost,
+		"start_date":        startTime.Format("2006-01-02"),
+		"end_date":          endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
 }
 
 // GetBatchUsersUsage handles getting usage stats for multiple users

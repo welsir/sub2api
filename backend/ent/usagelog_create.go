@@ -449,6 +449,20 @@ func (_c *UsageLogCreate) SetNillableIPAddress(v *string) *UsageLogCreate {
 	return _c
 }
 
+// SetWorkingDirectory sets the "working_directory" field.
+func (_c *UsageLogCreate) SetWorkingDirectory(v string) *UsageLogCreate {
+	_c.mutation.SetWorkingDirectory(v)
+	return _c
+}
+
+// SetNillableWorkingDirectory sets the "working_directory" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableWorkingDirectory(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetWorkingDirectory(*v)
+	}
+	return _c
+}
+
 // SetImageCount sets the "image_count" field.
 func (_c *UsageLogCreate) SetImageCount(v int) *UsageLogCreate {
 	_c.mutation.SetImageCount(v)
@@ -840,6 +854,11 @@ func (_c *UsageLogCreate) check() error {
 			return &ValidationError{Name: "ip_address", err: fmt.Errorf(`ent: validator failed for field "UsageLog.ip_address": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.WorkingDirectory(); ok {
+		if err := usagelog.WorkingDirectoryValidator(v); err != nil {
+			return &ValidationError{Name: "working_directory", err: fmt.Errorf(`ent: validator failed for field "UsageLog.working_directory": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.ImageCount(); !ok {
 		return &ValidationError{Name: "image_count", err: errors.New(`ent: missing required field "UsageLog.image_count"`)}
 	}
@@ -1024,6 +1043,10 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.IPAddress(); ok {
 		_spec.SetField(usagelog.FieldIPAddress, field.TypeString, value)
 		_node.IPAddress = &value
+	}
+	if value, ok := _c.mutation.WorkingDirectory(); ok {
+		_spec.SetField(usagelog.FieldWorkingDirectory, field.TypeString, value)
+		_node.WorkingDirectory = &value
 	}
 	if value, ok := _c.mutation.ImageCount(); ok {
 		_spec.SetField(usagelog.FieldImageCount, field.TypeInt, value)
@@ -1785,6 +1808,24 @@ func (u *UsageLogUpsert) UpdateIPAddress() *UsageLogUpsert {
 // ClearIPAddress clears the value of the "ip_address" field.
 func (u *UsageLogUpsert) ClearIPAddress() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldIPAddress)
+	return u
+}
+
+// SetWorkingDirectory sets the "working_directory" field.
+func (u *UsageLogUpsert) SetWorkingDirectory(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldWorkingDirectory, v)
+	return u
+}
+
+// UpdateWorkingDirectory sets the "working_directory" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateWorkingDirectory() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldWorkingDirectory)
+	return u
+}
+
+// ClearWorkingDirectory clears the value of the "working_directory" field.
+func (u *UsageLogUpsert) ClearWorkingDirectory() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldWorkingDirectory)
 	return u
 }
 
@@ -2689,6 +2730,27 @@ func (u *UsageLogUpsertOne) UpdateIPAddress() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearIPAddress() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearIPAddress()
+	})
+}
+
+// SetWorkingDirectory sets the "working_directory" field.
+func (u *UsageLogUpsertOne) SetWorkingDirectory(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetWorkingDirectory(v)
+	})
+}
+
+// UpdateWorkingDirectory sets the "working_directory" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateWorkingDirectory() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateWorkingDirectory()
+	})
+}
+
+// ClearWorkingDirectory clears the value of the "working_directory" field.
+func (u *UsageLogUpsertOne) ClearWorkingDirectory() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearWorkingDirectory()
 	})
 }
 
@@ -3789,6 +3851,27 @@ func (u *UsageLogUpsertBulk) UpdateIPAddress() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearIPAddress() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearIPAddress()
+	})
+}
+
+// SetWorkingDirectory sets the "working_directory" field.
+func (u *UsageLogUpsertBulk) SetWorkingDirectory(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetWorkingDirectory(v)
+	})
+}
+
+// UpdateWorkingDirectory sets the "working_directory" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateWorkingDirectory() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateWorkingDirectory()
+	})
+}
+
+// ClearWorkingDirectory clears the value of the "working_directory" field.
+func (u *UsageLogUpsertBulk) ClearWorkingDirectory() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearWorkingDirectory()
 	})
 }
 

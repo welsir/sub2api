@@ -162,6 +162,19 @@ type UserSpendingRankingResponse struct {
 	TotalTokens     int64                     `json:"total_tokens"`
 }
 
+type WorkingDirSpendingItem struct {
+	UserID           int64   `json:"user_id"`
+	Email            string  `json:"email"`
+	WorkingDirectory string  `json:"working_directory"`
+	ActualCost       float64 `json:"actual_cost"`
+	Requests         int64   `json:"requests"`
+}
+
+type WorkingDirSpendingResponse struct {
+	Items           []WorkingDirSpendingItem `json:"items"`
+	TotalActualCost float64                  `json:"total_actual_cost"`
+}
+
 // UserBreakdownItem represents per-user usage breakdown within a dimension (group, model, endpoint).
 type UserBreakdownItem struct {
 	UserID       int64   `json:"user_id"`

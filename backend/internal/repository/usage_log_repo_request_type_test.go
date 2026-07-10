@@ -94,6 +94,7 @@ func TestUsageLogRepositoryCreateSyncRequestTypeAndLegacyFields(t *testing.T) {
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
 			createdAt,
+			sqlmock.AnyArg(), // working_directory
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(99), createdAt))
 
@@ -180,6 +181,7 @@ func TestUsageLogRepositoryCreate_PersistsServiceTier(t *testing.T) {
 			sqlmock.AnyArg(), // billing_mode
 			sqlmock.AnyArg(), // account_stats_cost
 			createdAt,
+			sqlmock.AnyArg(), // working_directory
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"id", "created_at"}).AddRow(int64(100), createdAt))
 
@@ -712,6 +714,29 @@ func TestUsageLogRepositoryGetUserSpendingRanking(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestUsageLogRepositoryGetWorkingDirSpending(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+	start := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(7 * 24 * time.Hour)
+
+	mock.ExpectQuery("SELECT\\s+u.user_id,.*working_directory").
+		WithArgs(start, end, int64(9), 25).
+		WillReturnRows(sqlmock.NewRows([]string{"user_id", "email", "working_directory", "actual_cost", "requests"}).
+			AddRow(int64(9), "u@example.com", "/work/company", 12.5, int64(4)))
+
+	items, err := repo.GetWorkingDirSpending(context.Background(), start, end, 9, 25)
+	require.NoError(t, err)
+	require.Equal(t, []usagestats.WorkingDirSpendingItem{{
+		UserID:           9,
+		Email:            "u@example.com",
+		WorkingDirectory: "/work/company",
+		ActualCost:       12.5,
+		Requests:         4,
+	}}, items)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestBuildRequestTypeFilterConditionLegacyFallback(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -819,6 +844,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},
 			sql.NullFloat64{},
 			now,
+			sql.NullString{},
 		}})
 		require.NoError(t, err)
 		require.Equal(t, 2, log.ImageCount)
@@ -890,6 +916,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			now,
+			sql.NullString{}, // working_directory
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -945,6 +972,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			now,
+			sql.NullString{}, // working_directory
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)
@@ -1000,6 +1028,7 @@ func TestScanUsageLogRequestTypeAndLegacyFallback(t *testing.T) {
 			sql.NullString{},  // billing_mode
 			sql.NullFloat64{}, // account_stats_cost
 			now,
+			sql.NullString{}, // working_directory
 		}})
 		require.NoError(t, err)
 		require.NotNil(t, log.ServiceTier)

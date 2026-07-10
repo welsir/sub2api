@@ -71,6 +71,18 @@ export default {
       groupPricingDesc: '设置批量折扣和冻结比例',
       systemSettings: '系统设置',
       configureSystem: '配置系统设置',
+      workingDirectories: {
+        title: '工作目录消费统计',
+        subtitle: '按所选时间范围汇总客户端工作目录对应的实际消费。',
+        total: '已归因消费',
+        user: '用户',
+        directory: '工作目录',
+        requests: '请求数',
+        spend: '消费',
+        unknown: '未识别目录',
+        empty: '该时间范围内暂无工作目录归因数据。',
+        failed: '工作目录消费加载失败。'
+      },
       failedToLoad: '加载仪表盘数据失败'
     },
 
@@ -576,6 +588,16 @@ export default {
       allowedModelsList: '允许使用的模型',
       modelWhitelistEmpty: '当前不限制，可使用所有可用模型。',
       modelWhitelistUpdated: '模型白名单更新成功',
+      weeklyThreshold: {
+        title: '每周消费阈值',
+        menuItem: '每周消费提醒',
+        hint: '用户在周六至周五的自然周内达到实际消费阈值时，仅提醒一次。',
+        label: '每周阈值（美元）',
+        disableHint: '设置为 0 可关闭每周提醒。',
+        invalid: '请输入有效的非负金额。',
+        updated: '每周消费阈值已更新',
+        failed: '每周消费阈值更新失败'
+      },
       // 用户分组配置
       groupConfig: '用户分组配置',
       groupConfigHint: '为用户 {email} 配置专属分组倍率（覆盖分组默认倍率）',

@@ -7,7 +7,10 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
+
+	gocache "github.com/patrickmn/go-cache"
 )
 
 const (
@@ -37,20 +40,37 @@ type AccountQuotaReader interface {
 	GetByID(ctx context.Context, id int64) (*Account, error)
 }
 
+type weeklyThresholdNotificationStore interface {
+	ClaimWeeklyThresholdNotification(ctx context.Context, userID int64, weekKey string) (bool, error)
+}
+
+const weeklyCostSpendCacheTTL = 60 * time.Second
+
 // BalanceNotifyService handles balance and quota threshold notifications.
 type BalanceNotifyService struct {
 	emailService             *EmailService
 	settingRepo              SettingRepository
 	accountRepo              AccountQuotaReader
+	usageRepo                UsageLogRepository
+	weeklyNotifier           weeklyThresholdNotificationStore
+	weeklyCache              *gocache.Cache
+	weeklyMu                 sync.Mutex
 	notificationEmailService *NotificationEmailService
 }
 
 // NewBalanceNotifyService creates a new BalanceNotifyService.
-func NewBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountQuotaReader) *BalanceNotifyService {
+func NewBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountQuotaReader, usageRepo UsageLogRepository, userRepo UserRepository) *BalanceNotifyService {
+	var weeklyNotifier weeklyThresholdNotificationStore
+	if notifier, ok := userRepo.(weeklyThresholdNotificationStore); ok {
+		weeklyNotifier = notifier
+	}
 	return &BalanceNotifyService{
-		emailService: emailService,
-		settingRepo:  settingRepo,
-		accountRepo:  accountRepo,
+		emailService:   emailService,
+		settingRepo:    settingRepo,
+		accountRepo:    accountRepo,
+		usageRepo:      usageRepo,
+		weeklyNotifier: weeklyNotifier,
+		weeklyCache:    gocache.New(weeklyCostSpendCacheTTL, 10*time.Minute),
 	}
 }
 
@@ -82,6 +102,139 @@ func (s *BalanceNotifyService) CheckBalanceAfterDeduction(ctx context.Context, u
 		return
 	}
 	s.dispatchBalanceLowEmail(ctx, user, newBalance, effectiveThreshold, rechargeURL)
+}
+
+// CheckWeeklyCostAfterDeduction sends one warning per user and natural week
+// when balance-billed usage reaches the configured threshold. It is called
+// after a successful deduction and before that request's usage row is written,
+// so currentCost is included explicitly in the cached running total.
+func (s *BalanceNotifyService) CheckWeeklyCostAfterDeduction(ctx context.Context, user *User, currentCost float64) {
+	if user == nil || s.emailService == nil || s.settingRepo == nil {
+		return
+	}
+	recipients := s.collectWeeklyCostRecipients(ctx, user)
+	if len(recipients) == 0 {
+		return
+	}
+	spend, threshold, claimed := s.claimWeeklyCostThreshold(ctx, user, currentCost)
+	if !claimed {
+		return
+	}
+	s.dispatchWeeklyCostEmail(user, spend, threshold, recipients)
+}
+
+func (s *BalanceNotifyService) claimWeeklyCostThreshold(ctx context.Context, user *User, currentCost float64) (spend, threshold float64, claimed bool) {
+	if user == nil || currentCost <= 0 || s.usageRepo == nil || s.weeklyNotifier == nil || s.weeklyCache == nil {
+		return 0, 0, false
+	}
+	threshold, ok := user.WeeklyThreshold()
+	if !ok {
+		return 0, 0, false
+	}
+
+	start, end := CurrentNaturalWeekRange()
+	weekKey := start.Format("2006-01-02")
+
+	s.weeklyMu.Lock()
+	defer s.weeklyMu.Unlock()
+	if user.WeeklyThresholdNotifiedWeek != nil && *user.WeeklyThresholdNotifiedWeek == weekKey {
+		return 0, threshold, false
+	}
+
+	notifiedKey := fmt.Sprintf("wkcost:notified:%d:%s", user.ID, weekKey)
+	if _, found := s.weeklyCache.Get(notifiedKey); found {
+		return 0, threshold, false
+	}
+
+	spendKey := fmt.Sprintf("wkcost:spend:%d:%s", user.ID, weekKey)
+	if cached, found := s.weeklyCache.Get(spendKey); found {
+		if value, valid := cached.(float64); valid {
+			spend = value
+		}
+	} else {
+		stats, err := s.usageRepo.GetUserStatsAggregated(ctx, user.ID, start, end)
+		if err != nil || stats == nil {
+			if err != nil {
+				slog.Warn("weekly cost aggregation failed", "user_id", user.ID, "error", err)
+			}
+			return 0, threshold, false
+		}
+		spend = stats.TotalActualCost
+	}
+	spend += currentCost
+	s.weeklyCache.Set(spendKey, spend, weeklyCostSpendCacheTTL)
+	if spend < threshold {
+		return spend, threshold, false
+	}
+
+	claimed, err := s.weeklyNotifier.ClaimWeeklyThresholdNotification(ctx, user.ID, weekKey)
+	if err != nil {
+		slog.Warn("weekly cost notification claim failed", "user_id", user.ID, "week", weekKey, "error", err)
+		return spend, threshold, false
+	}
+	ttl := time.Until(end)
+	if ttl <= 0 {
+		ttl = weeklyCostSpendCacheTTL
+	}
+	s.weeklyCache.Set(notifiedKey, true, ttl)
+	marker := weekKey
+	user.WeeklyThresholdNotifiedWeek = &marker
+	return spend, threshold, claimed
+}
+
+func (s *BalanceNotifyService) collectWeeklyCostRecipients(ctx context.Context, user *User) []string {
+	seen := make(map[string]struct{})
+	recipients := make([]string, 0, 1)
+	add := func(email string) {
+		email = strings.TrimSpace(email)
+		if email == "" {
+			return
+		}
+		key := strings.ToLower(email)
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		recipients = append(recipients, email)
+	}
+	add(user.Email)
+	for _, email := range s.getAccountQuotaNotifyEmails(ctx) {
+		add(email)
+	}
+	return recipients
+}
+
+func (s *BalanceNotifyService) dispatchWeeklyCostEmail(user *User, spend, threshold float64, recipients []string) {
+	siteName := defaultSiteName
+	if s.settingRepo != nil {
+		siteName = s.getSiteName(context.Background())
+	}
+	subject, body := buildWeeklyCostEmail(user, spend, threshold, siteName)
+	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				slog.Error("panic in weekly cost notification", "recover", recovered)
+			}
+		}()
+		s.sendEmails(recipients, subject, body, "user_id", user.ID, "kind", "weekly_cost")
+	}()
+}
+
+func buildWeeklyCostEmail(user *User, spend, threshold float64, siteName string) (subject, body string) {
+	displayName := user.Username
+	if displayName == "" {
+		displayName = user.Email
+	}
+	subject = fmt.Sprintf("[%s] 周用量超阈值提醒 / Weekly usage threshold reached", sanitizeEmailHeader(siteName))
+	body = fmt.Sprintf(`<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#333">
+<p>用户 <b>%s</b>（%s）本自然周（周六至周五）AI 用量已达 <b>$%.2f</b>，达到或超过设定阈值 <b>$%.2f</b>。</p>
+<p>User <b>%s</b> (%s) has reached <b>$%.2f</b> of AI usage this natural week (Sat-Fri), at or above the configured threshold of <b>$%.2f</b>.</p>
+<p style="color:#888;font-size:12px">- %s</p>
+</div>`,
+		html.EscapeString(displayName), html.EscapeString(user.Email), spend, threshold,
+		html.EscapeString(displayName), html.EscapeString(user.Email), spend, threshold,
+		html.EscapeString(siteName))
+	return subject, body
 }
 
 // canNotifyBalance checks nil guards and user-level toggle.

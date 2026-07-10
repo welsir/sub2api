@@ -96,6 +96,8 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		SetNillableLastActiveAt(userIn.LastActiveAt).
 		SetRpmLimit(userIn.RPMLimit).
 		SetAllowedModels(userIn.AllowedModels).
+		SetNillableWeeklyCostThreshold(userIn.WeeklyCostThreshold).
+		SetNillableWeeklyThresholdNotifiedWeek(userIn.WeeklyThresholdNotifiedWeek).
 		Save(txCtx)
 	if err != nil {
 		return translatePersistenceError(err, nil, service.ErrEmailExists)
@@ -133,6 +135,31 @@ func (r *userRepository) GetByID(ctx context.Context, id int64) (*service.User, 
 		out.AllowedGroups = v
 	}
 	return out, nil
+}
+
+// ClaimWeeklyThresholdNotification atomically marks a user's natural week as
+// notified. The conditional update makes the claim safe across processes and
+// returns false when another worker already claimed the same week.
+func (r *userRepository) ClaimWeeklyThresholdNotification(ctx context.Context, userID int64, weekKey string) (bool, error) {
+	weekKey = strings.TrimSpace(weekKey)
+	if userID <= 0 || weekKey == "" {
+		return false, nil
+	}
+
+	affected, err := r.client.User.Update().
+		Where(
+			dbuser.IDEQ(userID),
+			dbuser.Or(
+				dbuser.WeeklyThresholdNotifiedWeekIsNil(),
+				dbuser.WeeklyThresholdNotifiedWeekNEQ(weekKey),
+			),
+		).
+		SetWeeklyThresholdNotifiedWeek(weekKey).
+		Save(ctx)
+	if err != nil {
+		return false, translatePersistenceError(err, service.ErrUserNotFound, nil)
+	}
+	return affected > 0, nil
 }
 
 func (r *userRepository) GetByIDIncludeDeleted(ctx context.Context, id int64) (*service.User, error) {
@@ -241,7 +268,9 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 		SetBalanceNotifyExtraEmails(marshalExtraEmails(userIn.BalanceNotifyExtraEmails)).
 		SetTotalRecharged(userIn.TotalRecharged).
 		SetRpmLimit(userIn.RPMLimit).
-		SetAllowedModels(userIn.AllowedModels)
+		SetAllowedModels(userIn.AllowedModels).
+		SetNillableWeeklyCostThreshold(userIn.WeeklyCostThreshold).
+		SetNillableWeeklyThresholdNotifiedWeek(userIn.WeeklyThresholdNotifiedWeek)
 	if userIn.SignupSource != "" {
 		updateOp = updateOp.SetSignupSource(userIn.SignupSource)
 	}
@@ -253,6 +282,12 @@ func (r *userRepository) Update(ctx context.Context, userIn *service.User) error
 	}
 	if userIn.BalanceNotifyThreshold == nil {
 		updateOp = updateOp.ClearBalanceNotifyThreshold()
+	}
+	if userIn.WeeklyCostThreshold == nil {
+		updateOp = updateOp.ClearWeeklyCostThreshold()
+	}
+	if userIn.WeeklyThresholdNotifiedWeek == nil {
+		updateOp = updateOp.ClearWeeklyThresholdNotifiedWeek()
 	}
 	updated, err := updateOp.Save(txCtx)
 	if err != nil {

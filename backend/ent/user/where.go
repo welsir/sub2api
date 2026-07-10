@@ -175,6 +175,16 @@ func RpmLimit(v int) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldRpmLimit, v))
 }
 
+// WeeklyCostThreshold applies equality check predicate on the "weekly_cost_threshold" field. It's identical to WeeklyCostThresholdEQ.
+func WeeklyCostThreshold(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldWeeklyCostThreshold, v))
+}
+
+// WeeklyThresholdNotifiedWeek applies equality check predicate on the "weekly_threshold_notified_week" field. It's identical to WeeklyThresholdNotifiedWeekEQ.
+func WeeklyThresholdNotifiedWeek(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.User {
 	return predicate.User(sql.FieldEQ(FieldCreatedAt, v))
@@ -1393,6 +1403,131 @@ func AllowedModelsIsNil() predicate.User {
 // AllowedModelsNotNil applies the NotNil predicate on the "allowed_models" field.
 func AllowedModelsNotNil() predicate.User {
 	return predicate.User(sql.FieldNotNull(FieldAllowedModels))
+}
+
+// WeeklyCostThresholdEQ applies the EQ predicate on the "weekly_cost_threshold" field.
+func WeeklyCostThresholdEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldWeeklyCostThreshold, v))
+}
+
+// WeeklyCostThresholdNEQ applies the NEQ predicate on the "weekly_cost_threshold" field.
+func WeeklyCostThresholdNEQ(v float64) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldWeeklyCostThreshold, v))
+}
+
+// WeeklyCostThresholdIn applies the In predicate on the "weekly_cost_threshold" field.
+func WeeklyCostThresholdIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldIn(FieldWeeklyCostThreshold, vs...))
+}
+
+// WeeklyCostThresholdNotIn applies the NotIn predicate on the "weekly_cost_threshold" field.
+func WeeklyCostThresholdNotIn(vs ...float64) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldWeeklyCostThreshold, vs...))
+}
+
+// WeeklyCostThresholdGT applies the GT predicate on the "weekly_cost_threshold" field.
+func WeeklyCostThresholdGT(v float64) predicate.User {
+	return predicate.User(sql.FieldGT(FieldWeeklyCostThreshold, v))
+}
+
+// WeeklyCostThresholdGTE applies the GTE predicate on the "weekly_cost_threshold" field.
+func WeeklyCostThresholdGTE(v float64) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldWeeklyCostThreshold, v))
+}
+
+// WeeklyCostThresholdLT applies the LT predicate on the "weekly_cost_threshold" field.
+func WeeklyCostThresholdLT(v float64) predicate.User {
+	return predicate.User(sql.FieldLT(FieldWeeklyCostThreshold, v))
+}
+
+// WeeklyCostThresholdLTE applies the LTE predicate on the "weekly_cost_threshold" field.
+func WeeklyCostThresholdLTE(v float64) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldWeeklyCostThreshold, v))
+}
+
+// WeeklyCostThresholdIsNil applies the IsNil predicate on the "weekly_cost_threshold" field.
+func WeeklyCostThresholdIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldWeeklyCostThreshold))
+}
+
+// WeeklyCostThresholdNotNil applies the NotNil predicate on the "weekly_cost_threshold" field.
+func WeeklyCostThresholdNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldWeeklyCostThreshold))
+}
+
+// WeeklyThresholdNotifiedWeekEQ applies the EQ predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekEQ(v string) predicate.User {
+	return predicate.User(sql.FieldEQ(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
+// WeeklyThresholdNotifiedWeekNEQ applies the NEQ predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekNEQ(v string) predicate.User {
+	return predicate.User(sql.FieldNEQ(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
+// WeeklyThresholdNotifiedWeekIn applies the In predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldIn(FieldWeeklyThresholdNotifiedWeek, vs...))
+}
+
+// WeeklyThresholdNotifiedWeekNotIn applies the NotIn predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekNotIn(vs ...string) predicate.User {
+	return predicate.User(sql.FieldNotIn(FieldWeeklyThresholdNotifiedWeek, vs...))
+}
+
+// WeeklyThresholdNotifiedWeekGT applies the GT predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekGT(v string) predicate.User {
+	return predicate.User(sql.FieldGT(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
+// WeeklyThresholdNotifiedWeekGTE applies the GTE predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekGTE(v string) predicate.User {
+	return predicate.User(sql.FieldGTE(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
+// WeeklyThresholdNotifiedWeekLT applies the LT predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekLT(v string) predicate.User {
+	return predicate.User(sql.FieldLT(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
+// WeeklyThresholdNotifiedWeekLTE applies the LTE predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekLTE(v string) predicate.User {
+	return predicate.User(sql.FieldLTE(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
+// WeeklyThresholdNotifiedWeekContains applies the Contains predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekContains(v string) predicate.User {
+	return predicate.User(sql.FieldContains(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
+// WeeklyThresholdNotifiedWeekHasPrefix applies the HasPrefix predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekHasPrefix(v string) predicate.User {
+	return predicate.User(sql.FieldHasPrefix(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
+// WeeklyThresholdNotifiedWeekHasSuffix applies the HasSuffix predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekHasSuffix(v string) predicate.User {
+	return predicate.User(sql.FieldHasSuffix(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
+// WeeklyThresholdNotifiedWeekIsNil applies the IsNil predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekIsNil() predicate.User {
+	return predicate.User(sql.FieldIsNull(FieldWeeklyThresholdNotifiedWeek))
+}
+
+// WeeklyThresholdNotifiedWeekNotNil applies the NotNil predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekNotNil() predicate.User {
+	return predicate.User(sql.FieldNotNull(FieldWeeklyThresholdNotifiedWeek))
+}
+
+// WeeklyThresholdNotifiedWeekEqualFold applies the EqualFold predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekEqualFold(v string) predicate.User {
+	return predicate.User(sql.FieldEqualFold(FieldWeeklyThresholdNotifiedWeek, v))
+}
+
+// WeeklyThresholdNotifiedWeekContainsFold applies the ContainsFold predicate on the "weekly_threshold_notified_week" field.
+func WeeklyThresholdNotifiedWeekContainsFold(v string) predicate.User {
+	return predicate.User(sql.FieldContainsFold(FieldWeeklyThresholdNotifiedWeek, v))
 }
 
 // HasAPIKeys applies the HasEdge predicate on the "api_keys" edge.

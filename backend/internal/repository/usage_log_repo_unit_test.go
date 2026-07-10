@@ -3,6 +3,7 @@
 package repository
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,23 @@ func TestSafeDateFormat(t *testing.T) {
 			require.Equal(t, tc.expected, got, "safeDateFormat(%q)", tc.granularity)
 		})
 	}
+}
+
+func TestPrepareUsageLogInsertCarriesWorkingDirectory(t *testing.T) {
+	dir := "/work/company"
+	prepared := prepareUsageLogInsert(&service.UsageLog{
+		UserID:           1,
+		APIKeyID:         2,
+		AccountID:        3,
+		Model:            "gpt-5.4",
+		WorkingDirectory: &dir,
+	})
+
+	require.Len(t, prepared.args, len(usageLogInsertArgTypes))
+	require.Equal(t, sql.NullString{String: dir, Valid: true}, prepared.args[len(prepared.args)-1])
+
+	query, _ := buildUsageLogBatchInsertQuery([]string{"k"}, map[string]usageLogInsertPrepared{"k": prepared})
+	require.Contains(t, query, "working_directory")
 }
 
 func TestBuildUsageLogBatchInsertQuery_UsesConflictDoNothing(t *testing.T) {

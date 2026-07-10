@@ -162,6 +162,8 @@ type UsageLog struct {
 	FirstTokenMs *int
 	UserAgent    *string
 	IPAddress    *string
+	// WorkingDirectory is best-effort attribution extracted from supported CLI request context.
+	WorkingDirectory *string
 
 	// Cache TTL Override 标记（管理员强制替换了缓存 TTL 计费）
 	CacheTTLOverridden bool
