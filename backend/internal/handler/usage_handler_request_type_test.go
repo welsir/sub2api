@@ -26,6 +26,9 @@ type userUsageRepoCapture struct {
 	stats        *usagestats.UsageStats
 	modelStats   []usagestats.ModelStat
 	groupStats   []usagestats.GroupStat
+	modelUserID  int64
+	rankingLimit int
+	ranking      *usagestats.UserSpendingRankingResponse
 }
 
 func (s *userUsageRepoCapture) ListWithFilters(ctx context.Context, params pagination.PaginationParams, filters usagestats.UsageLogFilters) ([]service.UsageLog, *pagination.PaginationResult, error) {
@@ -62,7 +65,16 @@ func (s *userUsageRepoCapture) GetUsageTrendWithFilters(ctx context.Context, sta
 }
 
 func (s *userUsageRepoCapture) GetModelStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8) ([]usagestats.ModelStat, error) {
+	s.modelUserID = userID
 	return s.modelStats, nil
+}
+
+func (s *userUsageRepoCapture) GetUserSpendingRanking(ctx context.Context, startTime, endTime time.Time, limit int) (*usagestats.UserSpendingRankingResponse, error) {
+	s.rankingLimit = limit
+	if s.ranking != nil {
+		return s.ranking, nil
+	}
+	return &usagestats.UserSpendingRankingResponse{}, nil
 }
 
 func (s *userUsageRepoCapture) GetGroupStatsWithFilters(ctx context.Context, startTime, endTime time.Time, userID, apiKeyID, accountID, groupID int64, requestType *int16, stream *bool, billingType *int8) ([]usagestats.GroupStat, error) {
@@ -90,6 +102,8 @@ func newUserUsageRequestTypeTestRouter(repo *userUsageRepoCapture) *gin.Engine {
 	router.GET("/usage", handler.List)
 	router.GET("/usage/stats", handler.Stats)
 	router.GET("/usage/dashboard/models", handler.DashboardModels)
+	router.GET("/usage/dashboard/global-models", handler.DashboardGlobalModels)
+	router.GET("/usage/dashboard/users-ranking", handler.DashboardUsersRanking)
 	router.GET("/usage/dashboard/snapshot-v2", handler.DashboardSnapshotV2)
 	return router
 }
@@ -297,6 +311,49 @@ func TestUserUsageDashboardModelsRejectsAdminModelSources(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestUserUsageDashboardGlobalModelsUsesCompanyScopeWithoutAccountCost(t *testing.T) {
+	repo := &userUsageRepoCapture{
+		modelStats: []usagestats.ModelStat{{
+			Model:       "gpt-5.4",
+			Requests:    3,
+			TotalTokens: 40,
+			ActualCost:  0.12,
+			AccountCost: 0.09,
+		}},
+	}
+	router := newUserUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/dashboard/global-models?start_date=2026-03-01&end_date=2026-03-02", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Zero(t, repo.modelUserID, "company model stats must not be scoped to the current user")
+	require.Contains(t, rec.Body.String(), `"model":"gpt-5.4"`)
+	require.NotContains(t, rec.Body.String(), "account_cost")
+}
+
+func TestUserUsageDashboardUsersRankingClampsLimit(t *testing.T) {
+	repo := &userUsageRepoCapture{
+		ranking: &usagestats.UserSpendingRankingResponse{
+			Ranking:         []usagestats.UserSpendingRankingItem{{UserID: 7, Email: "u@example.com", ActualCost: 1.25}},
+			TotalActualCost: 1.25,
+			TotalRequests:   4,
+			TotalTokens:     100,
+		},
+	}
+	router := newUserUsageRequestTypeTestRouter(repo)
+
+	req := httptest.NewRequest(http.MethodGet, "/usage/dashboard/users-ranking?start_date=2026-03-01&end_date=2026-03-02&limit=500", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, 50, repo.rankingLimit)
+	require.Contains(t, rec.Body.String(), `"total_actual_cost":1.25`)
+	require.Contains(t, rec.Body.String(), `"email":"u@example.com"`)
 }
 
 func TestUserUsageSnapshotUsesScopedFilters(t *testing.T) {

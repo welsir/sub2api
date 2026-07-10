@@ -503,6 +503,77 @@ func (h *UsageHandler) DashboardModels(c *gin.Context) {
 	})
 }
 
+const (
+	defaultUsersRankingLimit = 10
+	maxUsersRankingLimit     = 50
+)
+
+func parseUsersRankingLimit(raw string) int {
+	if strings.TrimSpace(raw) == "" {
+		return defaultUsersRankingLimit
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil || limit <= 0 {
+		return defaultUsersRankingLimit
+	}
+	if limit > maxUsersRankingLimit {
+		return maxUsersRankingLimit
+	}
+	return limit
+}
+
+// DashboardUsersRanking returns company-wide user spending to authenticated
+// company users.
+// GET /api/v1/usage/dashboard/users-ranking
+func (h *UsageHandler) DashboardUsersRanking(c *gin.Context) {
+	parsed, ok := h.parseUserUsageFilters(c, true)
+	if !ok {
+		return
+	}
+
+	ranking, err := h.usageService.GetGlobalUserSpendingRanking(
+		c.Request.Context(),
+		parsed.StartTime,
+		parsed.EndTime,
+		parseUsersRankingLimit(c.Query("limit")),
+	)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"ranking":           ranking.Ranking,
+		"total_actual_cost": ranking.TotalActualCost,
+		"total_requests":    ranking.TotalRequests,
+		"total_tokens":      ranking.TotalTokens,
+		"start_date":        parsed.StartTime.Format("2006-01-02"),
+		"end_date":          parsed.EndTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
+// DashboardGlobalModels returns company-wide requested-model usage to
+// authenticated company users.
+// GET /api/v1/usage/dashboard/global-models
+func (h *UsageHandler) DashboardGlobalModels(c *gin.Context) {
+	parsed, ok := h.parseUserUsageFilters(c, true)
+	if !ok {
+		return
+	}
+
+	stats, err := h.usageService.GetGlobalModelStats(c.Request.Context(), parsed.StartTime, parsed.EndTime)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, gin.H{
+		"models":     userModelStatsFromUsageStats(stats),
+		"start_date": parsed.StartTime.Format("2006-01-02"),
+		"end_date":   parsed.EndTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	})
+}
+
 // DashboardSnapshotV2 returns usage-page chart data scoped to the current user.
 // GET /api/v1/usage/dashboard/snapshot-v2
 func (h *UsageHandler) DashboardSnapshotV2(c *gin.Context) {

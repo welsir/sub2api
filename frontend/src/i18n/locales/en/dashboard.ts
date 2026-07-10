@@ -17,6 +17,7 @@ export default {
     day: 'Day',
     hour: 'Hour',
     modelDistribution: 'Model Distribution',
+    companyUsageTitle: 'Company Usage (All Users)',
     groupDistribution: 'Group Usage Distribution',
     platformBreakdown: 'Per-platform Breakdown',
     platformBreakdownEmpty: 'No platform usage yet',

@@ -402,6 +402,25 @@ func (s *UsageService) GetAPIKeyModelStats(ctx context.Context, apiKeyID int64, 
 	return stats, nil
 }
 
+// GetGlobalUserSpendingRanking returns company-wide user spending for the
+// authenticated internal dashboard.
+func (s *UsageService) GetGlobalUserSpendingRanking(ctx context.Context, startTime, endTime time.Time, limit int) (*usagestats.UserSpendingRankingResponse, error) {
+	ranking, err := s.usageRepo.GetUserSpendingRanking(ctx, startTime, endTime, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get global user spending ranking: %w", err)
+	}
+	return ranking, nil
+}
+
+// GetGlobalModelStats returns company-wide requested-model usage.
+func (s *UsageService) GetGlobalModelStats(ctx context.Context, startTime, endTime time.Time) ([]usagestats.ModelStat, error) {
+	stats, err := s.usageRepo.GetModelStatsWithFilters(ctx, startTime, endTime, 0, 0, 0, 0, nil, nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get global model stats: %w", err)
+	}
+	return stats, nil
+}
+
 // GetAPIKeyDailyUsage returns daily usage stats for a user's API key.
 func (s *UsageService) GetAPIKeyDailyUsage(ctx context.Context, userID, apiKeyID int64, startTime, endTime time.Time) ([]usagestats.APIKeyDailyUsagePoint, error) {
 	trend, err := s.usageRepo.GetUsageTrendWithFilters(ctx, startTime, endTime, "day", userID, apiKeyID, 0, 0, "", nil, nil, nil)

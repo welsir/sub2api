@@ -15,7 +15,8 @@ import type {
   UsageRequestType,
   UserErrorRequest,
   UserErrorRequestDetail,
-  UserErrorListParams
+  UserErrorListParams,
+  UserSpendingRankingResponse
 } from '@/types'
 
 // ==================== Dashboard Types ====================
@@ -293,6 +294,29 @@ export async function getDashboardModels(params?: {
   return data
 }
 
+export async function getDashboardUsersRanking(params?: {
+  start_date?: string
+  end_date?: string
+  limit?: number
+}): Promise<UserSpendingRankingResponse> {
+  const { data } = await apiClient.get<UserSpendingRankingResponse>(
+    '/usage/dashboard/users-ranking',
+    { params }
+  )
+  return data
+}
+
+export async function getGlobalModels(params?: {
+  start_date?: string
+  end_date?: string
+}): Promise<ModelStatsResponse> {
+  const { data } = await apiClient.get<ModelStatsResponse>(
+    '/usage/dashboard/global-models',
+    { params }
+  )
+  return data
+}
+
 /**
  * Get daily usage details for one API key owned by the current user.
  * @param apiKeyId - API key ID
@@ -379,6 +403,8 @@ export const usageAPI = {
   getDashboardStats,
   getDashboardTrend,
   getDashboardModels,
+  getDashboardUsersRanking,
+  getGlobalModels,
   getMyApiKeyDailyUsage,
   getDashboardSnapshotV2,
   getDashboardApiKeysUsage,
