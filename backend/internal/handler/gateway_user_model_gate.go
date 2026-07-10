@@ -6,18 +6,10 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 )
 
-// userModelDenied reports whether the per-user model whitelist blocks the
-// requested model. A nil user or empty whitelist means no restriction.
-// Callers should reject the request with HTTP 403 in the caller's protocol
-// format when this returns true.
 func userModelDenied(apiKey *service.APIKey, model string) bool {
-	if apiKey == nil || apiKey.User == nil {
-		return false
-	}
-	return !apiKey.User.AllowsModel(model)
+	return apiKey != nil && apiKey.User != nil && !apiKey.User.AllowsModel(model)
 }
 
-// userModelDenialMessage builds the client-facing 403 message for a blocked model.
 func userModelDenialMessage(model string) string {
 	if model == "" {
 		return "The requested model is not permitted for your account"
@@ -25,8 +17,6 @@ func userModelDenialMessage(model string) string {
 	return fmt.Sprintf("Model %q is not permitted for your account", model)
 }
 
-// filterModelIDsByUser returns the subset of modelIDs the per-user whitelist permits.
-// A nil user or empty whitelist means no restriction (the input is returned unchanged).
 func filterModelIDsByUser(apiKey *service.APIKey, modelIDs []string) []string {
 	if apiKey == nil || apiKey.User == nil || len(apiKey.User.AllowedModels) == 0 {
 		return modelIDs
@@ -40,16 +30,14 @@ func filterModelIDsByUser(apiKey *service.APIKey, modelIDs []string) []string {
 	return out
 }
 
-// filterModelObjectsByUser returns the subset of typed model objects the per-user
-// whitelist permits, using idOf to extract each model's ID.
 func filterModelObjectsByUser[T any](apiKey *service.APIKey, models []T, idOf func(T) string) []T {
 	if apiKey == nil || apiKey.User == nil || len(apiKey.User.AllowedModels) == 0 {
 		return models
 	}
 	out := make([]T, 0, len(models))
-	for _, m := range models {
-		if apiKey.User.AllowsModel(idOf(m)) {
-			out = append(out, m)
+	for _, model := range models {
+		if apiKey.User.AllowsModel(idOf(model)) {
+			out = append(out, model)
 		}
 	}
 	return out

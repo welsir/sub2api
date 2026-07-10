@@ -5,10 +5,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestIsClaudeCodeClient(t *testing.T) {
+	// 合法的 legacy 格式 metadata.user_id（64位 hex + account uuid + session uuid）
+	legacyUserID := "user_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2_account_550e8400-e29b-41d4-a716-446655440000_session_123e4567-e89b-12d3-a456-426614174000"
+	// 合法的 JSON 格式 metadata.user_id（2.1.78+ 版本）
+	jsonUserID := `{"device_id":"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2","account_uuid":"550e8400-e29b-41d4-a716-446655440000","session_id":"123e4567-e89b-12d3-a456-426614174000"}`
+
 	tests := []struct {
 		name           string
 		userAgent      string
@@ -16,15 +23,21 @@ func TestIsClaudeCodeClient(t *testing.T) {
 		want           bool
 	}{
 		{
-			name:           "Claude Code client",
+			name:           "Claude Code client with legacy user_id",
 			userAgent:      "claude-cli/1.0.62 (darwin; arm64)",
-			metadataUserID: "session_123e4567-e89b-12d3-a456-426614174000",
+			metadataUserID: legacyUserID,
 			want:           true,
 		},
 		{
-			name:           "Claude Code without version suffix",
-			userAgent:      "claude-cli/2.0.0",
-			metadataUserID: "session_abc",
+			name:           "Claude Code client with JSON user_id",
+			userAgent:      "claude-cli/2.1.92 (external, cli)",
+			metadataUserID: jsonUserID,
+			want:           true,
+		},
+		{
+			name:           "Claude Code case insensitive UA",
+			userAgent:      "Claude-CLI/2.0.0",
+			metadataUserID: legacyUserID,
 			want:           true,
 		},
 		{
@@ -34,21 +47,33 @@ func TestIsClaudeCodeClient(t *testing.T) {
 			want:           false,
 		},
 		{
-			name:           "Different user agent",
+			name:           "Claude CLI UA with invalid user_id format",
+			userAgent:      "claude-cli/2.0.0",
+			metadataUserID: "fake-user-id-12345",
+			want:           false,
+		},
+		{
+			name:           "Different user agent with valid user_id",
 			userAgent:      "curl/7.68.0",
-			metadataUserID: "user123",
+			metadataUserID: legacyUserID,
 			want:           false,
 		},
 		{
 			name:           "Empty user agent",
 			userAgent:      "",
-			metadataUserID: "user123",
+			metadataUserID: legacyUserID,
 			want:           false,
 		},
 		{
 			name:           "Similar but not Claude CLI",
 			userAgent:      "claude-api/1.0.0",
-			metadataUserID: "user123",
+			metadataUserID: legacyUserID,
+			want:           false,
+		},
+		{
+			name:           "Opencode spoofing UA with arbitrary user_id",
+			userAgent:      "claude-cli/2.1.92",
+			metadataUserID: "session_abc",
 			want:           false,
 		},
 	}
@@ -378,16 +403,36 @@ func TestRewriteSystemForNonClaudeCode(t *testing.T) {
 			err := json.Unmarshal(result, &parsed)
 			require.NoError(t, err)
 
-			// system 应为 array 格式: [{type: "text", text: "...", cache_control: {type: "ephemeral"}}]
+			// system 应为 array 格式，对齐真实 Claude Code CLI 的 3-block 形态：
+			//   [0] billing attribution block (x-anthropic-billing-header: cc_version=...;)
+			//   [1] Claude Code 身份前缀 block (不带 cache_control)
+			//   [2] 工具无关的通用提示词扩充 block (带 cache_control，作为缓存断点)
 			systemArr, ok := parsed["system"].([]any)
 			require.True(t, ok, "system should be an array, got %T", parsed["system"])
-			require.Len(t, systemArr, 1, "system array should have exactly 1 block")
-			systemBlock, ok := systemArr[0].(map[string]any)
+			require.Len(t, systemArr, 3, "system array should have exactly 3 blocks (billing + cc prompt + expansion)")
+
+			billingBlock, ok := systemArr[0].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, "text", billingBlock["type"])
+			require.Contains(t, billingBlock["text"], "x-anthropic-billing-header:")
+			require.Contains(t, billingBlock["text"], "cc_version=")
+			require.Contains(t, billingBlock["text"], "cc_entrypoint=cli")
+			// 新版 CLI 已取消 cch=... 签名字段，注入的 billing block 不应再带 cch。
+			require.NotContains(t, billingBlock["text"], "cch=")
+
+			systemBlock, ok := systemArr[1].(map[string]any)
 			require.True(t, ok)
 			require.Equal(t, "text", systemBlock["type"])
 			require.Equal(t, tt.wantSystemText, systemBlock["text"])
-			cc, ok := systemBlock["cache_control"].(map[string]any)
-			require.True(t, ok, "system block should have cache_control")
+			_, hasCC := systemBlock["cache_control"]
+			require.False(t, hasCC, "身份前缀 block 不应带 cache_control（断点落在扩充块）")
+
+			expansionBlock, ok := systemArr[2].(map[string]any)
+			require.True(t, ok)
+			require.Equal(t, "text", expansionBlock["type"])
+			require.Equal(t, claudeCodeSystemPromptExpansion, expansionBlock["text"])
+			cc, ok := expansionBlock["cache_control"].(map[string]any)
+			require.True(t, ok, "expansion block should have cache_control")
 			require.Equal(t, "ephemeral", cc["type"])
 
 			// 检查 messages
@@ -422,4 +467,43 @@ func TestRewriteSystemForNonClaudeCode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRewriteSystemForNonClaudeCodeWithPrompt_UsesCustomExpansionPrompt(t *testing.T) {
+	body := []byte(`{"model":"claude-3","system":"Project instructions","messages":[{"role":"user","content":"hello"}]}`)
+	customPrompt := "Custom Claude OAuth expansion prompt"
+
+	result := rewriteSystemForNonClaudeCodeWithPrompt(body, "Project instructions", customPrompt)
+
+	system := gjson.GetBytes(result, "system")
+	require.True(t, system.IsArray())
+	require.Len(t, system.Array(), 3)
+	require.Equal(t, customPrompt, system.Array()[2].Get("text").String())
+	require.Equal(t, "ephemeral", system.Array()[2].Get("cache_control.type").String())
+}
+
+func TestRewriteSystemForNonClaudeCodeWithPromptBlocks_UsesConfiguredBlocks(t *testing.T) {
+	body := []byte(`{"model":"claude-3","system":"Project instructions","messages":[{"role":"user","content":"hello"}]}`)
+	blocks := `{
+		"blocks": [
+			{"type":"text","text":"prefix {cc_version}.{fp}","cache_control":true},
+			{"enabled":false,"type":"text","text":"disabled"},
+			{"type":"text","text":"{claude_code_system_prompt}"},
+			{"type":"text","text":"tail","cache_control":{"type":"ephemeral","ttl":"1h"}}
+		]
+	}`
+
+	result := rewriteSystemForNonClaudeCodeWithPromptBlocks(body, "Project instructions", "", blocks)
+
+	system := gjson.GetBytes(result, "system")
+	require.True(t, system.IsArray())
+	arr := system.Array()
+	require.Len(t, arr, 3)
+	require.Contains(t, arr[0].Get("text").String(), "prefix "+claude.CLICurrentVersion+".")
+	require.Equal(t, "ephemeral", arr[0].Get("cache_control.type").String())
+	require.Equal(t, claude.DefaultCacheControlTTL, arr[0].Get("cache_control.ttl").String())
+	require.Equal(t, claudeCodeSystemPrompt, arr[1].Get("text").String())
+	require.False(t, arr[1].Get("cache_control").Exists())
+	require.Equal(t, "tail", arr[2].Get("text").String())
+	require.Equal(t, "1h", arr[2].Get("cache_control.ttl").String())
 }

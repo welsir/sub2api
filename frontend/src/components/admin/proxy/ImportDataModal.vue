@@ -27,18 +27,14 @@
             </div>
             <div class="text-xs text-gray-500 dark:text-dark-400">JSON (.json)</div>
           </div>
-          <label
-            :for="fileInputId"
-            class="btn btn-secondary shrink-0 cursor-pointer"
-          >
+          <button type="button" class="btn btn-secondary shrink-0" @click="openFilePicker">
             {{ t('common.chooseFile') }}
-          </label>
+          </button>
         </div>
         <input
-          :id="fileInputId"
           ref="fileInput"
           type="file"
-          class="sr-only"
+          class="hidden"
           accept="application/json,.json"
           @change="handleFileChange"
         />
@@ -115,7 +111,6 @@ const importing = ref(false)
 const file = ref<File | null>(null)
 const result = ref<AdminDataImportResult | null>(null)
 
-const fileInputId = 'admin-proxies-import-file'
 const fileInput = ref<HTMLInputElement | null>(null)
 const fileName = computed(() => file.value?.name || '')
 
@@ -133,6 +128,10 @@ watch(
     }
   }
 )
+
+const openFilePicker = () => {
+  fileInput.value?.click()
+}
 
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
@@ -39,26 +40,42 @@ type AccountQuotaReader interface {
 	GetByID(ctx context.Context, id int64) (*Account, error)
 }
 
+type weeklyThresholdNotificationStore interface {
+	ClaimWeeklyThresholdNotification(ctx context.Context, userID int64, weekKey string) (bool, error)
+}
+
+const weeklyCostSpendCacheTTL = 60 * time.Second
+
 // BalanceNotifyService handles balance and quota threshold notifications.
 type BalanceNotifyService struct {
-	emailService *EmailService
-	settingRepo  SettingRepository
-	accountRepo  AccountQuotaReader
-	usageRepo    UsageLogRepository
-	// weeklyCache 缓存本周花费聚合结果（短 TTL）与"本周已告警"标记（到周末），
-	// 用于把每用户的周聚合查询频率压到极低，并避免重复告警。
-	weeklyCache *gocache.Cache
+	emailService             *EmailService
+	settingRepo              SettingRepository
+	accountRepo              AccountQuotaReader
+	usageRepo                UsageLogRepository
+	weeklyNotifier           weeklyThresholdNotificationStore
+	weeklyCache              *gocache.Cache
+	weeklyMu                 sync.Mutex
+	notificationEmailService *NotificationEmailService
 }
 
 // NewBalanceNotifyService creates a new BalanceNotifyService.
-func NewBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountQuotaReader, usageRepo UsageLogRepository) *BalanceNotifyService {
-	return &BalanceNotifyService{
-		emailService: emailService,
-		settingRepo:  settingRepo,
-		accountRepo:  accountRepo,
-		usageRepo:    usageRepo,
-		weeklyCache:  gocache.New(weeklyCostSpendCacheTTL, 10*time.Minute),
+func NewBalanceNotifyService(emailService *EmailService, settingRepo SettingRepository, accountRepo AccountQuotaReader, usageRepo UsageLogRepository, userRepo UserRepository) *BalanceNotifyService {
+	var weeklyNotifier weeklyThresholdNotificationStore
+	if notifier, ok := userRepo.(weeklyThresholdNotificationStore); ok {
+		weeklyNotifier = notifier
 	}
+	return &BalanceNotifyService{
+		emailService:   emailService,
+		settingRepo:    settingRepo,
+		accountRepo:    accountRepo,
+		usageRepo:      usageRepo,
+		weeklyNotifier: weeklyNotifier,
+		weeklyCache:    gocache.New(weeklyCostSpendCacheTTL, 10*time.Minute),
+	}
+}
+
+func (s *BalanceNotifyService) SetNotificationEmailService(notificationEmailService *NotificationEmailService) {
+	s.notificationEmailService = notificationEmailService
 }
 
 // resolveBalanceThreshold returns the effective balance threshold.
@@ -87,115 +104,132 @@ func (s *BalanceNotifyService) CheckBalanceAfterDeduction(ctx context.Context, u
 	s.dispatchBalanceLowEmail(ctx, user, newBalance, effectiveThreshold, rechargeURL)
 }
 
-// weeklyCostSpendCacheTTL bounds how often the per-user weekly spend aggregation runs.
-// Spend only grows; a small staleness in detecting the crossing is fine for a warning.
-const weeklyCostSpendCacheTTL = 60 * time.Second
-
-// CheckWeeklyCostAfterDeduction warns (email to the user and admins) when a user's
-// natural-week (Saturday-first) actual_cost reaches their configured weekly threshold.
-// It never blocks requests. Only users with a threshold incur any work; the aggregation
-// query is cached (short TTL) and suppressed once an alert has fired for the week.
-func (s *BalanceNotifyService) CheckWeeklyCostAfterDeduction(ctx context.Context, user *User) {
-	if user == nil || s.emailService == nil || s.settingRepo == nil || s.usageRepo == nil || s.weeklyCache == nil {
+// CheckWeeklyCostAfterDeduction sends one warning per user and natural week
+// when balance-billed usage reaches the configured threshold. It is called
+// after a successful deduction and before that request's usage row is written,
+// so currentCost is included explicitly in the cached running total.
+func (s *BalanceNotifyService) CheckWeeklyCostAfterDeduction(ctx context.Context, user *User, currentCost float64) {
+	if user == nil || s.emailService == nil || s.settingRepo == nil {
 		return
+	}
+	recipients := s.collectWeeklyCostRecipients(ctx, user)
+	if len(recipients) == 0 {
+		return
+	}
+	spend, threshold, claimed := s.claimWeeklyCostThreshold(ctx, user, currentCost)
+	if !claimed {
+		return
+	}
+	s.dispatchWeeklyCostEmail(user, spend, threshold, recipients)
+}
+
+func (s *BalanceNotifyService) claimWeeklyCostThreshold(ctx context.Context, user *User, currentCost float64) (spend, threshold float64, claimed bool) {
+	if user == nil || currentCost <= 0 || s.usageRepo == nil || s.weeklyNotifier == nil || s.weeklyCache == nil {
+		return 0, 0, false
 	}
 	threshold, ok := user.WeeklyThreshold()
 	if !ok {
-		return // 未设置阈值：绝大多数用户在此返回，零开销
+		return 0, 0, false
 	}
 
 	start, end := CurrentNaturalWeekRange()
 	weekKey := start.Format("2006-01-02")
+
+	s.weeklyMu.Lock()
+	defer s.weeklyMu.Unlock()
+	if user.WeeklyThresholdNotifiedWeek != nil && *user.WeeklyThresholdNotifiedWeek == weekKey {
+		return 0, threshold, false
+	}
+
 	notifiedKey := fmt.Sprintf("wkcost:notified:%d:%s", user.ID, weekKey)
 	if _, found := s.weeklyCache.Get(notifiedKey); found {
-		return // 本自然周已告警（本实例），跳过聚合
+		return 0, threshold, false
 	}
 
-	spend, ok := s.cachedWeeklySpend(ctx, user.ID, weekKey, start, end)
-	if !ok || spend < threshold {
-		return
+	spendKey := fmt.Sprintf("wkcost:spend:%d:%s", user.ID, weekKey)
+	if cached, found := s.weeklyCache.Get(spendKey); found {
+		if value, valid := cached.(float64); valid {
+			spend = value
+		}
+	} else {
+		stats, err := s.usageRepo.GetUserStatsAggregated(ctx, user.ID, start, end)
+		if err != nil || stats == nil {
+			if err != nil {
+				slog.Warn("weekly cost aggregation failed", "user_id", user.ID, "error", err)
+			}
+			return 0, threshold, false
+		}
+		spend = stats.TotalActualCost
+	}
+	spend += currentCost
+	s.weeklyCache.Set(spendKey, spend, weeklyCostSpendCacheTTL)
+	if spend < threshold {
+		return spend, threshold, false
 	}
 
-	// 达到阈值：标记本周已告警（到周末过期，下周自动重新生效），再发邮件。
+	claimed, err := s.weeklyNotifier.ClaimWeeklyThresholdNotification(ctx, user.ID, weekKey)
+	if err != nil {
+		slog.Warn("weekly cost notification claim failed", "user_id", user.ID, "week", weekKey, "error", err)
+		return spend, threshold, false
+	}
 	ttl := time.Until(end)
 	if ttl <= 0 {
 		ttl = weeklyCostSpendCacheTTL
 	}
 	s.weeklyCache.Set(notifiedKey, true, ttl)
-	s.dispatchWeeklyCostEmail(ctx, user, spend, threshold)
+	marker := weekKey
+	user.WeeklyThresholdNotifiedWeek = &marker
+	return spend, threshold, claimed
 }
 
-// cachedWeeklySpend returns the user's current natural-week actual_cost, caching the
-// aggregation result for weeklyCostSpendCacheTTL to bound query frequency under load.
-func (s *BalanceNotifyService) cachedWeeklySpend(ctx context.Context, userID int64, weekKey string, start, end time.Time) (float64, bool) {
-	spendKey := fmt.Sprintf("wkcost:spend:%d:%s", userID, weekKey)
-	if v, found := s.weeklyCache.Get(spendKey); found {
-		if f, ok := v.(float64); ok {
-			return f, true
+func (s *BalanceNotifyService) collectWeeklyCostRecipients(ctx context.Context, user *User) []string {
+	seen := make(map[string]struct{})
+	recipients := make([]string, 0, 1)
+	add := func(email string) {
+		email = strings.TrimSpace(email)
+		if email == "" {
+			return
 		}
+		key := strings.ToLower(email)
+		if _, exists := seen[key]; exists {
+			return
+		}
+		seen[key] = struct{}{}
+		recipients = append(recipients, email)
 	}
-	stats, err := s.usageRepo.GetUserStatsAggregated(ctx, userID, start, end)
-	if err != nil || stats == nil {
-		return 0, false
+	add(user.Email)
+	for _, email := range s.getAccountQuotaNotifyEmails(ctx) {
+		add(email)
 	}
-	s.weeklyCache.Set(spendKey, stats.TotalActualCost, weeklyCostSpendCacheTTL)
-	return stats.TotalActualCost, true
+	return recipients
 }
 
-// dispatchWeeklyCostEmail sends the weekly threshold alert to the user and admins async.
-func (s *BalanceNotifyService) dispatchWeeklyCostEmail(ctx context.Context, user *User, spend, threshold float64) {
-	siteName := s.getSiteName(ctx)
-	recipients := s.collectWeeklyCostRecipients(ctx, user)
-	if len(recipients) == 0 {
-		slog.Warn("weekly cost alert: no recipients", "user_id", user.ID)
-		return
+func (s *BalanceNotifyService) dispatchWeeklyCostEmail(user *User, spend, threshold float64, recipients []string) {
+	siteName := defaultSiteName
+	if s.settingRepo != nil {
+		siteName = s.getSiteName(context.Background())
 	}
 	subject, body := buildWeeklyCostEmail(user, spend, threshold, siteName)
-	slog.Info("weekly cost threshold reached: sending alert",
-		"user_id", user.ID, "spend", spend, "threshold", threshold, "recipients", recipients)
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
-				slog.Error("panic in weekly cost notification", "recover", r)
+			if recovered := recover(); recovered != nil {
+				slog.Error("panic in weekly cost notification", "recover", recovered)
 			}
 		}()
 		s.sendEmails(recipients, subject, body, "user_id", user.ID, "kind", "weekly_cost")
 	}()
 }
 
-// collectWeeklyCostRecipients returns the user's own email plus configured admin alert emails.
-func (s *BalanceNotifyService) collectWeeklyCostRecipients(ctx context.Context, user *User) []string {
-	seen := make(map[string]bool)
-	var out []string
-	add := func(e string) {
-		e = strings.TrimSpace(e)
-		if e == "" {
-			return
-		}
-		lower := strings.ToLower(e)
-		if !seen[lower] {
-			seen[lower] = true
-			out = append(out, e)
-		}
-	}
-	add(user.Email) // 用户本人
-	for _, e := range s.getAccountQuotaNotifyEmails(ctx) {
-		add(e) // 管理员
-	}
-	return out
-}
-
-// buildWeeklyCostEmail builds the bilingual weekly-threshold alert subject and HTML body.
 func buildWeeklyCostEmail(user *User, spend, threshold float64, siteName string) (subject, body string) {
 	displayName := user.Username
 	if displayName == "" {
 		displayName = user.Email
 	}
-	subject = fmt.Sprintf("[%s] 周用量超阈值提醒 / Weekly usage threshold reached", siteName)
+	subject = fmt.Sprintf("[%s] 周用量超阈值提醒 / Weekly usage threshold reached", sanitizeEmailHeader(siteName))
 	body = fmt.Sprintf(`<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6;color:#333">
-<p>用户 <b>%s</b>（%s）本自然周（周六至周五）AI 用量已达 <b>$%.2f</b>，达到/超过设定阈值 <b>$%.2f</b>。</p>
-<p>User <b>%s</b> (%s) has reached <b>$%.2f</b> of AI usage this natural week (Sat–Fri), at/above the configured threshold of <b>$%.2f</b>.</p>
-<p style="color:#888;font-size:12px">— %s</p>
+<p>用户 <b>%s</b>（%s）本自然周（周六至周五）AI 用量已达 <b>$%.2f</b>，达到或超过设定阈值 <b>$%.2f</b>。</p>
+<p>User <b>%s</b> (%s) has reached <b>$%.2f</b> of AI usage this natural week (Sat-Fri), at or above the configured threshold of <b>$%.2f</b>.</p>
+<p style="color:#888;font-size:12px">- %s</p>
 </div>`,
 		html.EscapeString(displayName), html.EscapeString(user.Email), spend, threshold,
 		html.EscapeString(displayName), html.EscapeString(user.Email), spend, threshold,
@@ -249,7 +283,7 @@ func (s *BalanceNotifyService) dispatchBalanceLowEmail(ctx context.Context, user
 				slog.Error("panic in balance notification", "recover", r)
 			}
 		}()
-		s.sendBalanceLowEmails(recipients, user.Username, user.Email, newBalance, threshold, siteName, rechargeURL)
+		s.sendBalanceLowEmails(recipients, user.ID, user.Username, user.Email, newBalance, threshold, siteName, rechargeURL)
 	}()
 }
 
@@ -466,10 +500,43 @@ func (s *BalanceNotifyService) sendEmails(recipients []string, subject, body str
 }
 
 // sendBalanceLowEmails sends balance low notification to all recipients.
-func (s *BalanceNotifyService) sendBalanceLowEmails(recipients []string, userName, userEmail string, balance, threshold float64, siteName, rechargeURL string) {
+func (s *BalanceNotifyService) sendBalanceLowEmails(recipients []string, userID int64, userName, userEmail string, balance, threshold float64, siteName, rechargeURL string) {
 	displayName := userName
 	if displayName == "" {
 		displayName = userEmail
+	}
+	if s.notificationEmailService != nil {
+		fallbackRecipients := make([]string, 0, len(recipients))
+		for _, to := range recipients {
+			ctx, cancel := context.WithTimeout(context.Background(), emailSendTimeout)
+			err := s.notificationEmailService.Send(ctx, NotificationEmailSendInput{
+				Event:          NotificationEmailEventBalanceLow,
+				RecipientEmail: to,
+				RecipientName:  displayName,
+				UserID:         userID,
+				SourceType:     "balance_low",
+				SourceID:       firstNonEmpty(strconv.FormatInt(userID, 10), userEmail),
+				ReminderKey:    time.Now().UTC().Format("2006-01-02"),
+				Variables: map[string]string{
+					"current_balance": fmt.Sprintf("%.2f", balance),
+					"threshold":       fmt.Sprintf("%.2f", threshold),
+					"recharge_url":    rechargeURL,
+				},
+			})
+			cancel()
+			if err != nil {
+				if shouldFallbackNotificationEmail(err) {
+					slog.Warn("template balance low notification failed; falling back to built-in body", "to", to, "err", err.Error())
+					fallbackRecipients = append(fallbackRecipients, to)
+				} else {
+					slog.Warn("template balance low notification delivery failed; not sending fallback to avoid duplicates", "to", to, "err", err.Error())
+				}
+			}
+		}
+		if len(fallbackRecipients) == 0 {
+			return
+		}
+		recipients = fallbackRecipients
 	}
 	subject := fmt.Sprintf("[%s] 余额不足提醒 / Balance Low Alert", sanitizeEmailHeader(siteName))
 	body := s.buildBalanceLowEmailBody(html.EscapeString(displayName), balance, threshold, html.EscapeString(siteName), rechargeURL)
@@ -491,6 +558,44 @@ func (s *BalanceNotifyService) sendQuotaAlertEmails(adminEmails []string, accoun
 	remaining := dim.limit - used
 	if remaining < 0 {
 		remaining = 0
+	}
+
+	if s.notificationEmailService != nil {
+		fallbackRecipients := make([]string, 0, len(adminEmails))
+		for _, to := range adminEmails {
+			ctx, cancel := context.WithTimeout(context.Background(), emailSendTimeout)
+			err := s.notificationEmailService.Send(ctx, NotificationEmailSendInput{
+				Event:          NotificationEmailEventAccountQuotaAlert,
+				RecipientEmail: to,
+				RecipientName:  emailRecipientName(to),
+				SourceType:     "account_quota",
+				SourceID:       fmt.Sprintf("%d-%s", accountID, dim.name),
+				ReminderKey:    time.Now().UTC().Format("2006-01-02"),
+				Variables: map[string]string{
+					"account_id":      strconv.FormatInt(accountID, 10),
+					"account_name":    accountName,
+					"platform":        platform,
+					"quota_dimension": dimLabel,
+					"quota_used":      fmt.Sprintf("%.2f", used),
+					"quota_limit":     fmt.Sprintf("%.2f", dim.limit),
+					"quota_remaining": fmt.Sprintf("%.2f", remaining),
+					"quota_threshold": thresholdDisplay,
+				},
+			})
+			cancel()
+			if err != nil {
+				if shouldFallbackNotificationEmail(err) {
+					slog.Warn("template account quota alert failed; falling back to built-in body", "to", to, "account_id", accountID, "dimension", dim.name, "err", err.Error())
+					fallbackRecipients = append(fallbackRecipients, to)
+				} else {
+					slog.Warn("template account quota alert delivery failed; not sending fallback to avoid duplicates", "to", to, "account_id", accountID, "dimension", dim.name, "err", err.Error())
+				}
+			}
+		}
+		if len(fallbackRecipients) == 0 {
+			return
+		}
+		adminEmails = fallbackRecipients
 	}
 
 	subject := fmt.Sprintf("[%s] 账号限额告警 / Account Quota Alert - %s", sanitizeEmailHeader(siteName), sanitizeEmailHeader(accountName))

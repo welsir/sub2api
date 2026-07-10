@@ -49,6 +49,9 @@ func (User) Fields() []ent.Field {
 		field.Float("balance").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Default(0),
+		field.Float("frozen_balance").
+			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
+			Default(0),
 		field.Int("concurrency").
 			Default(5),
 		field.String("status").
@@ -77,10 +80,10 @@ func (User) Fields() []ent.Field {
 		field.String("signup_source").
 			Validate(func(value string) error {
 				switch value {
-				case "email", "linuxdo", "wechat", "oidc":
+				case "email", "linuxdo", "wechat", "oidc", "github", "google", "dingtalk":
 					return nil
 				default:
-					return fmt.Errorf("must be one of email, linuxdo, wechat, oidc")
+					return fmt.Errorf("must be one of email, linuxdo, wechat, oidc, github, google, dingtalk")
 				}
 			}).
 			Default("email"),
@@ -113,24 +116,21 @@ func (User) Fields() []ent.Field {
 		field.Int("rpm_limit").
 			Default(0),
 
-		// 用户级模型白名单（支持通配符，如 "claude-*"）。为空表示不限制，放行全部模型。
+		// 用户级模型白名单（支持通配符，如 "claude-*"）。为空表示不限制。
 		field.JSON("allowed_models", []string{}).
 			Optional().
-			Comment("Per-user model whitelist (supports wildcards like claude-*); empty = no restriction"),
+			Comment("Per-user model whitelist; empty means unrestricted"),
 
-		// 用户级周花费阈值（自然周，周六为第一天）。NULL 或 <=0 表示不限制。
-		// 本自然周 actual_cost 累计达到该值时告警（邮件通知用户与管理员），不阻断请求。
 		field.Float("weekly_cost_threshold").
 			SchemaType(map[string]string{dialect.Postgres: "decimal(20,8)"}).
 			Optional().
 			Nillable().
-			Comment("Per-user weekly actual_cost threshold (natural week, Sat start); NULL/<=0 = no limit"),
-		// 上次已就周阈值告警的自然周起始日（YYYY-MM-DD）。用于保证每个自然周最多告警一次。
+			Comment("Per-user weekly actual_cost threshold; Saturday is the first day"),
 		field.String("weekly_threshold_notified_week").
 			MaxLen(10).
 			Optional().
 			Nillable().
-			Comment("Natural-week start date (YYYY-MM-DD) of the last weekly-threshold alert; dedupes per-week alerts"),
+			Comment("Start date of the last natural week whose threshold notification was claimed"),
 	}
 }
 
@@ -150,6 +150,7 @@ func (User) Edges() []ent.Edge {
 		edge.To("auth_identities", AuthIdentity.Type).
 			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("pending_auth_sessions", PendingAuthSession.Type),
+		edge.To("platform_quotas", UserPlatformQuota.Type),
 	}
 }
 

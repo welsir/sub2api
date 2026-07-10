@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -531,23 +532,21 @@ func (h *DashboardHandler) GetUserSpendingRanking(c *gin.Context) {
 	response.Success(c, payload)
 }
 
-// GetWorkingDirSpending handles per-(user, working directory) spending aggregation.
-// Admin-only. Used to spot AI usage attributed to non-company project directories.
-// GET /api/v1/admin/dashboard/working-dirs?start_date=&end_date=&user_id=&limit=
+// GetWorkingDirSpending returns spending grouped by user and client cwd.
 func (h *DashboardHandler) GetWorkingDirSpending(c *gin.Context) {
 	startTime, endTime := parseTimeRange(c)
 	limit := parseRankingLimit(c.DefaultQuery("limit", "100"))
 	userID, _ := strconv.ParseInt(c.Query("user_id"), 10, 64)
 
-	resp, err := h.dashboardService.GetWorkingDirSpending(c.Request.Context(), startTime, endTime, userID, limit)
+	result, err := h.dashboardService.GetWorkingDirSpending(c.Request.Context(), startTime, endTime, userID, limit)
 	if err != nil {
-		response.Error(c, 500, "Failed to get working directory spending")
+		response.Error(c, http.StatusInternalServerError, "Failed to get working directory spending")
 		return
 	}
 
 	response.Success(c, gin.H{
-		"items":             resp.Items,
-		"total_actual_cost": resp.TotalActualCost,
+		"items":             result.Items,
+		"total_actual_cost": result.TotalActualCost,
 		"start_date":        startTime.Format("2006-01-02"),
 		"end_date":          endTime.Add(-24 * time.Hour).Format("2006-01-02"),
 	})
@@ -568,9 +567,14 @@ func (h *DashboardHandler) GetBatchUsersUsage(c *gin.Context) {
 		return
 	}
 
+	// cacheKey 必须包含当日日期，否则跨午夜后 30s 内会复用昨天的 "today_*" 结果。
 	keyRaw, _ := json.Marshal(struct {
+		V       int     `json:"v"`
+		Day     string  `json:"day"`
 		UserIDs []int64 `json:"user_ids"`
 	}{
+		V:       2, // bump 当响应结构变化（如加入 by_platform 时）
+		Day:     timezone.Today().Format("2006-01-02"),
 		UserIDs: userIDs,
 	})
 	cacheKey := string(keyRaw)
@@ -691,6 +695,9 @@ func (h *DashboardHandler) GetUserBreakdown(c *gin.Context) {
 			dim.BillingType = &btVal
 		}
 	}
+
+	// sort_by 由 repo 层 allowlist 校验;非法值静默回退默认排序(actual_cost)。
+	dim.SortBy = strings.TrimSpace(c.Query("sort_by"))
 
 	limit := 50
 	if v := c.Query("limit"); v != "" {

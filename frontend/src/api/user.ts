@@ -9,7 +9,15 @@ import {
   prepareOAuthBindAccessTokenCookie,
   type WeChatOAuthPublicSettings,
 } from './auth'
-import type { User, ChangePasswordRequest, NotifyEmailEntry, UserAuthProvider } from '@/types'
+import type {
+  User,
+  ChangePasswordRequest,
+  NotifyEmailEntry,
+  UserAuthProvider,
+  UserAffiliateDetail,
+  AffiliateTransferResponse,
+  PlatformQuotasResponse,
+} from '@/types'
 
 /**
  * Get current user profile
@@ -168,6 +176,24 @@ export async function startOAuthBinding(
   window.location.href = startURL
 }
 
+export async function getAffiliateDetail(): Promise<UserAffiliateDetail> {
+  const { data } = await apiClient.get<UserAffiliateDetail>('/user/aff')
+  return data
+}
+
+export async function transferAffiliateQuota(): Promise<AffiliateTransferResponse> {
+  const { data } = await apiClient.post<AffiliateTransferResponse>('/user/aff/transfer')
+  return data
+}
+
+/**
+ * 获取当前用户的平台限额 + 用量。
+ */
+export async function getMyPlatformQuotas(): Promise<PlatformQuotasResponse> {
+  const { data } = await apiClient.get<PlatformQuotasResponse>('/user/platform-quotas')
+  return data
+}
+
 export const userAPI = {
   getProfile,
   updateProfile,
@@ -180,7 +206,10 @@ export const userAPI = {
   bindEmailIdentity,
   unbindAuthIdentity,
   buildOAuthBindingStartURL,
-  startOAuthBinding
+  startOAuthBinding,
+  getAffiliateDetail,
+  transferAffiliateQuota,
+  getMyPlatformQuotas,
 }
 
 export default userAPI

@@ -61,10 +61,15 @@ func (s *GatewayService) ForwardAsChatCompletions(
 
 	// 4. Model mapping
 	mappedModel := originalModel
-	if account.Type == AccountTypeAPIKey {
+	if account.Type == AccountTypeAPIKey || account.Type == AccountTypeServiceAccount {
 		mappedModel = account.GetMappedModel(originalModel)
 	}
-	if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
+	if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
+		normalized := normalizeVertexAnthropicModelID(claude.NormalizeModelID(originalModel))
+		if normalized != originalModel {
+			mappedModel = normalized
+		}
+	} else if mappedModel == originalModel && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
 		normalized := claude.NormalizeModelID(originalModel)
 		if normalized != originalModel {
 			mappedModel = normalized
@@ -85,15 +90,16 @@ func (s *GatewayService) ForwardAsChatCompletions(
 		return nil, fmt.Errorf("marshal anthropic request: %w", err)
 	}
 
-	// 6. Apply Claude Code mimicry for OAuth accounts
-	isClaudeCode := false // CC API is never Claude Code
+	// 6. Apply Claude Code mimicry for OAuth accounts.
+	// Chat Completions 协议进来的请求永远不是 Claude Code 客户端，所以对 OAuth 账号
+	// 必须完整执行 /v1/messages 主路径上的伪装链路（system 重写 + normalize + metadata 注入），
+	// 否则会被 Anthropic 判为第三方应用并扣 extra usage。
+	// 见 applyClaudeCodeOAuthMimicryToBody 的 godoc。
+	isClaudeCode := false
 	shouldMimicClaudeCode := account.IsOAuth() && !isClaudeCode
 
 	if shouldMimicClaudeCode {
-		if !strings.Contains(strings.ToLower(mappedModel), "haiku") &&
-			!systemIncludesClaudeCodePrompt(anthropicReq.System) {
-			anthropicBody = injectClaudeCodePrompt(anthropicBody, anthropicReq.System)
-		}
+		anthropicBody = s.applyClaudeCodeOAuthMimicryToBody(ctx, c, account, anthropicBody, anthropicReq.System, mappedModel)
 	}
 
 	// 7. Enforce cache_control block limit
@@ -113,7 +119,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 
 	// 10. Build upstream request
 	upstreamCtx, releaseUpstreamCtx := detachStreamUpstreamContext(ctx, reqStream)
-	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, anthropicBody, token, tokenType, mappedModel, reqStream, shouldMimicClaudeCode)
+	upstreamReq, _, err := s.buildUpstreamRequest(upstreamCtx, c, account, anthropicBody, token, tokenType, mappedModel, reqStream, shouldMimicClaudeCode)
 	releaseUpstreamCtx()
 	if err != nil {
 		return nil, fmt.Errorf("build upstream request: %w", err)
@@ -142,7 +148,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 
 	// 12. Handle error response with failover
 	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+		respBody, _ := s.readUpstreamErrorBody(resp)
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(respBody))
 
@@ -160,7 +166,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 				Message:            upstreamMsg,
 			})
 			if s.rateLimitService != nil {
-				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody)
+				s.rateLimitService.HandleUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, mappedModel)
 			}
 			return nil, &UpstreamFailoverError{
 				StatusCode:   resp.StatusCode,
@@ -174,6 +180,10 @@ func (s *GatewayService) ForwardAsChatCompletions(
 
 	// 13. Extract reasoning effort from CC request body
 	reasoningEffort := extractCCReasoningEffortFromBody(body)
+	// 国产模型默认 effort 补充：本路径是客户端 CC 请求 → Anthropic 上游，
+	// 如果上游是 passback-required 国产模型 (Kimi-anthropic / GLM-anthropic / MiniMax)
+	// 且客户端在 body 里传了 thinking.type=enabled，补中默认 effort。
+	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, body, mappedModel)
 
 	// 14. Handle normal response
 	// Read Anthropic SSE → convert to Responses events → convert to CC format
@@ -312,7 +322,20 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 	if s.responseHeaderFilter != nil {
 		responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 	}
-	c.JSON(http.StatusOK, ccResp)
+	// 非流式响应必须是 application/json。上游被强制流式后会返回
+	// Content-Type: text/event-stream，经 WriteFilteredHeaders 透传后会污染
+	// 响应头；而 c.Data/c.JSON 走 Gin 的 writeContentType（仅当头不存在时才设置），
+	// 无法覆盖已存在的 SSE 头。这里显式 Set 强制改回 JSON，避免下游中间层
+	// （如 new-api）按 Content-Type 误判为流式。
+	c.Writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	// Marshal then bytes-replace so tool name mapping is reversed at byte level
+	// (parity with Parrot non-stream flow that marshals → restore → emit).
+	if respBytes, err := json.Marshal(ccResp); err == nil {
+		respBytes = reverseToolNamesIfPresent(c, respBytes)
+		c.Data(http.StatusOK, "application/json; charset=utf-8", respBytes)
+	} else {
+		c.JSON(http.StatusOK, ccResp)
+	}
 
 	return &ForwardResult{
 		RequestID:       requestID,
@@ -383,7 +406,10 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 		if err != nil {
 			return false
 		}
-		if _, err := fmt.Fprint(c.Writer, sse); err != nil {
+		// Reverse tool name mapping: fake → real, per-chunk bytes.Replace.
+		// c 可能持有请求侧注入的 ToolNameRewrite；无则仅做静态前缀还原。
+		out := string(reverseToolNamesIfPresent(c, []byte(sse)))
+		if _, err := fmt.Fprint(c.Writer, out); err != nil {
 			return true // client disconnected
 		}
 		return false
@@ -476,6 +502,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 // writeGatewayCCError writes an error in OpenAI Chat Completions format for
 // the Anthropic-upstream CC forwarding path.
 func writeGatewayCCError(c *gin.Context, statusCode int, errType, message string) {
+	MarkResponseCommitted(c)
 	c.JSON(statusCode, gin.H{
 		"error": gin.H{
 			"type":    errType,

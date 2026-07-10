@@ -16,7 +16,7 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 	router := gin.New()
 	adminSvc := newStubAdminService()
 
-	userHandler := NewUserHandler(adminSvc, nil)
+	userHandler := NewUserHandler(adminSvc, nil, nil, nil)
 	groupHandler := NewGroupHandler(adminSvc, nil, nil)
 	proxyHandler := NewProxyHandler(adminSvc)
 	redeemHandler := NewRedeemHandler(adminSvc, nil)
@@ -33,6 +33,7 @@ func setupAdminRouter() (*gin.Engine, *stubAdminService) {
 
 	router.GET("/api/v1/admin/groups", groupHandler.List)
 	router.GET("/api/v1/admin/groups/all", groupHandler.GetAll)
+	router.GET("/api/v1/admin/groups/:id/models-list-candidates", groupHandler.GetModelsListCandidates)
 	router.GET("/api/v1/admin/groups/:id", groupHandler.GetByID)
 	router.POST("/api/v1/admin/groups", groupHandler.Create)
 	router.PUT("/api/v1/admin/groups/:id", groupHandler.Update)
@@ -159,6 +160,65 @@ func TestUserHandlerBindAuthIdentityMapsRequest(t *testing.T) {
 	require.Equal(t, float64(12), adminSvc.boundAuthIdentity.Metadata["report_id"])
 }
 
+func TestUserHandlerMapsAllowedModelsOnCreateAndUpdate(t *testing.T) {
+	router, adminSvc := setupAdminRouter()
+
+	body, err := json.Marshal(map[string]any{
+		"email":          "models@example.com",
+		"password":       "pass123",
+		"allowed_models": []string{"gpt-5*", "claude-sonnet-4-6"},
+	})
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, adminSvc.createdUserInput)
+	require.Equal(t, []string{"gpt-5*", "claude-sonnet-4-6"}, adminSvc.createdUserInput.AllowedModels)
+
+	body, err = json.Marshal(map[string]any{"allowed_models": []string{"gpt-5.4"}})
+	require.NoError(t, err)
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, adminSvc.updatedUserInput)
+	require.NotNil(t, adminSvc.updatedUserInput.AllowedModels)
+	require.Equal(t, []string{"gpt-5.4"}, *adminSvc.updatedUserInput.AllowedModels)
+}
+
+func TestUserHandlerMapsWeeklyCostThreshold(t *testing.T) {
+	router, adminSvc := setupAdminRouter()
+
+	body, err := json.Marshal(map[string]any{
+		"email":                 "weekly@example.com",
+		"password":              "pass123",
+		"weekly_cost_threshold": 50,
+	})
+	require.NoError(t, err)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/users", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, adminSvc.createdUserInput)
+	require.NotNil(t, adminSvc.createdUserInput.WeeklyCostThreshold)
+	require.Equal(t, 50.0, *adminSvc.createdUserInput.WeeklyCostThreshold)
+
+	body, err = json.Marshal(map[string]any{"weekly_cost_threshold": 0})
+	require.NoError(t, err)
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/admin/users/1", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.NotNil(t, adminSvc.updatedUserInput)
+	require.NotNil(t, adminSvc.updatedUserInput.WeeklyCostThreshold)
+	require.Zero(t, *adminSvc.updatedUserInput.WeeklyCostThreshold)
+}
+
 func TestGroupHandlerEndpoints(t *testing.T) {
 	router, _ := setupAdminRouter()
 
@@ -176,6 +236,12 @@ func TestGroupHandlerEndpoints(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/groups/2", nil)
 	router.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusOK, rec.Code)
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/admin/groups/0/models-list-candidates?platform=openai", nil)
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), "gpt-5.5")
 
 	body, _ := json.Marshal(map[string]any{"name": "new", "platform": "anthropic", "subscription_type": "standard"})
 	rec = httptest.NewRecorder()

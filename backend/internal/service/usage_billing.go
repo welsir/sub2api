@@ -11,8 +11,6 @@ import (
 
 var ErrUsageBillingRequestIDRequired = errors.New("usage billing request_id is required")
 var ErrUsageBillingRequestConflict = errors.New("usage billing request fingerprint conflict")
-var ErrUsageReservationInsufficientFunds = errors.New("usage reservation insufficient funds")
-var ErrUsageReservationExceeded = errors.New("usage reservation actual cost exceeds reserved amount")
 
 // UsageBillingCommand describes one billable request that must be applied at most once.
 type UsageBillingCommand struct {
@@ -41,7 +39,6 @@ type UsageBillingCommand struct {
 	APIKeyQuotaCost     float64
 	APIKeyRateLimitCost float64
 	AccountQuotaCost    float64
-	Reservation         *UsageReservation
 }
 
 func (c *UsageBillingCommand) Normalize() {
@@ -118,31 +115,61 @@ type UsageBillingApplyResult struct {
 	Applied              bool
 	APIKeyQuotaExhausted bool
 	NewBalance           *float64           // post-deduction balance (nil = no balance deduction)
+	BalanceOverdrafted   bool               // true when the sufficient-balance guard missed and debt was still recorded
 	QuotaState           *AccountQuotaState // post-increment quota state (nil = no quota increment)
+}
+
+// BatchImageBalanceHoldCommand describes an idempotent balance hold operation.
+type BatchImageBalanceHoldCommand struct {
+	RequestID          string
+	APIKeyID           int64
+	RequestFingerprint string
+	RequestPayloadHash string
+	UserID             int64
+	BatchID            string
+	HoldAmount         float64
+	ActualAmount       float64
+}
+
+func (c *BatchImageBalanceHoldCommand) Normalize() {
+	if c == nil {
+		return
+	}
+	c.RequestID = strings.TrimSpace(c.RequestID)
+	c.BatchID = strings.TrimSpace(c.BatchID)
+	if strings.TrimSpace(c.RequestFingerprint) == "" {
+		c.RequestFingerprint = buildBatchImageBalanceHoldFingerprint(c)
+	}
+}
+
+func buildBatchImageBalanceHoldFingerprint(c *BatchImageBalanceHoldCommand) string {
+	if c == nil {
+		return ""
+	}
+	raw := fmt.Sprintf(
+		"%d|%d|%s|%0.10f|%0.10f",
+		c.UserID,
+		c.APIKeyID,
+		strings.TrimSpace(c.BatchID),
+		c.HoldAmount,
+		c.ActualAmount,
+	)
+	if payloadHash := strings.TrimSpace(c.RequestPayloadHash); payloadHash != "" {
+		raw += "|" + payloadHash
+	}
+	sum := sha256.Sum256([]byte(raw))
+	return hex.EncodeToString(sum[:])
+}
+
+type BatchImageBalanceHoldResult struct {
+	Applied       bool
+	NewBalance    *float64
+	FrozenBalance *float64
 }
 
 type UsageBillingRepository interface {
 	Apply(ctx context.Context, cmd *UsageBillingCommand) (*UsageBillingApplyResult, error)
-}
-
-type UsageReservationRequest struct {
-	UserID         int64
-	GroupID        *int64
-	SubscriptionID *int64
-	AmountUSD      float64
-}
-
-type UsageReservation struct {
-	UserID                int64
-	GroupID               *int64
-	SubscriptionID        *int64
-	AmountUSD             float64
-	SubscriptionAmountUSD float64
-	BalanceAmountUSD      float64
-}
-
-type UsageReservationRepository interface {
-	ReserveUsage(ctx context.Context, req *UsageReservationRequest) (*UsageReservation, error)
-	SettleUsageReservation(ctx context.Context, reservation *UsageReservation, actualCostUSD float64) (*UsageBillingApplyResult, error)
-	ReleaseUsageReservation(ctx context.Context, reservation *UsageReservation) error
+	ReserveBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
+	CaptureBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
+	ReleaseBatchImageBalance(ctx context.Context, cmd *BatchImageBalanceHoldCommand) (*BatchImageBalanceHoldResult, error)
 }

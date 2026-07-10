@@ -125,6 +125,7 @@ func (h *AuthHandler) WeChatOAuthStart(c *gin.Context) {
 	wechatSetCookie(c, wechatOAuthRedirectCookieName, encodeCookieValue(redirectTo), wechatOAuthCookieMaxAgeSec, secureCookie)
 	wechatSetCookie(c, wechatOAuthIntentCookieName, encodeCookieValue(intent), wechatOAuthCookieMaxAgeSec, secureCookie)
 	wechatSetCookie(c, wechatOAuthModeCookieName, encodeCookieValue(cfg.mode), wechatOAuthCookieMaxAgeSec, secureCookie)
+	captureOAuthPromoCode(c, secureCookie)
 	setOAuthPendingBrowserCookie(c, browserSessionKey, secureCookie)
 	clearOAuthPendingSessionCookie(c, secureCookie)
 	if intent == oauthIntentBindCurrentUser {
@@ -171,6 +172,7 @@ func (h *AuthHandler) WeChatOAuthCallback(c *gin.Context) {
 		wechatClearCookie(c, wechatOAuthIntentCookieName, secureCookie)
 		wechatClearCookie(c, wechatOAuthModeCookieName, secureCookie)
 		wechatClearCookie(c, wechatOAuthBindUserCookieName, secureCookie)
+		clearOAuthPromoCodeCookie(c, secureCookie)
 	}()
 
 	expectedState, err := readCookieDecoded(c, wechatOAuthStateCookieName)
@@ -481,6 +483,7 @@ func (h *AuthHandler) wechatPaymentResumeService() *service.PaymentResumeService
 
 type completeWeChatOAuthRequest struct {
 	InvitationCode   string `json:"invitation_code" binding:"required"`
+	AffCode          string `json:"aff_code,omitempty"`
 	AdoptDisplayName *bool  `json:"adopt_display_name,omitempty"`
 	AdoptAvatar      *bool  `json:"adopt_avatar,omitempty"`
 }
@@ -547,7 +550,15 @@ func (h *AuthHandler) CompleteWeChatOAuthRegistration(c *gin.Context) {
 		return
 	}
 
-	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPair(c.Request.Context(), email, username, req.InvitationCode)
+	tokenPair, user, err := h.authService.LoginOrRegisterOAuthWithTokenPairAndPromoCode(
+		c.Request.Context(),
+		email,
+		username,
+		req.InvitationCode,
+		req.AffCode,
+		pendingOAuthPromoCode(session),
+		"wechat",
+	)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

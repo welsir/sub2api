@@ -132,13 +132,10 @@ func (s *DashboardService) GetUsageTrendWithFilters(ctx context.Context, startTi
 	return trend, nil
 }
 
-// workingDirSpendingRepo is the optional capability for directory-level spending aggregation.
 type workingDirSpendingRepo interface {
 	GetWorkingDirSpending(ctx context.Context, startTime, endTime time.Time, userID int64, limit int) ([]usagestats.WorkingDirSpendingItem, error)
 }
 
-// GetWorkingDirSpending returns per-(user, working directory) actual_cost over a time range,
-// for the admin directory-spending view. userID > 0 restricts to a single user.
 func (s *DashboardService) GetWorkingDirSpending(ctx context.Context, startTime, endTime time.Time, userID int64, limit int) (*usagestats.WorkingDirSpendingResponse, error) {
 	repo, ok := s.usageRepo.(workingDirSpendingRepo)
 	if !ok {
@@ -146,11 +143,11 @@ func (s *DashboardService) GetWorkingDirSpending(ctx context.Context, startTime,
 	}
 	items, err := repo.GetWorkingDirSpending(ctx, startTime, endTime, userID, limit)
 	if err != nil {
-		return nil, fmt.Errorf("get working dir spending: %w", err)
+		return nil, fmt.Errorf("get working directory spending: %w", err)
 	}
 	total := 0.0
-	for i := range items {
-		total += items[i].ActualCost
+	for _, item := range items {
+		total += item.ActualCost
 	}
 	return &usagestats.WorkingDirSpendingResponse{Items: items, TotalActualCost: total}, nil
 }

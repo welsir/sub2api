@@ -1,14 +1,15 @@
 <template>
-  <div class="space-y-3">
+  <section class="space-y-3">
     <h2 class="text-base font-semibold text-gray-900 dark:text-white">
       {{ t('dashboard.companyUsageTitle') }}
     </h2>
     <ModelDistributionChart
+      v-model:metric="metric"
       :model-stats="models"
       :enable-ranking-view="true"
-      :disable-breakdown="true"
+      :enable-breakdown="false"
+      :show-account-cost="false"
       :show-metric-toggle="true"
-      v-model:metric="metric"
       :ranking-items="rankingResponse?.ranking ?? []"
       :ranking-total-actual-cost="rankingResponse?.total_actual_cost ?? 0"
       :ranking-total-requests="rankingResponse?.total_requests ?? 0"
@@ -16,7 +17,7 @@
       :loading="loading"
       :ranking-loading="loading"
     />
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">

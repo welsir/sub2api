@@ -14,7 +14,6 @@
           <AccountTableActions
             :loading="loading"
             @refresh="handleManualRefresh"
-            @sync="showSync = true"
             @create="showCreate = true"
           >
             <template #after>
@@ -23,7 +22,7 @@
                 <button
                   @click="
                     showAutoRefreshDropdown = !showAutoRefreshDropdown;
-                    showColumnDropdown = false
+                    showAccountToolsDropdown = false
                   "
                   class="btn btn-secondary px-2 md:px-3"
                   :title="t('admin.accounts.autoRefresh')"
@@ -63,67 +62,99 @@
                 </div>
               </div>
 
-              <!-- Error Passthrough Rules -->
-              <button
-                @click="showErrorPassthrough = true"
-                class="btn btn-secondary"
-                :title="t('admin.errorPassthrough.title')"
-              >
-                <Icon name="shield" size="md" class="mr-1.5" />
-                <span class="hidden md:inline">{{ t('admin.errorPassthrough.title') }}</span>
-              </button>
-
-              <!-- TLS Fingerprint Profiles -->
-              <button
-                @click="showTLSFingerprintProfiles = true"
-                class="btn btn-secondary"
-                :title="t('admin.tlsFingerprintProfiles.title')"
-              >
-                <Icon name="lock" size="md" class="mr-1.5" />
-                <span class="hidden md:inline">{{ t('admin.tlsFingerprintProfiles.title') }}</span>
-              </button>
-
-              <!-- Column Settings Dropdown -->
-              <div class="relative" ref="columnDropdownRef">
+              <!-- More Tools Dropdown -->
+              <div class="relative" ref="accountToolsDropdownRef">
                 <button
                   @click="
-                    showColumnDropdown = !showColumnDropdown;
+                    showAccountToolsDropdown = !showAccountToolsDropdown;
                     showAutoRefreshDropdown = false
                   "
                   class="btn btn-secondary px-2 md:px-3"
-                  :title="t('admin.users.columnSettings')"
+                  :title="t('admin.accounts.moreActions')"
                 >
-                  <svg class="h-4 w-4 md:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z" />
-                  </svg>
-                  <span class="hidden md:inline">{{ t('admin.users.columnSettings') }}</span>
+                  <Icon name="more" size="sm" class="md:mr-1.5" />
+                  <span class="hidden md:inline">{{ t('admin.accounts.moreActions') }}</span>
+                  <Icon name="chevronDown" size="xs" class="ml-1 hidden md:inline" />
                 </button>
-                <!-- Dropdown menu -->
                 <div
-                  v-if="showColumnDropdown"
-                  class="absolute right-0 z-50 mt-2 w-48 origin-top-right rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800"
+                  v-if="showAccountToolsDropdown"
+                  class="absolute right-0 z-50 mt-2 w-[min(20rem,calc(100vw-2rem))] origin-top-right overflow-hidden rounded-lg border border-gray-200 bg-white shadow-xl dark:border-gray-700 dark:bg-gray-800"
                 >
-                  <div class="max-h-80 overflow-y-auto p-2">
-                    <button
-                      v-for="col in toggleableColumns"
-                      :key="col.key"
-                      @click="toggleColumn(col.key)"
-                      class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                    >
-                      <span>{{ col.label }}</span>
-                      <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" class="text-primary-500" />
+                  <div class="max-h-[70vh] overflow-y-auto p-2">
+                    <div class="px-2 py-2">
+                      <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                        {{ t('admin.accounts.dataActions') }}
+                      </div>
+                    </div>
+                    <button class="account-tools-menu-item" @click="openSyncFromCrs">
+                      <span class="account-tools-menu-icon bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">
+                        <Icon name="sync" size="sm" />
+                      </span>
+                      <span class="flex-1 text-left">{{ t('admin.accounts.syncFromCrs') }}</span>
                     </button>
+                    <button class="account-tools-menu-item" @click="openImportData">
+                      <span class="account-tools-menu-icon bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-300">
+                        <Icon name="upload" size="sm" />
+                      </span>
+                      <span class="flex-1 text-left">{{ t('admin.accounts.dataImport') }}</span>
+                    </button>
+                    <button class="account-tools-menu-item" @click="openExportDataDialogFromMenu">
+                      <span class="account-tools-menu-icon bg-violet-50 text-violet-600 dark:bg-violet-900/30 dark:text-violet-300">
+                        <Icon name="download" size="sm" />
+                      </span>
+                      <span class="flex-1 text-left">
+                        {{ selIds.length ? t('admin.accounts.dataExportSelected') : t('admin.accounts.dataExport') }}
+                      </span>
+                      <span
+                        v-if="selIds.length"
+                        class="rounded-full bg-primary-100 px-2 py-0.5 text-xs font-medium text-primary-700 dark:bg-primary-900/40 dark:text-primary-300"
+                      >
+                        {{ t('admin.accounts.selectedCount', { count: selIds.length }) }}
+                      </span>
+                    </button>
+
+                    <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
+                    <div class="px-2 py-2">
+                      <div class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                        {{ t('admin.accounts.toolActions') }}
+                      </div>
+                    </div>
+                    <button class="account-tools-menu-item" @click="openErrorPassthrough">
+                      <span class="account-tools-menu-icon bg-amber-50 text-amber-600 dark:bg-amber-900/30 dark:text-amber-300">
+                        <Icon name="shield" size="sm" />
+                      </span>
+                      <span class="flex-1 text-left">{{ t('admin.errorPassthrough.title') }}</span>
+                    </button>
+                    <button class="account-tools-menu-item" @click="openTLSFingerprintProfiles">
+                      <span class="account-tools-menu-icon bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                        <Icon name="lock" size="sm" />
+                      </span>
+                      <span class="flex-1 text-left">{{ t('admin.tlsFingerprintProfiles.title') }}</span>
+                    </button>
+
+                    <div class="my-2 border-t border-gray-100 dark:border-gray-700"></div>
+                    <div class="px-2 py-2">
+                      <div class="flex items-center justify-between gap-3">
+                        <span class="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                          {{ t('admin.accounts.viewColumns') }}
+                        </span>
+                        <Icon name="grid" size="sm" class="text-gray-400" />
+                      </div>
+                    </div>
+                    <div class="grid grid-cols-1 gap-1">
+                      <button
+                        v-for="col in toggleableColumns"
+                        :key="col.key"
+                        @click="toggleColumn(col.key)"
+                        class="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                      >
+                        <span class="truncate">{{ col.label }}</span>
+                        <Icon v-if="isColumnVisible(col.key)" name="check" size="sm" class="text-primary-500" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
-            </template>
-            <template #beforeCreate>
-              <button @click="showImportData = true" class="btn btn-secondary">
-                {{ t('admin.accounts.dataImport') }}
-              </button>
-              <button @click="openExportDataDialog" class="btn btn-secondary">
-                {{ selIds.length ? t('admin.accounts.dataExportSelected') : t('admin.accounts.dataExport') }}
-              </button>
             </template>
           </AccountTableActions>
         </div>
@@ -141,7 +172,17 @@
         </div>
       </template>
       <template #table>
-        <AccountBulkActionsBar :selected-ids="selIds" @delete="handleBulkDelete" @reset-status="handleBulkResetStatus" @refresh-token="handleBulkRefreshToken" @edit="showBulkEdit = true" @clear="clearSelection" @select-page="selectPage" @toggle-schedulable="handleBulkToggleSchedulable" />
+        <AccountBulkActionsBar
+          :selected-ids="selIds"
+          @delete="handleBulkDelete"
+          @reset-status="handleBulkResetStatus"
+          @refresh-token="handleBulkRefreshToken"
+          @edit-selected="openBulkEditSelected"
+          @edit-filtered="openBulkEditFiltered"
+          @clear="clearSelection"
+          @select-page="selectPage"
+          @toggle-schedulable="handleBulkToggleSchedulable"
+        />
         <div ref="accountTableRef" class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <DataTable
           ref="dataTableRef"
@@ -169,15 +210,18 @@
           <template #cell-select="{ row }">
             <input type="checkbox" :checked="isSelected(row.id)" @change="toggleSel(row.id)" class="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
           </template>
+          <template #cell-id="{ value }">
+            <span class="font-mono text-xs text-gray-500 dark:text-gray-400">#{{ value }}</span>
+          </template>
           <template #cell-name="{ row, value }">
             <div class="flex flex-col">
               <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
               <span
-                v-if="row.extra?.email_address"
+                v-if="accountDisplayEmail(row)"
                 class="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[200px]"
-                :title="row.extra.email_address"
+                :title="accountDisplayEmail(row) + (row.parent_chatgpt_account_id ? ' · ' + row.parent_chatgpt_account_id : '')"
               >
-                {{ row.extra.email_address }}
+                {{ accountDisplayEmail(row) }}
               </span>
             </div>
           </template>
@@ -186,14 +230,30 @@
             <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
           <template #cell-platform_type="{ row }">
-            <div class="flex flex-wrap items-center gap-1">
-              <PlatformTypeBadge :platform="row.platform" :type="row.type" :plan-type="row.credentials?.plan_type" :privacy-mode="row.extra?.privacy_mode" :subscription-expires-at="row.credentials?.subscription_expires_at" />
-              <span
-                v-if="getAntigravityTierLabel(row)"
-                :class="['inline-block rounded px-1.5 py-0.5 text-[10px] font-medium', getAntigravityTierClass(row)]"
+            <div class="flex min-w-0 flex-col gap-1">
+              <div class="flex flex-wrap items-center gap-1">
+                <PlatformTypeBadge :platform="row.platform" :type="row.type"
+                  :plan-type="row.credentials?.plan_type || row.parent_plan_type"
+                  :privacy-mode="row.extra?.privacy_mode || row.parent_privacy_mode"
+                  :subscription-expires-at="row.credentials?.subscription_expires_at || row.parent_subscription_expires_at" />
+                <span
+                  v-if="getAntigravityTierLabel(row)"
+                  :class="['inline-block rounded px-1.5 py-0.5 text-[10px] font-medium', getAntigravityTierClass(row)]"
+                >
+                  {{ getAntigravityTierLabel(row) }}
+                </span>
+              </div>
+              <div
+                v-if="getOpenAICompactMeta(row)"
+                :class="[
+                  'inline-flex items-center gap-1.5 pl-0.5 text-[11px] font-medium leading-4',
+                  getOpenAICompactMeta(row)?.className
+                ]"
+                :title="getOpenAICompactTitle(row)"
               >
-                {{ getAntigravityTierLabel(row) }}
-              </span>
+                <span :class="['h-1.5 w-1.5 rounded-full', getOpenAICompactMeta(row)?.dotClass]" />
+                <span>{{ getOpenAICompactMeta(row)?.label }}</span>
+              </div>
             </div>
           </template>
           <template #cell-capacity="{ row }">
@@ -219,6 +279,12 @@
           <template #cell-groups="{ row }">
             <AccountGroupsCell :groups="row.groups" :max-display="4" />
           </template>
+          <template #header-usage="{ column }">
+            <div class="flex items-center">
+              <span>{{ column.label }}</span>
+              <HelpTooltip :content="t('admin.accounts.usageWindowsHint')" width-class="w-72" />
+            </div>
+          </template>
           <template #cell-usage="{ row }">
             <AccountUsageCell
               :account="row"
@@ -228,13 +294,25 @@
             />
           </template>
           <template #cell-proxy="{ row }">
-            <div v-if="row.proxy" class="flex items-center gap-2">
-              <span class="text-sm text-gray-700 dark:text-gray-300">{{ row.proxy.name }}</span>
-              <span v-if="row.proxy.country_code" class="text-xs text-gray-500 dark:text-gray-400">
-                ({{ row.proxy.country_code }})
-              </span>
+            <div class="flex flex-col gap-1">
+              <div v-if="row.proxy" class="flex items-center gap-2">
+                <span class="text-sm text-gray-700 dark:text-gray-300">{{ row.proxy.name }}</span>
+                <span v-if="row.proxy.country_code" class="text-xs text-gray-500 dark:text-gray-400">
+                  ({{ row.proxy.country_code }})
+                </span>
+              </div>
+              <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+              <div v-if="row.proxy && row.proxy.expires_at" class="flex items-center gap-2 text-xs">
+                <span class="text-gray-600 dark:text-gray-300">{{ formatDateTime(row.proxy.expires_at) }}</span>
+                <span :class="proxyExpiryBadge(row.proxy)">{{ proxyExpiryText(row.proxy) }}</span>
+              </div>
+              <div v-if="row.proxy_fallback_origin_id" class="flex items-center gap-1">
+                <span class="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" :title="t('admin.accounts.fallbackActiveTip', { origin: row.proxy_fallback_origin_name })">
+                  {{ t('admin.accounts.fallbackActive') }}
+                </span>
+                <button class="text-xs px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" @click="onRevertFallback(row)">{{ t('admin.accounts.revertProxy') }}</button>
+              </div>
             </div>
-            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
           </template>
           <template #cell-rate_multiplier="{ row }">
             <span class="text-sm font-mono text-gray-700 dark:text-gray-300">
@@ -244,8 +322,34 @@
           <template #cell-priority="{ value }">
             <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
           </template>
+          <template #header-scheduler_score="{ column }">
+            <div class="flex items-center">
+              <span>{{ column.label }}</span>
+              <HelpTooltip :content="t('admin.accounts.schedulerScore.hint')" width-class="w-80" />
+            </div>
+          </template>
+          <template #cell-scheduler_score="{ row }">
+            <div v-if="getSchedulerScoreRows(row).length" class="flex min-w-[7rem] flex-col gap-0.5 font-mono text-[11px] leading-4">
+              <div
+                v-for="score in getSchedulerScoreRows(row)"
+                :key="String(score.group_id)"
+                class="flex items-center gap-1 whitespace-nowrap text-gray-700 dark:text-gray-300"
+                :title="`${formatSchedulerScoreGroup(score)} / ${formatSchedulerScore(score.base_score)} / ${formatStickySchedulerScore(score)}`"
+              >
+                <span class="max-w-[4.75rem] truncate text-gray-500 dark:text-dark-400">{{ formatSchedulerScoreGroup(score) }}</span>
+                <span class="text-gray-300 dark:text-gray-600">/</span>
+                <span>{{ formatSchedulerScore(score.base_score) }}</span>
+                <span class="text-gray-300 dark:text-gray-600">/</span>
+                <span class="text-primary-700 dark:text-primary-300">{{ formatStickySchedulerScore(score) }}</span>
+              </div>
+            </div>
+            <span v-else class="text-sm text-gray-400 dark:text-dark-500">-</span>
+          </template>
           <template #cell-last_used_at="{ value }">
             <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatRelativeTime(value) }}</span>
+          </template>
+          <template #cell-created_at="{ value }">
+            <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatDateTime(value) }}</span>
           </template>
           <template #cell-expires_at="{ row, value }">
             <div class="flex flex-col items-start gap-1">
@@ -293,12 +397,23 @@
     <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
-    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" />
+    <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
     <SyncFromCrsModal :show="showSync" @close="showSync = false" @synced="reload" />
     <ImportDataModal :show="showImportData" @close="showImportData = false" @imported="handleDataImported" />
-    <BulkEditAccountModal :show="showBulkEdit" :account-ids="selIds" :selected-platforms="selPlatforms" :selected-types="selTypes" :proxies="proxies" :groups="groups" @close="showBulkEdit = false" @updated="handleBulkUpdated" />
+    <BulkEditAccountModal
+      :show="showBulkEdit"
+      :account-ids="selIds"
+      :selected-platforms="selPlatforms"
+      :selected-types="selTypes"
+      :target="bulkEditTarget ?? undefined"
+      :proxies="proxies"
+      :groups="groups"
+      @close="showBulkEdit = false"
+      @updated="handleBulkUpdated"
+    />
     <TempUnschedStatusModal :show="showTempUnsched" :account="tempUnschedAcc" @close="showTempUnsched = false" @reset="handleTempUnschedReset" />
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.accounts.deleteAccount')" :message="t('admin.accounts.deleteConfirm', { name: deletingAcc?.name })" :confirm-text="t('common.delete')" :cancel-text="t('common.cancel')" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
+    <ConfirmDialog :show="showCreateShadowDialog" :title="t('admin.accounts.createSparkShadow')" :message="t('admin.accounts.createSparkShadowConfirm', { name: creatingShadowAcc?.name })" @confirm="confirmCreateSparkShadow" @cancel="showCreateShadowDialog = false" />
     <ConfirmDialog :show="showExportDataDialog" :title="t('admin.accounts.dataExport')" :message="t('admin.accounts.dataExportConfirmMessage')" :confirm-text="t('admin.accounts.dataExportConfirm')" :cancel-text="t('common.cancel')" @confirm="handleExportData" @cancel="showExportDataDialog = false">
       <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
         <input type="checkbox" class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500" v-model="includeProxyOnExport" />
@@ -323,6 +438,7 @@ import { useTableSelection } from '@/composables/useTableSelection'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
+import HelpTooltip from '@/components/common/HelpTooltip.vue'
 import Pagination from '@/components/common/Pagination.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import { CreateAccountModal, EditAccountModal, BulkEditAccountModal, SyncFromCrsModal, TempUnschedStatusModal } from '@/components/account'
@@ -347,7 +463,8 @@ import ErrorPassthroughRulesModal from '@/components/admin/ErrorPassthroughRules
 import TLSFingerprintProfilesModal from '@/components/admin/TLSFingerprintProfilesModal.vue'
 import { buildOpenAIUsageRefreshKey } from '@/utils/accountUsageRefresh'
 import { formatDateTime, formatRelativeTime } from '@/utils/format'
-import type { Account, AccountPlatform, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
+import { proxyExpiryBadgeClass, proxyExpiryLabelKey } from '@/utils/proxyExpiry'
+import type { Account, AccountPlatform, AccountSchedulerGroupScore, AccountType, Proxy as AccountProxy, AdminGroup, WindowStats, ClaudeModel } from '@/types'
 
 const { t } = useI18n()
 const appStore = useAppStore()
@@ -357,6 +474,29 @@ const proxies = ref<AccountProxy[]>([])
 const groups = ref<AdminGroup[]>([])
 const accountTableRef = ref<HTMLElement | null>(null)
 const dataTableRef = ref<InstanceType<typeof DataTable> | null>(null)
+type AccountBulkEditTarget =
+  | {
+      mode: 'selected'
+      accountIds: number[]
+      selectedPlatforms: AccountPlatform[]
+      selectedTypes: AccountType[]
+    }
+  | {
+      mode: 'filtered'
+      filters: {
+        platform?: string
+        type?: string
+        status?: string
+        group?: string
+        search?: string
+        privacy_mode?: string
+        sort_by?: string
+        sort_order?: AccountSortOrder
+      }
+      previewCount: number
+      selectedPlatforms: AccountPlatform[]
+      selectedTypes: AccountType[]
+    }
 const selPlatforms = computed<AccountPlatform[]>(() => {
   const platforms = new Set(
     accounts.value
@@ -380,8 +520,10 @@ const showImportData = ref(false)
 const showExportDataDialog = ref(false)
 const includeProxyOnExport = ref(true)
 const showBulkEdit = ref(false)
+const bulkEditTarget = ref<AccountBulkEditTarget | null>(null)
 const showTempUnsched = ref(false)
 const showDeleteDialog = ref(false)
+const showCreateShadowDialog = ref(false)
 const showReAuth = ref(false)
 const showTest = ref(false)
 const showStats = ref(false)
@@ -390,6 +532,7 @@ const showTLSFingerprintProfiles = ref(false)
 const edAcc = ref<Account | null>(null)
 const tempUnschedAcc = ref<Account | null>(null)
 const deletingAcc = ref<Account | null>(null)
+const creatingShadowAcc = ref<Account | null>(null)
 const reAuthAcc = ref<Account | null>(null)
 const testingAcc = ref<Account | null>(null)
 const statsAcc = ref<Account | null>(null)
@@ -400,12 +543,15 @@ const togglingSchedulable = ref<number | null>(null)
 const menu = reactive<{show:boolean, acc:Account|null, pos:{top:number, left:number}|null}>({ show: false, acc: null, pos: null })
 const exportingData = ref(false)
 
-// Column settings
-const showColumnDropdown = ref(false)
-const columnDropdownRef = ref<HTMLElement | null>(null)
+// Account tools dropdown
+const showAccountToolsDropdown = ref(false)
+const accountToolsDropdownRef = ref<HTMLElement | null>(null)
 const hiddenColumns = reactive<Set<string>>(new Set())
-const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'priority', 'rate_multiplier']
+const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'priority', 'scheduler_score', 'rate_multiplier']
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
+// One-time migration: hide scheduler score for existing admins too, because showing it opt-ins to heavy backend scoring.
+const HIDDEN_COLUMNS_VERSION_KEY = 'account-hidden-columns-version'
+const HIDDEN_COLUMNS_CURRENT_VERSION = 'scheduler-score-hidden-by-default'
 
 // Sorting settings
 const ACCOUNT_SORT_STORAGE_KEY = 'account-table-sort'
@@ -415,12 +561,14 @@ type AccountSortState = {
   sort_order: AccountSortOrder
 }
 const ACCOUNT_SORTABLE_KEYS = new Set([
+  'id',
   'name',
   'status',
   'schedulable',
   'priority',
   'rate_multiplier',
   'last_used_at',
+  'created_at',
   'expires_at'
 ])
 const loadInitialAccountSortState = (): AccountSortState => {
@@ -521,6 +669,36 @@ const autoRefreshIntervalLabel = (sec: number) => {
   return `${sec}s`
 }
 
+const formatSchedulerScore = (value: unknown): string => {
+  const num = Number(value)
+  if (!Number.isFinite(num)) return '-'
+  return num.toFixed(6).replace(/\.?0+$/, '')
+}
+
+const formatStickySchedulerScore = (score: AccountSchedulerGroupScore): string => {
+  if (!score) return '-'
+  if (score.sticky_score_infinity) return '+∞'
+  return formatSchedulerScore(score.sticky_score)
+}
+
+const getSchedulerScoreRows = (account: Account): AccountSchedulerGroupScore[] => {
+  const groupRows = Array.isArray(account.scheduler_scores)
+    ? account.scheduler_scores.filter(score => score.group_id != null)
+    : []
+  if (groupRows.length) return groupRows
+  // 未分组账号没有分组维度分数，回退展示后端返回的基础分
+  if (account.scheduler_score) {
+    return [{ group_id: null, ...account.scheduler_score }]
+  }
+  return []
+}
+
+const formatSchedulerScoreGroup = (score: AccountSchedulerGroupScore): string => {
+  if ('group_name' in score && score.group_name) return score.group_name
+  if ('group_id' in score && score.group_id != null) return `#${score.group_id}`
+  return t('admin.accounts.schedulerScore.ungrouped')
+}
+
 const loadSavedColumns = () => {
   try {
     const saved = localStorage.getItem(HIDDEN_COLUMNS_KEY)
@@ -529,10 +707,17 @@ const loadSavedColumns = () => {
       parsed.forEach(key => {
         hiddenColumns.add(key)
       })
+      // Older saved column layouts may have scheduler_score visible; migrate them to the new safe default once.
+      if (localStorage.getItem(HIDDEN_COLUMNS_VERSION_KEY) !== HIDDEN_COLUMNS_CURRENT_VERSION) {
+        hiddenColumns.add('scheduler_score')
+        localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
+        localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
+      }
     } else {
       DEFAULT_HIDDEN_COLUMNS.forEach(key => {
         hiddenColumns.add(key)
       })
+      localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
     }
   } catch (e) {
     console.error('Failed to load saved columns:', e)
@@ -545,6 +730,7 @@ const loadSavedColumns = () => {
 const saveColumnsToStorage = () => {
   try {
     localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hiddenColumns]))
+    localStorage.setItem(HIDDEN_COLUMNS_VERSION_KEY, HIDDEN_COLUMNS_CURRENT_VERSION)
   } catch (e) {
     console.error('Failed to save columns:', e)
   }
@@ -617,9 +803,22 @@ const toggleColumn = (key: string) => {
       console.error('Failed to load account today stats after showing column:', error)
     })
   }
+  if (key === 'scheduler_score') {
+    // The server only returns scheduler scores when this column is visible, so reload the current page immediately.
+    syncAccountListDerivedParams()
+    load().catch((error) => {
+      console.error('Failed to reload accounts after toggling scheduler score column:', error)
+    })
+  }
 }
 
 const isColumnVisible = (key: string) => !hiddenColumns.has(key)
+const shouldIncludeSchedulerScore = () => isColumnVisible('scheduler_score')
+const syncAccountListDerivedParams = () => {
+  // Keep every load path, including auto-refresh and sorting, aligned with the current column visibility.
+  const requestParams = params as any
+  requestParams.include_scheduler_score = shouldIncludeSchedulerScore() ? '1' : '0'
+}
 
 const {
   items: accounts,
@@ -640,6 +839,7 @@ const {
     privacy_mode: '',
     group: '',
     search: '',
+    include_scheduler_score: shouldIncludeSchedulerScore() ? '1' : '0',
     sort_by: sortState.sort_by,
     sort_order: sortState.sort_order
   }
@@ -684,6 +884,7 @@ const isFirstLoad = ref(true)
 
 const load = async () => {
   const requestParams = params as any
+  syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
@@ -699,6 +900,7 @@ const load = async () => {
 }
 
 const reload = async () => {
+  syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = false
@@ -707,6 +909,7 @@ const reload = async () => {
 }
 
 const debouncedReload = () => {
+  syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
@@ -714,6 +917,7 @@ const debouncedReload = () => {
 }
 
 const handlePageChange = (page: number) => {
+  syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
@@ -721,6 +925,7 @@ const handlePageChange = (page: number) => {
 }
 
 const handlePageSizeChange = (size: number) => {
+  syncAccountListDerivedParams()
   hasPendingListSync.value = false
   resetAutoRefreshCache()
   pendingTodayStatsRefresh.value = true
@@ -733,6 +938,7 @@ const handleSort = (key: string, order: AccountSortOrder) => {
   const requestParams = params as any
   requestParams.sort_by = key
   requestParams.sort_order = order
+  syncAccountListDerivedParams()
   pagination.page = 1
   hasPendingListSync.value = false
   resetAutoRefreshCache()
@@ -763,7 +969,8 @@ const isAnyModalOpen = computed(() => {
     showTest.value ||
     showStats.value ||
     showSchedulePanel.value ||
-    showErrorPassthrough.value
+    showErrorPassthrough.value ||
+    showTLSFingerprintProfiles.value
   )
 })
 
@@ -831,6 +1038,7 @@ const mergeAccountsIncrementally = (nextRows: Account[]) => {
 
 const refreshAccountsIncrementally = async () => {
   if (autoRefreshFetching.value) return
+  syncAccountListDerivedParams()
   autoRefreshFetching.value = true
   try {
     const result = await adminAPI.accounts.listWithEtag(
@@ -874,6 +1082,35 @@ const handleManualRefresh = async () => {
   usageManualRefreshToken.value += 1
 }
 
+const closeAccountToolsDropdown = () => {
+  showAccountToolsDropdown.value = false
+}
+
+const openSyncFromCrs = () => {
+  closeAccountToolsDropdown()
+  showSync.value = true
+}
+
+const openImportData = () => {
+  closeAccountToolsDropdown()
+  showImportData.value = true
+}
+
+const openExportDataDialogFromMenu = () => {
+  closeAccountToolsDropdown()
+  openExportDataDialog()
+}
+
+const openErrorPassthrough = () => {
+  closeAccountToolsDropdown()
+  showErrorPassthrough.value = true
+}
+
+const openTLSFingerprintProfiles = () => {
+  closeAccountToolsDropdown()
+  showTLSFingerprintProfiles.value = true
+}
+
 const syncPendingListChanges = async () => {
   hasPendingListSync.value = false
   await load()
@@ -887,7 +1124,7 @@ const { pause: pauseAutoRefresh, resume: resumeAutoRefresh } = useIntervalFn(
     if (document.hidden) return
     if (loading.value || autoRefreshFetching.value) return
     if (isAnyModalOpen.value) return
-    if (menu.show) return
+    if (menu.show || showAccountToolsDropdown.value || showAutoRefreshDropdown.value) return
     if (inAutoRefreshSilentWindow()) {
       autoRefreshCountdown.value = Math.max(
         0,
@@ -932,6 +1169,59 @@ function getAntigravityTierLabel(row: any): string | null {
   }
 }
 
+// 账号显示邮箱:优先账号自身(extra/credentials),影子账号回退母账号 parent_email。
+// 供名称单元格 v-if/标题/文本三处共用,避免同一回退链在模板里重复三次。
+function accountDisplayEmail(row: any): string {
+  return row.extra?.email_address || row.extra?.email || row.credentials?.email || row.parent_email || ''
+}
+
+type OpenAICompactBadgeState = 'active' | 'blocked' | 'auto'
+
+function getOpenAICompactState(row: any): OpenAICompactBadgeState | null {
+  if (row.platform !== 'openai' || (row.type !== 'oauth' && row.type !== 'apikey')) return null
+  const extra = row.extra as Record<string, unknown> | undefined
+  const mode = typeof extra?.openai_compact_mode === 'string' ? extra.openai_compact_mode : 'auto'
+  if (mode === 'force_on') return 'active'
+  if (mode === 'force_off') return 'blocked'
+  if (typeof extra?.openai_compact_supported === 'boolean') {
+    return extra.openai_compact_supported ? 'active' : 'blocked'
+  }
+  return 'auto'
+}
+
+function getOpenAICompactMeta(row: any): { label: string; className: string; dotClass: string } | null {
+  const state = getOpenAICompactState(row)
+  if (!state) return null
+  switch (state) {
+    case 'active':
+      return {
+        label: t('admin.accounts.openai.compactSupported'),
+        className: 'text-emerald-600 dark:text-emerald-300',
+        dotClass: 'bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.14)]'
+      }
+    case 'blocked':
+      return {
+        label: t('admin.accounts.openai.compactUnsupported'),
+        className: 'text-rose-600 dark:text-rose-300',
+        dotClass: 'bg-rose-500 shadow-[0_0_0_2px_rgba(244,63,94,0.14)]'
+      }
+    case 'auto':
+      return {
+        label: t('admin.accounts.openai.compactAuto'),
+        className: 'text-slate-500 dark:text-slate-400',
+        dotClass: 'bg-slate-300 dark:bg-slate-500'
+      }
+  }
+}
+
+function getOpenAICompactTitle(row: any): string {
+  const extra = row.extra as Record<string, unknown> | undefined
+  const checkedAt = typeof extra?.openai_compact_checked_at === 'string' ? extra.openai_compact_checked_at : ''
+  const label = getOpenAICompactMeta(row)?.label || ''
+  if (!checkedAt) return label
+  return `${label} | ${t('admin.accounts.openai.compactLastChecked')}: ${formatDateTime(new Date(checkedAt))}`
+}
+
 function getAntigravityTierClass(row: any): string {
   const tier = getAntigravityTierFromRow(row)
   switch (tier) {
@@ -947,6 +1237,7 @@ const allColumns = computed(() => {
   const c = [
     { key: 'select', label: '', sortable: false },
     { key: 'name', label: t('admin.accounts.columns.name'), sortable: true },
+    { key: 'id', label: t('admin.accounts.columns.id'), sortable: true },
     { key: 'platform_type', label: t('admin.accounts.columns.platformType'), sortable: false },
     { key: 'capacity', label: t('admin.accounts.columns.capacity'), sortable: false },
     { key: 'status', label: t('admin.accounts.columns.status'), sortable: true },
@@ -960,8 +1251,10 @@ const allColumns = computed(() => {
     { key: 'usage', label: t('admin.accounts.columns.usageWindows'), sortable: false },
     { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
     { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true },
+    { key: 'scheduler_score', label: t('admin.accounts.columns.schedulerScore'), sortable: false },
     { key: 'rate_multiplier', label: t('admin.accounts.columns.billingRateMultiplier'), sortable: true },
     { key: 'last_used_at', label: t('admin.accounts.columns.lastUsed'), sortable: true },
+    { key: 'created_at', label: t('admin.accounts.columns.createdAt'), sortable: true },
     { key: 'expires_at', label: t('admin.accounts.columns.expiresAt'), sortable: true },
     { key: 'notes', label: t('admin.accounts.columns.notes'), sortable: false },
     { key: 'actions', label: t('admin.accounts.columns.actions'), sortable: false }
@@ -1172,7 +1465,57 @@ const handleBulkToggleSchedulable = async (schedulable: boolean) => {
     appStore.showError(t('common.error'))
   }
 }
-const handleBulkUpdated = () => { showBulkEdit.value = false; clearSelection(); reload() }
+const buildBulkEditFilterSnapshot = () => {
+  const rawParams = toRaw(params) as Record<string, unknown>
+  const sortOrder: AccountSortOrder = rawParams.sort_order === 'desc' ? 'desc' : 'asc'
+  return {
+    platform: typeof rawParams.platform === 'string' ? rawParams.platform : '',
+    type: typeof rawParams.type === 'string' ? rawParams.type : '',
+    status: typeof rawParams.status === 'string' ? rawParams.status : '',
+    group: typeof rawParams.group === 'string' ? rawParams.group : '',
+    search: typeof rawParams.search === 'string' ? rawParams.search : '',
+    privacy_mode: typeof rawParams.privacy_mode === 'string' ? rawParams.privacy_mode : '',
+    sort_by: typeof rawParams.sort_by === 'string' ? rawParams.sort_by : '',
+    sort_order: sortOrder
+  }
+}
+
+const collectSelectionMetadata = (rows: Account[]) => {
+  const selectedPlatforms = Array.from(new Set(rows.map(account => account.platform)))
+  const selectedTypes = Array.from(new Set(rows.map(account => account.type)))
+  return { selectedPlatforms, selectedTypes }
+}
+
+const openBulkEditSelected = () => {
+  bulkEditTarget.value = {
+    mode: 'selected',
+    accountIds: [...selIds.value],
+    selectedPlatforms: [...selPlatforms.value],
+    selectedTypes: [...selTypes.value]
+  }
+  showBulkEdit.value = true
+}
+
+const openBulkEditFiltered = async () => {
+  const filters = buildBulkEditFilterSnapshot()
+  const preview = await adminAPI.accounts.list(1, 100, filters)
+  const { selectedPlatforms, selectedTypes } = collectSelectionMetadata(preview.items)
+  bulkEditTarget.value = {
+    mode: 'filtered',
+    filters,
+    previewCount: preview.total,
+    selectedPlatforms,
+    selectedTypes
+  }
+  showBulkEdit.value = true
+}
+
+const handleBulkUpdated = () => {
+  showBulkEdit.value = false
+  bulkEditTarget.value = null
+  clearSelection()
+  reload()
+}
 const handleDataImported = () => { showImportData.value = false; reload() }
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
 const ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE = '__unset__'
@@ -1303,7 +1646,13 @@ const handleExportData = async () => {
     link.download = filename
     link.click()
     URL.revokeObjectURL(url)
-    appStore.showSuccess(t('admin.accounts.dataExported'))
+    // spark 影子账号被后端排除出备份(其凭据透传母账号、调度配置不可经凭据型导入重建);
+    // 跳过非零时明确提示用户,避免「下载成功但少了账号」的静默丢失。
+    if (dataPayload.skipped_shadows && dataPayload.skipped_shadows > 0) {
+      appStore.showWarning(t('admin.accounts.dataExportedSkippedShadows', { count: dataPayload.skipped_shadows }))
+    } else {
+      appStore.showSuccess(t('admin.accounts.dataExported'))
+    }
   } catch (error: any) {
     appStore.showError(error?.message || t('admin.accounts.dataExportFailed'))
   } finally {
@@ -1359,15 +1708,70 @@ const handleResetQuota = async (a: Account) => {
     console.error('Failed to reset quota:', error)
   }
 }
+
+const privacyResultMessageKey = (account: Account): { type: 'success' | 'error'; key: string } => {
+  const mode = typeof account.extra?.privacy_mode === 'string' ? account.extra.privacy_mode : ''
+  if (account.platform === 'openai') {
+    switch (mode) {
+      case 'training_off':
+        return { type: 'success', key: 'admin.accounts.privacyTrainingOff' }
+      case 'training_set_cf_blocked':
+        return { type: 'error', key: 'admin.accounts.privacyCfBlocked' }
+      default:
+        return { type: 'error', key: 'admin.accounts.privacyFailed' }
+    }
+  }
+  if (account.platform === 'antigravity') {
+    if (mode === 'privacy_set') {
+      return { type: 'success', key: 'admin.accounts.privacyAntigravitySet' }
+    }
+    return { type: 'error', key: 'admin.accounts.privacyAntigravityFailed' }
+  }
+  return { type: 'error', key: 'admin.accounts.privacyFailed' }
+}
+
 const handleSetPrivacy = async (a: Account) => {
   try {
     const updated = await adminAPI.accounts.setPrivacy(a.id)
     patchAccountInList(updated)
     enterAutoRefreshSilentWindow()
-    appStore.showSuccess(t('common.success'))
+    const result = privacyResultMessageKey(updated)
+    if (result.type === 'success') {
+      appStore.showSuccess(t(result.key))
+    } else {
+      appStore.showError(t(result.key))
+    }
   } catch (error: any) {
     console.error('Failed to set privacy:', error)
     appStore.showError(error?.response?.data?.message || t('admin.accounts.privacyFailed'))
+  }
+}
+const onRevertFallback = async (a: Account) => {
+  try {
+    await adminAPI.accounts.revertProxyFallback(a.id)
+    appStore.showSuccess(t('admin.accounts.revertProxySuccess'))
+    reload()
+  } catch (error: any) {
+    console.error('Failed to revert proxy fallback:', error)
+    appStore.showError(error?.response?.data?.message || t('admin.accounts.revertProxyFailed'))
+  }
+}
+const handleCreateSparkShadow = (a: Account) => {
+  creatingShadowAcc.value = a
+  showCreateShadowDialog.value = true
+}
+const confirmCreateSparkShadow = async () => {
+  const a = creatingShadowAcc.value
+  if (!a) return
+  try {
+    await adminAPI.accounts.createSparkShadow(a.id, { name: `${a.name} (Spark)` })
+    showCreateShadowDialog.value = false
+    creatingShadowAcc.value = null
+    appStore.showSuccess(t('admin.accounts.createSparkShadowSuccess'))
+    reload()
+  } catch (error: any) {
+    console.error('Failed to create spark shadow:', error)
+    appStore.showError(error?.response?.data?.message || t('admin.accounts.createSparkShadowFailed'))
   }
 }
 const handleDelete = (a: Account) => { deletingAcc.value = a; showDeleteDialog.value = true }
@@ -1412,17 +1816,23 @@ const isExpired = (value: number | null) => {
   if (!value) return false
   return value * 1000 <= Date.now()
 }
+// 所绑定代理的有效期(逻辑同 /admin/proxies,见 utils/proxyExpiry)
+const proxyExpiryBadge = (p: AccountProxy): string => proxyExpiryBadgeClass(p.expires_at, p.status)
+const proxyExpiryText = (p: AccountProxy): string => {
+  const { key, params } = proxyExpiryLabelKey(p.expires_at, p.status)
+  return params ? t(key, params) : t(key)
+}
 
 // 滚动时关闭操作菜单（不关闭列设置下拉菜单）
 const handleScroll = () => {
   menu.show = false
 }
 
-// 点击外部关闭列设置下拉菜单
+// 点击外部关闭顶部下拉菜单
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
-  if (columnDropdownRef.value && !columnDropdownRef.value.contains(target)) {
-    showColumnDropdown.value = false
+  if (accountToolsDropdownRef.value && !accountToolsDropdownRef.value.contains(target)) {
+    showAccountToolsDropdown.value = false
   }
   if (autoRefreshDropdownRef.value && !autoRefreshDropdownRef.value.contains(target)) {
     showAutoRefreshDropdown.value = false
@@ -1454,3 +1864,13 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 </script>
+
+<style scoped>
+.account-tools-menu-item {
+  @apply flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700;
+}
+
+.account-tools-menu-icon {
+  @apply inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md;
+}
+</style>

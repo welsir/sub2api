@@ -1,13 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 
 import type { DashboardStats } from '@/types'
 import DashboardView from '../DashboardView.vue'
 
-const { getSnapshotV2, getUserUsageTrend, getUserSpendingRanking } = vi.hoisted(() => ({
+const { getSnapshotV2, getUserUsageTrend, getUserSpendingRanking, getWorkingDirSpending } = vi.hoisted(() => ({
   getSnapshotV2: vi.fn(),
   getUserUsageTrend: vi.fn(),
-  getUserSpendingRanking: vi.fn()
+  getUserSpendingRanking: vi.fn(),
+  getWorkingDirSpending: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
@@ -15,7 +17,8 @@ vi.mock('@/api/admin', () => ({
     dashboard: {
       getSnapshotV2,
       getUserUsageTrend,
-      getUserSpendingRanking
+      getUserSpendingRanking,
+      getWorkingDirSpending
     }
   }
 }))
@@ -87,9 +90,12 @@ const createDashboardStats = (): DashboardStats => ({
 
 describe('admin DashboardView', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
+
     getSnapshotV2.mockReset()
     getUserUsageTrend.mockReset()
     getUserSpendingRanking.mockReset()
+    getWorkingDirSpending.mockReset()
 
     getSnapshotV2.mockResolvedValue({
       stats: createDashboardStats(),
@@ -107,6 +113,12 @@ describe('admin DashboardView', () => {
       total_actual_cost: 0,
       total_requests: 0,
       total_tokens: 0,
+      start_date: '',
+      end_date: ''
+    })
+    getWorkingDirSpending.mockResolvedValue({
+      items: [],
+      total_actual_cost: 0,
       start_date: '',
       end_date: ''
     })

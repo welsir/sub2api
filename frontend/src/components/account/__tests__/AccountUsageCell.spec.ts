@@ -57,6 +57,19 @@ function makeAccount(overrides: Partial<Account>): Account {
 describe('AccountUsageCell', () => {
   beforeEach(() => {
     getUsage.mockReset()
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: true,
+        media: '(min-width: 768px)',
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }))
+    })
   })
 
   it('Antigravity 图片用量会聚合新旧 image 模型', async () => {
@@ -553,6 +566,58 @@ describe('AccountUsageCell', () => {
 		expect(badges.some(node => node.attributes('title') === 'usage.userBilled')).toBe(true)
   })
 
+  it('Grok OAuth 会展示本地 user billed 用量并保留超限百分比', async () => {
+    getUsage.mockResolvedValue({
+      grok_local_usage: {
+        requests: 4,
+        tokens: 1200,
+        cost: 0.12,
+        standard_cost: 0.12,
+        user_cost: 0.34
+      },
+      grok_request_quota: {
+        limit: 10,
+        remaining: -2,
+        reset_at: '2026-07-09T16:00:00Z'
+      },
+      grok_quota_snapshot_state: 'observed'
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 3861,
+          platform: 'grok',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}|{{ resetsAt }}</div>'
+          },
+          AccountQuotaInfo: true,
+          GrokQuotaProbeCell: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(getUsage).toHaveBeenCalledWith(3861)
+    expect(wrapper.text()).toContain('4 req')
+    expect(wrapper.text()).toContain('1.2K')
+    expect(wrapper.text()).toContain('A $0.12')
+    expect(wrapper.text()).toContain('U $0.34')
+    expect(wrapper.text()).toContain('admin.accounts.usageWindow.grokRequests|120|2026-07-09T16:00:00Z')
+
+    const badges = wrapper.findAll('span[title]')
+    expect(badges.some(node => node.attributes('title') === 'usage.accountBilled')).toBe(true)
+    expect(badges.some(node => node.attributes('title') === 'usage.userBilled')).toBe(true)
+  })
+
   it('Key 账号在 today stats loading 时显示骨架屏', async () => {
 		const wrapper = mount(AccountUsageCell, {
 		  props: {
@@ -602,5 +667,142 @@ describe('AccountUsageCell', () => {
 		await flushPromises()
 
 		expect(wrapper.text().trim()).toBe('-')
+  })
+
+  it('Vertex 账号会在 Gemini 用量窗口里展示 today stats 徽章', async () => {
+		const wrapper = mount(AccountUsageCell, {
+		  props: {
+		    account: makeAccount({
+		      id: 4001,
+		      platform: 'gemini',
+		      type: 'service_account',
+          credentials: {
+            tier_id: 'vertex',
+            project_id: 'vertex-proj',
+            client_email: 'svc@vertex-proj.iam.gserviceaccount.com',
+            location: 'global'
+          },
+		      extra: {}
+		    }),
+		    todayStats: {
+		      requests: 0,
+		      tokens: 0,
+		      cost: 0,
+		      standard_cost: 0,
+		      user_cost: 0
+		    }
+		  },
+		  global: {
+		    stubs: {
+		      UsageProgressBar: true,
+		      AccountQuotaInfo: true
+		    }
+		  }
+		})
+
+		await flushPromises()
+
+		expect(wrapper.text()).toContain('0 req')
+		expect(wrapper.text()).toContain('0')
+		expect(wrapper.text()).toContain('A $0.00')
+		expect(wrapper.text()).toContain('U $0.00')
+  })
+
+  it('Anthropic OAuth 会渲染 7d F (Fable) 进度条，且 7d S 逻辑保留', async () => {
+    getUsage.mockResolvedValue({
+      source: 'passive',
+      five_hour: {
+        utilization: 41,
+        resets_at: '2026-07-03T10:00:00Z',
+        remaining_seconds: 3600
+      },
+      seven_day: {
+        utilization: 56,
+        resets_at: '2026-07-06T22:00:00Z',
+        remaining_seconds: 300000
+      },
+      seven_day_sonnet: {
+        utilization: 30,
+        resets_at: '2026-07-06T22:00:00Z',
+        remaining_seconds: 300000
+      },
+      seven_day_fable: {
+        utilization: 100,
+        resets_at: '2026-07-06T22:00:00Z',
+        remaining_seconds: 300000
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 3001,
+          platform: 'anthropic',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
+          AccountQuotaInfo: true,
+          GrokQuotaProbeCell: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('5h|41')
+    expect(wrapper.text()).toContain('7d|56')
+    expect(wrapper.text()).toContain('7d S|30')
+    expect(wrapper.text()).toContain('7d F|100')
+  })
+
+  it('Anthropic OAuth 无 Fable 数据时不渲染 7d F 进度条', async () => {
+    getUsage.mockResolvedValue({
+      source: 'passive',
+      five_hour: {
+        utilization: 41,
+        resets_at: '2026-07-03T10:00:00Z',
+        remaining_seconds: 3600
+      },
+      seven_day: {
+        utilization: 56,
+        resets_at: '2026-07-06T22:00:00Z',
+        remaining_seconds: 300000
+      }
+    })
+
+    const wrapper = mount(AccountUsageCell, {
+      props: {
+        account: makeAccount({
+          id: 3002,
+          platform: 'anthropic',
+          type: 'oauth',
+          extra: {}
+        })
+      },
+      global: {
+        stubs: {
+          UsageProgressBar: {
+            props: ['label', 'utilization', 'resetsAt', 'color'],
+            template: '<div class="usage-bar">{{ label }}|{{ utilization }}</div>'
+          },
+          AccountQuotaInfo: true,
+          GrokQuotaProbeCell: true
+        }
+      }
+    })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('5h|41')
+    expect(wrapper.text()).toContain('7d|56')
+    expect(wrapper.text()).not.toContain('7d S')
+    expect(wrapper.text()).not.toContain('7d F')
   })
 })

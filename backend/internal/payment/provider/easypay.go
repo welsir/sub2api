@@ -25,6 +25,7 @@ const (
 	easypayStatusPaid      = 1
 	easypayHTTPTimeout     = 10 * time.Second
 	maxEasypayResponseSize = 1 << 20 // 1MB
+	maxEasypayErrorSummary = 512
 	tradeStatusSuccess     = "TRADE_SUCCESS"
 	signTypeMD5            = "MD5"
 	paymentModePopup       = "popup"
@@ -38,25 +39,75 @@ type EasyPay struct {
 	httpClient *http.Client
 }
 
+type easyPayCustomMethod struct {
+	Type         string `json:"type"`
+	UpstreamType string `json:"upstreamType"`
+	DisplayName  string `json:"displayName"`
+}
+
 // NewEasyPay creates a new EasyPay provider.
 // config keys: pid, pkey, apiBase, notifyUrl, returnUrl, cid, cidAlipay, cidWxpay
 func NewEasyPay(instanceID string, config map[string]string) (*EasyPay, error) {
 	for _, k := range []string{"pid", "pkey", "apiBase", "notifyUrl", "returnUrl"} {
-		if config[k] == "" {
+		if strings.TrimSpace(config[k]) == "" {
 			return nil, fmt.Errorf("easypay config missing required key: %s", k)
 		}
 	}
+	cfg := make(map[string]string, len(config))
+	for k, v := range config {
+		cfg[k] = v
+	}
+	cfg["apiBase"] = normalizeEasyPayAPIBase(cfg["apiBase"])
 	return &EasyPay{
 		instanceID: instanceID,
-		config:     config,
+		config:     cfg,
 		httpClient: &http.Client{Timeout: easypayHTTPTimeout},
 	}, nil
+}
+
+func normalizeEasyPayAPIBase(apiBase string) string {
+	base := strings.TrimSpace(apiBase)
+	if base == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(base); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		parsed.RawQuery = ""
+		parsed.Fragment = ""
+		parsed.RawPath = ""
+		parsed.Path = trimEasyPayEndpointPath(parsed.Path)
+		return strings.TrimRight(parsed.String(), "/")
+	}
+	return strings.TrimRight(trimEasyPayEndpointPath(base), "/")
+}
+
+func trimEasyPayEndpointPath(path string) string {
+	path = strings.TrimRight(strings.TrimSpace(path), "/")
+	lower := strings.ToLower(path)
+	for _, endpoint := range []string{"/submit.php", "/mapi.php", "/api.php"} {
+		if strings.HasSuffix(lower, endpoint) {
+			return strings.TrimRight(path[:len(path)-len(endpoint)], "/")
+		}
+	}
+	return path
+}
+
+func (e *EasyPay) apiBase() string {
+	if e == nil {
+		return ""
+	}
+	return normalizeEasyPayAPIBase(e.config["apiBase"])
 }
 
 func (e *EasyPay) Name() string        { return "EasyPay" }
 func (e *EasyPay) ProviderKey() string { return payment.TypeEasyPay }
 func (e *EasyPay) SupportedTypes() []payment.PaymentType {
-	return []payment.PaymentType{payment.TypeAlipay, payment.TypeWxpay}
+	types := []payment.PaymentType{payment.TypeAlipay, payment.TypeWxpay}
+	for _, method := range e.customMethods() {
+		if method.Type != "" {
+			types = append(types, method.Type)
+		}
+	}
+	return types
 }
 
 func (e *EasyPay) MerchantIdentityMetadata() map[string]string {
@@ -85,13 +136,14 @@ func (e *EasyPay) CreatePayment(ctx context.Context, req payment.CreatePaymentRe
 // TradeNo is empty; it arrives via the notify callback after payment.
 func (e *EasyPay) createRedirectPayment(req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
 	notifyURL, returnURL := e.resolveURLs(req)
+	paymentType := e.upstreamPaymentType(req.PaymentType)
 	params := map[string]string{
-		"pid": e.config["pid"], "type": req.PaymentType,
+		"pid": e.config["pid"], "type": paymentType,
 		"out_trade_no": req.OrderID, "notify_url": notifyURL,
 		"return_url": returnURL, "name": req.Subject,
 		"money": req.Amount,
 	}
-	if cid := e.resolveCID(req.PaymentType); cid != "" {
+	if cid := e.resolveCID(paymentType); cid != "" {
 		params["cid"] = cid
 	}
 	if req.IsMobile {
@@ -104,21 +156,21 @@ func (e *EasyPay) createRedirectPayment(req payment.CreatePaymentRequest) (*paym
 	for k, v := range params {
 		q.Set(k, v)
 	}
-	base := strings.TrimRight(e.config["apiBase"], "/")
-	payURL := base + "/submit.php?" + q.Encode()
+	payURL := e.apiBase() + "/submit.php?" + q.Encode()
 	return &payment.CreatePaymentResponse{PayURL: payURL}, nil
 }
 
 // createAPIPayment calls mapi.php to get payurl/qrcode (existing behavior).
 func (e *EasyPay) createAPIPayment(ctx context.Context, req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
 	notifyURL, returnURL := e.resolveURLs(req)
+	paymentType := e.upstreamPaymentType(req.PaymentType)
 	params := map[string]string{
-		"pid": e.config["pid"], "type": req.PaymentType,
+		"pid": e.config["pid"], "type": paymentType,
 		"out_trade_no": req.OrderID, "notify_url": notifyURL,
 		"return_url": returnURL, "name": req.Subject,
 		"money": req.Amount, "clientip": req.ClientIP,
 	}
-	if cid := e.resolveCID(req.PaymentType); cid != "" {
+	if cid := e.resolveCID(paymentType); cid != "" {
 		params["cid"] = cid
 	}
 	if req.IsMobile {
@@ -127,7 +179,7 @@ func (e *EasyPay) createAPIPayment(ctx context.Context, req payment.CreatePaymen
 	params["sign"] = easyPaySign(params, e.config["pkey"])
 	params["sign_type"] = signTypeMD5
 
-	body, err := e.post(ctx, strings.TrimRight(e.config["apiBase"], "/")+"/mapi.php", params)
+	body, err := e.post(ctx, e.apiBase()+"/mapi.php", params)
 	if err != nil {
 		return nil, fmt.Errorf("easypay create: %w", err)
 	}
@@ -166,31 +218,103 @@ func (e *EasyPay) resolveURLs(req payment.CreatePaymentRequest) (string, string)
 	return notifyURL, returnURL
 }
 
+func (e *EasyPay) customMethods() []easyPayCustomMethod {
+	if e == nil {
+		return nil
+	}
+	raw := strings.TrimSpace(e.config["customMethods"])
+	if raw == "" {
+		return nil
+	}
+	var methods []easyPayCustomMethod
+	if err := json.Unmarshal([]byte(raw), &methods); err != nil {
+		return nil
+	}
+	result := make([]easyPayCustomMethod, 0, len(methods))
+	for _, method := range methods {
+		method.Type = strings.TrimSpace(method.Type)
+		method.UpstreamType = strings.TrimSpace(method.UpstreamType)
+		method.DisplayName = strings.TrimSpace(method.DisplayName)
+		if method.Type == "" || method.UpstreamType == "" {
+			continue
+		}
+		result = append(result, method)
+	}
+	return result
+}
+
+func (e *EasyPay) upstreamPaymentType(paymentType string) string {
+	paymentType = strings.TrimSpace(paymentType)
+	for _, method := range e.customMethods() {
+		if paymentType == method.Type {
+			return method.UpstreamType
+		}
+	}
+	return paymentType
+}
+
 func (e *EasyPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
 	params := map[string]string{
 		"act": "order", "pid": e.config["pid"],
 		"key": e.config["pkey"], "out_trade_no": tradeNo,
 	}
-	body, err := e.post(ctx, e.config["apiBase"]+"/api.php", params)
+	body, err := e.post(ctx, e.apiBase()+"/api.php", params)
 	if err != nil {
 		return nil, fmt.Errorf("easypay query: %w", err)
 	}
+	type easyPayQueryData struct {
+		TradeStatus *string `json:"trade_status"`
+		Status      *int    `json:"status"`
+		Money       *string `json:"money"`
+		TradeNo     *string `json:"trade_no"`
+	}
 	var resp struct {
-		Code   int    `json:"code"`
-		Msg    string `json:"msg"`
-		Status int    `json:"status"`
-		Money  string `json:"money"`
+		Code        int              `json:"code"`
+		Msg         string           `json:"msg"`
+		TradeStatus *string          `json:"trade_status"`
+		Status      *int             `json:"status"`
+		Money       *string          `json:"money"`
+		TradeNo     *string          `json:"trade_no"`
+		Data        easyPayQueryData `json:"data"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("easypay parse query: %w", err)
 	}
 	status := payment.ProviderStatusPending
-	if resp.Status == easypayStatusPaid {
+	if resp.TradeStatus != nil {
+		if *resp.TradeStatus == tradeStatusSuccess {
+			status = payment.ProviderStatusPaid
+		}
+	} else if resp.Data.TradeStatus != nil {
+		if *resp.Data.TradeStatus == tradeStatusSuccess {
+			status = payment.ProviderStatusPaid
+		}
+	} else if resp.Status != nil {
+		if *resp.Status == easypayStatusPaid {
+			status = payment.ProviderStatusPaid
+		}
+	} else if resp.Data.Status != nil && *resp.Data.Status == easypayStatusPaid {
 		status = payment.ProviderStatusPaid
 	}
-	amount, _ := strconv.ParseFloat(resp.Money, 64)
+
+	money := ""
+	if resp.Money != nil {
+		money = *resp.Money
+	} else if resp.Data.Money != nil {
+		money = *resp.Data.Money
+	}
+	responseTradeNo := tradeNo
+	if resp.TradeNo != nil {
+		if *resp.TradeNo != "" {
+			responseTradeNo = *resp.TradeNo
+		}
+	} else if resp.Data.TradeNo != nil && *resp.Data.TradeNo != "" {
+		responseTradeNo = *resp.Data.TradeNo
+	}
+
+	amount, _ := strconv.ParseFloat(money, 64)
 	return &payment.QueryOrderResponse{
-		TradeNo:  tradeNo,
+		TradeNo:  responseTradeNo,
 		Status:   status,
 		Amount:   amount,
 		Metadata: e.MerchantIdentityMetadata(),
@@ -234,25 +358,128 @@ func (e *EasyPay) VerifyNotification(_ context.Context, rawBody string, _ map[st
 }
 
 func (e *EasyPay) Refund(ctx context.Context, req payment.RefundRequest) (*payment.RefundResponse, error) {
-	params := map[string]string{
-		"pid": e.config["pid"], "key": e.config["pkey"],
-		"trade_no": req.TradeNo, "out_trade_no": req.OrderID, "money": req.Amount,
+	attempts := e.refundAttempts(req)
+	if len(attempts) == 0 {
+		return nil, fmt.Errorf("easypay refund missing order identifier")
 	}
-	body, err := e.post(ctx, e.config["apiBase"]+"/api.php?act=refund", params)
-	if err != nil {
-		return nil, fmt.Errorf("easypay refund: %w", err)
+	var firstErr error
+	for i, attempt := range attempts {
+		body, status, err := e.postRaw(ctx, e.apiBase()+"/api.php?act=refund", attempt.params)
+		if err != nil {
+			return nil, fmt.Errorf("easypay refund request: %w", err)
+		}
+		if err := parseEasyPayRefundResponse(status, body); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			if i+1 < len(attempts) && isEasyPayRefundOrderNotFound(err) {
+				continue
+			}
+			return nil, err
+		}
+		return &payment.RefundResponse{RefundID: attempt.refundID, Status: payment.ProviderStatusSuccess}, nil
 	}
+	return nil, firstErr
+}
+
+type easyPayRefundAttempt struct {
+	params   map[string]string
+	refundID string
+}
+
+func (e *EasyPay) refundAttempts(req payment.RefundRequest) []easyPayRefundAttempt {
+	base := map[string]string{
+		"pid": e.config["pid"], "key": e.config["pkey"], "money": req.Amount,
+	}
+	var attempts []easyPayRefundAttempt
+	if orderID := strings.TrimSpace(req.OrderID); orderID != "" {
+		params := cloneStringMap(base)
+		params["out_trade_no"] = orderID
+		attempts = append(attempts, easyPayRefundAttempt{params: params, refundID: orderID})
+	}
+	if tradeNo := strings.TrimSpace(req.TradeNo); tradeNo != "" {
+		params := cloneStringMap(base)
+		params["trade_no"] = tradeNo
+		attempts = append(attempts, easyPayRefundAttempt{params: params, refundID: tradeNo})
+	}
+	return attempts
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func isEasyPayRefundOrderNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	lower := strings.ToLower(msg)
+	return strings.Contains(msg, "订单编号不存在") ||
+		strings.Contains(msg, "订单不存在") ||
+		strings.Contains(lower, "order not found") ||
+		strings.Contains(lower, "not exist")
+}
+
+func parseEasyPayRefundResponse(status int, body []byte) error {
+	summary := summarizeEasyPayResponse(body)
+	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		return fmt.Errorf("easypay refund HTTP %d: %s", status, summary)
+	}
+
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return fmt.Errorf("easypay refund empty response (HTTP %d): %s", status, summary)
+	}
+
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "<!doctype html") || strings.HasPrefix(lower, "<html") ||
+		(strings.HasPrefix(lower, "<") && strings.Contains(lower, "html")) {
+		return fmt.Errorf("easypay refund non-JSON response (HTTP %d): %s", status, summary)
+	}
+
 	var resp struct {
-		Code int    `json:"code"`
+		Code any    `json:"code"`
 		Msg  string `json:"msg"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("easypay parse refund: %w", err)
+		return fmt.Errorf("easypay refund non-JSON response (HTTP %d): %s", status, summary)
 	}
-	if resp.Code != easypayCodeSuccess {
-		return nil, fmt.Errorf("easypay refund failed: %s", resp.Msg)
+	if !easyPayResponseCodeIsSuccess(resp.Code) {
+		msg := strings.TrimSpace(resp.Msg)
+		if msg == "" {
+			msg = summary
+		}
+		return fmt.Errorf("easypay refund failed (HTTP %d): %s", status, msg)
 	}
-	return &payment.RefundResponse{RefundID: req.TradeNo, Status: payment.ProviderStatusSuccess}, nil
+	return nil
+}
+
+func easyPayResponseCodeIsSuccess(code any) bool {
+	switch v := code.(type) {
+	case float64:
+		return int(v) == easypayCodeSuccess
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		return err == nil && n == easypayCodeSuccess
+	default:
+		return false
+	}
+}
+
+func summarizeEasyPayResponse(body []byte) string {
+	summary := strings.Join(strings.Fields(string(body)), " ")
+	if summary == "" {
+		return "<empty>"
+	}
+	if len(summary) > maxEasypayErrorSummary {
+		return summary[:maxEasypayErrorSummary] + "..."
+	}
+	return summary
 }
 
 func (e *EasyPay) resolveCID(paymentType string) string {
@@ -269,21 +496,34 @@ func (e *EasyPay) resolveCID(paymentType string) string {
 }
 
 func (e *EasyPay) post(ctx context.Context, endpoint string, params map[string]string) ([]byte, error) {
+	body, _, err := e.postRaw(ctx, endpoint, params)
+	return body, err
+}
+
+func (e *EasyPay) postRaw(ctx context.Context, endpoint string, params map[string]string) ([]byte, int, error) {
 	form := url.Values{}
 	for k, v := range params {
 		form.Set(k, v)
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := e.httpClient.Do(req)
+	client := e.httpClient
+	if client == nil {
+		client = &http.Client{Timeout: easypayHTTPTimeout}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	return io.ReadAll(io.LimitReader(resp.Body, maxEasypayResponseSize))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxEasypayResponseSize))
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+	return body, resp.StatusCode, nil
 }
 
 func easyPaySign(params map[string]string, pkey string) string {

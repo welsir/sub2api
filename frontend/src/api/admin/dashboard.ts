@@ -167,6 +167,8 @@ export interface UserBreakdownParams {
   endpoint?: string
   endpoint_type?: 'inbound' | 'upstream' | 'path'
   limit?: number
+  // Sort column for the ranking (allowlisted server-side; falls back to actual_cost)
+  sort_by?: 'total_tokens' | 'input_tokens' | 'output_tokens' | 'cache_tokens' | 'requests' | 'cost' | 'actual_cost'
   // Additional filter conditions
   user_id?: number
   api_key_id?: number
@@ -266,10 +268,17 @@ export async function getUserSpendingRanking(
   return data
 }
 
+export interface PlatformUsage {
+  platform: string
+  today_actual_cost: number
+  total_actual_cost: number
+}
+
 export interface BatchUserUsageStats {
   user_id: number
   today_actual_cost: number
   total_actual_cost: number
+  by_platform?: PlatformUsage[]
 }
 
 export interface BatchUsersUsageResponse {
@@ -315,11 +324,17 @@ export async function getBatchApiKeysUsage(
   return data
 }
 
-// 目录花费：按 (用户, 工作目录) 聚合 actual_cost，用于发现非公司项目用量（仅管理员）。
+export interface WorkingDirSpendingParams {
+  start_date?: string
+  end_date?: string
+  user_id?: number
+  limit?: number
+}
+
 export interface WorkingDirSpendingItem {
   user_id: number
   email: string
-  working_directory: string // 空串表示未识别（客户端未上报 cwd）
+  working_directory: string
   actual_cost: number
   requests: number
 }
@@ -327,17 +342,15 @@ export interface WorkingDirSpendingItem {
 export interface WorkingDirSpendingResponse {
   items: WorkingDirSpendingItem[]
   total_actual_cost: number
-  start_date?: string
-  end_date?: string
 }
 
-export async function getWorkingDirSpending(params?: {
-  start_date?: string
-  end_date?: string
-  user_id?: number
-  limit?: number
-}): Promise<WorkingDirSpendingResponse> {
-  const { data } = await apiClient.get<WorkingDirSpendingResponse>('/admin/dashboard/working-dirs', { params })
+export async function getWorkingDirSpending(
+  params?: WorkingDirSpendingParams
+): Promise<WorkingDirSpendingResponse> {
+  const { data } = await apiClient.get<WorkingDirSpendingResponse>(
+    '/admin/dashboard/working-dirs',
+    { params }
+  )
   return data
 }
 

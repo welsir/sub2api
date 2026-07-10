@@ -31,6 +31,6 @@ func TestUserAllowsModel(t *testing.T) {
 
 	var nilUser *User
 	if !nilUser.AllowsModel("anything") {
-		t.Fatal("nil user must allow all models (no restriction)")
+		t.Fatal("nil user must allow all models")
 	}
 }

@@ -19,17 +19,15 @@ type User struct {
 	PasswordHash   string
 	Role           string
 	Balance        float64
+	FrozenBalance  float64
 	Concurrency    int
 	Status         string
 	AllowedGroups  []int64
-	// AllowedModels 用户级模型白名单（支持通配符，如 "claude-*"）。
-	// 为空表示不限制，放行全部模型。在网关入口处做准入校验，并过滤 /v1/models 展示。
+	// AllowedModels 用户级模型白名单（支持尾部 * 通配符）；为空表示不限制。
 	AllowedModels []string
-	// WeeklyCostThreshold 用户级周花费阈值（自然周，周六为第一天）。
-	// nil 或 <=0 表示不限制。本自然周 actual_cost 达到该值时告警（不阻断请求）。
+	// WeeklyCostThreshold 用户级周花费阈值（自然周为周六至周五）。nil 或 <=0 表示不告警。
 	WeeklyCostThreshold *float64
-	// WeeklyThresholdNotifiedWeek 上次已就周阈值告警的自然周起始日（YYYY-MM-DD）。
-	// 用于保证每个自然周最多告警一次。
+	// WeeklyThresholdNotifiedWeek 记录最近一次已原子领取告警的自然周起始日。
 	WeeklyThresholdNotifiedWeek *string
 	TokenVersion                int64 // Incremented on password change to invalidate existing tokens
 	// TokenVersionResolved indicates TokenVersion already contains the fingerprint-derived
@@ -41,6 +39,7 @@ type User struct {
 	LastUsedAt           *time.Time
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
+	DeletedAt            *time.Time // 非 nil 表示用户已软删除
 
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]rateMultiplier
@@ -75,18 +74,15 @@ func (u *User) IsAdmin() bool {
 	return u.Role == RoleAdmin
 }
 
-// AllowsModel reports whether the per-user model whitelist permits requestedModel.
-// An empty whitelist (the default) means no restriction — all models are allowed.
-// Patterns support a trailing "*" wildcard, matching the account model_mapping syntax.
-func (u *User) AllowsModel(requestedModel string) bool {
+// AllowsModel reports whether the per-user model whitelist permits a model.
+func (u *User) AllowsModel(model string) bool {
 	if u == nil || len(u.AllowedModels) == 0 {
 		return true
 	}
-	return matchModelWhitelist(requestedModel, u.AllowedModels)
+	return matchModelWhitelist(model, u.AllowedModels)
 }
 
-// WeeklyThreshold returns the effective per-user weekly cost threshold and whether
-// it is enabled. A nil or non-positive value means no limit (the default).
+// WeeklyThreshold returns the enabled weekly actual-cost threshold.
 func (u *User) WeeklyThreshold() (float64, bool) {
 	if u == nil || u.WeeklyCostThreshold == nil || *u.WeeklyCostThreshold <= 0 {
 		return 0, false

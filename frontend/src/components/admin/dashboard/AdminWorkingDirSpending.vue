@@ -1,86 +1,114 @@
 <template>
-  <div class="card p-4">
-    <div class="mb-1 flex items-center justify-between">
-      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('admin.dashboard.workingDirTitle') }}</h3>
-      <span v-if="!loading && !error" class="text-xs text-gray-500 dark:text-gray-400">
-        {{ t('admin.dashboard.workingDirTotal') }}: ${{ totalActualCost.toFixed(2) }}
-      </span>
+  <section class="card p-4" data-test="working-dir-spending">
+    <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+          {{ t('admin.dashboard.workingDirectories.title') }}
+        </h3>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+          {{ t('admin.dashboard.workingDirectories.subtitle') }}
+        </p>
+      </div>
+      <div class="rounded-lg bg-emerald-50 px-3 py-2 text-right dark:bg-emerald-900/20">
+        <p class="text-[11px] text-emerald-700 dark:text-emerald-300">
+          {{ t('admin.dashboard.workingDirectories.total') }}
+        </p>
+        <p class="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+          ${{ formatCost(totalActualCost) }}
+        </p>
+      </div>
     </div>
-    <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.dashboard.workingDirHint') }}</p>
 
-    <div v-if="loading" class="flex h-32 items-center justify-center">
+    <div v-if="loading" class="flex justify-center py-10">
       <LoadingSpinner size="md" />
     </div>
-    <div v-else-if="error" class="flex h-32 items-center justify-center text-sm text-red-500">
-      {{ t('admin.dashboard.noDataAvailable') }}
+    <div v-else-if="error" class="py-8 text-center text-sm text-red-500">
+      {{ t('admin.dashboard.workingDirectories.failed') }}
     </div>
-    <div v-else-if="items.length === 0" class="flex h-32 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
-      {{ t('admin.dashboard.noDataAvailable') }}
+    <div v-else-if="items.length === 0" class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+      {{ t('admin.dashboard.workingDirectories.empty') }}
     </div>
-    <div v-else class="max-h-96 overflow-auto">
-      <table class="w-full text-left text-sm">
-        <thead class="sticky top-0 bg-white text-xs text-gray-500 dark:bg-dark-800 dark:text-gray-400">
-          <tr class="border-b border-gray-100 dark:border-gray-700">
-            <th class="py-2 pr-2 font-medium">{{ t('admin.dashboard.workingDirUser') }}</th>
-            <th class="py-2 pr-2 font-medium">{{ t('admin.dashboard.workingDirColumn') }}</th>
-            <th class="py-2 pr-2 text-right font-medium">{{ t('admin.dashboard.workingDirCost') }}</th>
-            <th class="py-2 text-right font-medium">{{ t('admin.dashboard.workingDirRequests') }}</th>
+    <div v-else class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead>
+          <tr class="border-b border-gray-200 text-left text-xs text-gray-500 dark:border-dark-700 dark:text-gray-400">
+            <th class="px-3 py-2 font-medium">{{ t('admin.dashboard.workingDirectories.user') }}</th>
+            <th class="px-3 py-2 font-medium">{{ t('admin.dashboard.workingDirectories.directory') }}</th>
+            <th class="px-3 py-2 text-right font-medium">{{ t('admin.dashboard.workingDirectories.requests') }}</th>
+            <th class="px-3 py-2 text-right font-medium">{{ t('admin.dashboard.workingDirectories.spend') }}</th>
           </tr>
         </thead>
         <tbody>
           <tr
-            v-for="(row, idx) in items"
-            :key="idx"
-            class="border-b border-gray-50 transition-colors hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-dark-700/40"
+            v-for="item in items"
+            :key="`${item.user_id}:${item.working_directory}`"
+            class="border-b border-gray-100 last:border-0 dark:border-dark-800"
           >
-            <td class="max-w-[160px] truncate py-1.5 pr-2 text-gray-700 dark:text-gray-300" :title="row.email">{{ row.email || `#${row.user_id}` }}</td>
-            <td class="max-w-[360px] truncate py-1.5 pr-2 font-mono text-xs" :title="row.working_directory">
-              <span v-if="row.working_directory" class="text-gray-900 dark:text-white">{{ row.working_directory }}</span>
-              <span v-else class="italic text-gray-400">{{ t('admin.dashboard.workingDirUnknown') }}</span>
+            <td class="px-3 py-2 text-gray-900 dark:text-white">
+              {{ item.email || `#${item.user_id}` }}
             </td>
-            <td class="py-1.5 pr-2 text-right font-medium text-gray-900 dark:text-white">${{ row.actual_cost.toFixed(2) }}</td>
-            <td class="py-1.5 text-right text-gray-600 dark:text-gray-400">{{ row.requests }}</td>
+            <td class="max-w-[32rem] px-3 py-2 font-mono text-xs text-gray-600 dark:text-gray-300">
+              <span class="block truncate" :title="item.working_directory || undefined">
+                {{ item.working_directory || t('admin.dashboard.workingDirectories.unknown') }}
+              </span>
+            </td>
+            <td class="px-3 py-2 text-right text-gray-600 dark:text-gray-300">
+              {{ item.requests.toLocaleString() }}
+            </td>
+            <td class="px-3 py-2 text-right font-medium text-emerald-600 dark:text-emerald-400">
+              ${{ formatCost(item.actual_cost) }}
+            </td>
           </tr>
         </tbody>
       </table>
     </div>
-  </div>
+  </section>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import type { WorkingDirSpendingItem } from '@/api/admin/dashboard'
 import LoadingSpinner from '@/components/common/LoadingSpinner.vue'
 
-const props = defineProps<{ startDate: string; endDate: string }>()
-const { t } = useI18n()
+const props = defineProps<{
+  startDate: string
+  endDate: string
+}>()
 
+const { t } = useI18n()
 const items = ref<WorkingDirSpendingItem[]>([])
 const totalActualCost = ref(0)
 const loading = ref(false)
 const error = ref(false)
+let loadSequence = 0
+
+const formatCost = (value: number) => Number(value || 0).toFixed(2)
 
 const load = async () => {
+  const sequence = ++loadSequence
   loading.value = true
   error.value = false
   try {
-    const resp = await adminAPI.dashboard.getWorkingDirSpending({
+    const response = await adminAPI.dashboard.getWorkingDirSpending({
       start_date: props.startDate,
       end_date: props.endDate,
-      limit: 100
+      limit: 100,
     })
-    items.value = resp.items || []
-    totalActualCost.value = resp.total_actual_cost || 0
-  } catch (e) {
-    console.error('Failed to load working directory spending:', e)
+    if (sequence !== loadSequence) return
+    items.value = response.items ?? []
+    totalActualCost.value = response.total_actual_cost ?? 0
+  } catch (cause) {
+    if (sequence !== loadSequence) return
+    console.error('Error loading working-directory spending:', cause)
+    items.value = []
+    totalActualCost.value = 0
     error.value = true
   } finally {
-    loading.value = false
+    if (sequence === loadSequence) loading.value = false
   }
 }
 
-watch(() => [props.startDate, props.endDate], load)
-onMounted(load)
+watch(() => [props.startDate, props.endDate], load, { immediate: true })
 </script>

@@ -8,6 +8,7 @@ type APIKeyAuthSnapshot struct {
 	APIKeyID    int64                    `json:"api_key_id"`
 	UserID      int64                    `json:"user_id"`
 	GroupID     *int64                   `json:"group_id,omitempty"`
+	Name        string                   `json:"name"`
 	Status      string                   `json:"status"`
 	IPWhitelist []string                 `json:"ip_whitelist,omitempty"`
 	IPBlacklist []string                 `json:"ip_blacklist,omitempty"`
@@ -29,11 +30,12 @@ type APIKeyAuthSnapshot struct {
 
 // APIKeyAuthUserSnapshot 用户快照
 type APIKeyAuthUserSnapshot struct {
-	ID          int64   `json:"id"`
-	Status      string  `json:"status"`
-	Role        string  `json:"role"`
-	Balance     float64 `json:"balance"`
-	Concurrency int     `json:"concurrency"`
+	ID            int64   `json:"id"`
+	Status        string  `json:"status"`
+	Role          string  `json:"role"`
+	Balance       float64 `json:"balance"`
+	Concurrency   int     `json:"concurrency"`
+	AllowedGroups []int64 `json:"allowed_groups,omitempty"`
 
 	// Balance notification fields (required for CheckBalanceAfterDeduction)
 	Email                      string             `json:"email"`
@@ -47,9 +49,11 @@ type APIKeyAuthUserSnapshot struct {
 	// RPMLimit 用户级每分钟请求数上限（0 = 不限制）；用于 billing_cache_service.checkRPM 兜底判断。
 	RPMLimit int `json:"rpm_limit"`
 
-	// AllowedModels 用户级模型白名单（支持通配符，如 "claude-*"）；空 = 不限制。
-	// 随认证缓存快照下发，网关热路径据此做准入校验，避免每请求查库。
+	// AllowedModels 用户级模型白名单；为空表示不限制。
 	AllowedModels []string `json:"allowed_models,omitempty"`
+
+	WeeklyCostThreshold         *float64 `json:"weekly_cost_threshold,omitempty"`
+	WeeklyThresholdNotifiedWeek *string  `json:"weekly_threshold_notified_week,omitempty"`
 
 	// UserGroupRPMOverride 该 API Key 对应的 (user, group) 专属 RPM 覆盖值。
 	// nil = 无 override（回退到 group/user 级）；0 = 不限流；>0 = 专属上限。
@@ -61,15 +65,25 @@ type APIKeyAuthGroupSnapshot struct {
 	ID                              int64    `json:"id"`
 	Name                            string   `json:"name"`
 	Platform                        string   `json:"platform"`
+	IsExclusive                     bool     `json:"is_exclusive"`
 	Status                          string   `json:"status"`
 	SubscriptionType                string   `json:"subscription_type"`
 	RateMultiplier                  float64  `json:"rate_multiplier"`
 	DailyLimitUSD                   *float64 `json:"daily_limit_usd,omitempty"`
 	WeeklyLimitUSD                  *float64 `json:"weekly_limit_usd,omitempty"`
 	MonthlyLimitUSD                 *float64 `json:"monthly_limit_usd,omitempty"`
+	AllowImageGeneration            bool     `json:"allow_image_generation"`
+	AllowBatchImageGeneration       bool     `json:"allow_batch_image_generation"`
+	ImageRateIndependent            bool     `json:"image_rate_independent"`
+	ImageRateMultiplier             float64  `json:"image_rate_multiplier"`
 	ImagePrice1K                    *float64 `json:"image_price_1k,omitempty"`
 	ImagePrice2K                    *float64 `json:"image_price_2k,omitempty"`
 	ImagePrice4K                    *float64 `json:"image_price_4k,omitempty"`
+	VideoRateIndependent            bool     `json:"video_rate_independent"`
+	VideoRateMultiplier             float64  `json:"video_rate_multiplier"`
+	VideoPrice480P                  *float64 `json:"video_price_480p,omitempty"`
+	VideoPrice720P                  *float64 `json:"video_price_720p,omitempty"`
+	VideoPrice1080P                 *float64 `json:"video_price_1080p,omitempty"`
 	ClaudeCodeOnly                  bool     `json:"claude_code_only"`
 	FallbackGroupID                 *int64   `json:"fallback_group_id,omitempty"`
 	FallbackGroupIDOnInvalidRequest *int64   `json:"fallback_group_id_on_invalid_request,omitempty"`
@@ -87,9 +101,18 @@ type APIKeyAuthGroupSnapshot struct {
 	AllowMessagesDispatch       bool                              `json:"allow_messages_dispatch"`
 	DefaultMappedModel          string                            `json:"default_mapped_model,omitempty"`
 	MessagesDispatchModelConfig OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config,omitempty"`
+	ModelsListConfig            GroupModelsListConfig             `json:"models_list_config,omitempty"`
 
 	// RPMLimit 分组级每分钟请求数上限（0 = 不限制）；用于 billing_cache_service.checkRPM 级联判断。
 	RPMLimit int `json:"rpm_limit"`
+
+	// 高峰时段倍率：PeakRateEnabled 为 true 且请求时刻处于 [PeakStart, PeakEnd) 时，
+	// token 计费倍率额外乘以 PeakRateMultiplier（详见 Group.PeakMultiplierAt）。
+	// 必须随快照缓存，否则扣费路径拿到的 apiKey.Group 缺字段、高峰倍率失效。
+	PeakRateEnabled    bool    `json:"peak_rate_enabled"`
+	PeakStart          string  `json:"peak_start"`
+	PeakEnd            string  `json:"peak_end"`
+	PeakRateMultiplier float64 `json:"peak_rate_multiplier"`
 }
 
 // APIKeyAuthCacheEntry 缓存条目，支持负缓存

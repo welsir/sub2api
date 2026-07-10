@@ -72,6 +72,36 @@ func TestUserRepositoryExistsByEmailNormalizesLegacySpacingAndCase(t *testing.T)
 	require.True(t, exists)
 }
 
+func TestUserRepositoryClaimWeeklyThresholdNotificationIsAtomic(t *testing.T) {
+	repo, _ := newUserEntRepo(t)
+	ctx := context.Background()
+	user := &service.User{
+		Email:        "weekly@example.com",
+		Username:     "weekly-user",
+		PasswordHash: "hash",
+		Role:         service.RoleUser,
+		Status:       service.StatusActive,
+	}
+	require.NoError(t, repo.Create(ctx, user))
+
+	claimed, err := repo.ClaimWeeklyThresholdNotification(ctx, user.ID, "2026-07-04")
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	claimed, err = repo.ClaimWeeklyThresholdNotification(ctx, user.ID, "2026-07-04")
+	require.NoError(t, err)
+	require.False(t, claimed)
+
+	claimed, err = repo.ClaimWeeklyThresholdNotification(ctx, user.ID, "2026-07-11")
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	got, err := repo.GetByID(ctx, user.ID)
+	require.NoError(t, err)
+	require.NotNil(t, got.WeeklyThresholdNotifiedWeek)
+	require.Equal(t, "2026-07-11", *got.WeeklyThresholdNotifiedWeek)
+}
+
 func TestUserRepositoryCreateRejectsNormalizedEmailDuplicate(t *testing.T) {
 	repo, _ := newUserEntRepo(t)
 	ctx := context.Background()
