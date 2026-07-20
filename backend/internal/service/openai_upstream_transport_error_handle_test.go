@@ -54,34 +54,25 @@ func (u *failingOpenAIHTTPUpstream) DoWithTLS(_ *http.Request, _ string, _ int64
 	return nil, u.err
 }
 
-// A durable proxy/credential failure must (a) temporarily unschedule the account
-// so it stops being hammered, and (b) return a failover error so the handler
-// switches to a healthy account instead of writing a hard 502 itself.
-func TestHandleOpenAIUpstreamTransportError_PersistentEvictsAndFailsOver(t *testing.T) {
+// A proxy credential failure must fail over without changing account health.
+// Proxy state can recover independently and is not evidence that the account
+// itself needs operator recovery.
+func TestHandleOpenAIUpstreamTransportError_ProxyCredentialFailureFailsOverWithoutEviction(t *testing.T) {
 	repo := &openaiTransportAccountRepoStub{}
 	svc := &OpenAIGatewayService{accountRepo: repo}
 	account := &Account{ID: 4627, Name: "proxy-expired", Platform: PlatformOpenAI}
 	c, rec := newOpenAITransportErrTestContext()
 
-	before := time.Now()
 	retErr := svc.handleOpenAIUpstreamTransportError(context.Background(), c, account,
 		errors.New(`Post "https://chatgpt.com/backend-api/codex/responses": socks connect tcp 85.255.176.68:12324->chatgpt.com:443: username/password authentication failed`), false)
-	after := time.Now()
 
 	// Failover error (handler will switch accounts), not a direct response.
 	var fo *UpstreamFailoverError
-	require.True(t, errors.As(retErr, &fo), "persistent error must return *UpstreamFailoverError")
+	require.True(t, errors.As(retErr, &fo), "proxy error must return *UpstreamFailoverError")
 	require.Equal(t, http.StatusBadGateway, fo.StatusCode)
 
-	// Persistent → account temporarily unscheduled for ~10min, reason carries cause.
-	require.Len(t, repo.tempUnschedCalls, 1)
-	require.Equal(t, int64(4627), repo.tempUnschedCalls[0].accountID)
-	require.Contains(t, repo.tempUnschedCalls[0].reason, "authentication failed")
-	require.True(t, repo.tempUnschedCalls[0].until.After(before.Add(openAITransportErrorTempUnschedDuration-time.Second)))
-	require.True(t, repo.tempUnschedCalls[0].until.Before(after.Add(openAITransportErrorTempUnschedDuration+time.Second)))
-
-	// Immediate in-memory effect so subsequent requests skip it before DB/cache catches up.
-	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Empty(t, repo.tempUnschedCalls)
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
 
 	// Must NOT write a response body — the handler owns the (failover) response.
 	require.Equal(t, 0, rec.Body.Len())
@@ -104,6 +95,27 @@ func TestHandleOpenAIUpstreamTransportError_TransientFailsOverWithoutEviction(t 
 	// Transient → do NOT evict.
 	require.Empty(t, repo.tempUnschedCalls)
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
+	require.Equal(t, 0, rec.Body.Len())
+}
+
+// A proxy endpoint refusing connections is infrastructure state, not evidence
+// that the OpenAI account itself is unhealthy. Fail over for this request, but
+// keep the account schedulable so a short-lived proxy outage does not require
+// an operator to recover accounts manually.
+func TestHandleOpenAIUpstreamTransportError_ProxyConnectionRefusedFailsOverWithoutEviction(t *testing.T) {
+	repo := &openaiTransportAccountRepoStub{}
+	svc := &OpenAIGatewayService{accountRepo: repo}
+	account := &Account{ID: 78, Name: "proxy-temporarily-down", Platform: PlatformOpenAI}
+	c, rec := newOpenAITransportErrTestContext()
+
+	err := svc.handleOpenAIUpstreamTransportError(context.Background(), c, account,
+		errors.New(`Post "https://chatgpt.com/backend-api/codex/responses": socks connect tcp direct.ipreed.com:8001->chatgpt.com:443: dial tcp 119.147.134.162:8001: connect: connection refused`), false)
+
+	var fo *UpstreamFailoverError
+	require.True(t, errors.As(err, &fo), "proxy failure must return *UpstreamFailoverError")
+	require.Equal(t, http.StatusBadGateway, fo.StatusCode)
+	require.Empty(t, repo.tempUnschedCalls, "proxy failure must not persist an account scheduling block")
+	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account), "proxy failure must not block the account in memory")
 	require.Equal(t, 0, rec.Body.Len())
 }
 
@@ -145,22 +157,6 @@ func TestHandleOpenAIUpstreamTransportError_WrappedContextCanceled_NoFailover(t 
 	require.False(t, errors.As(err, &fo), "wrapped context.Canceled must NOT return *UpstreamFailoverError")
 	require.Empty(t, repo.tempUnschedCalls)
 	require.False(t, svc.isOpenAIAccountRuntimeBlocked(account))
-}
-
-// When accountRepo is nil (no DB), in-memory block must still happen but the
-// success log "openai.account_temp_unscheduled_transport" must NOT fire (it
-// would be misleading: the account is only blocked in memory, not persisted).
-// We verify the in-memory block occurs and no DB call is made.
-func TestTempUnscheduleOpenAITransportError_NilAccountRepo_InMemoryBlockOnly(t *testing.T) {
-	// nil accountRepo → no DB write.
-	svc := &OpenAIGatewayService{accountRepo: nil}
-	account := &Account{ID: 55, Name: "no-db", Platform: PlatformOpenAI}
-
-	svc.tempUnscheduleOpenAITransportError(context.Background(), account, "proxy refused")
-
-	// In-memory block must still happen.
-	require.True(t, svc.isOpenAIAccountRuntimeBlocked(account),
-		"in-memory block must apply even when accountRepo is nil")
 }
 
 // context.DeadlineExceeded is NOT special-cased — a slow upstream is worth failing over.
