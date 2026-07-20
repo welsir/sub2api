@@ -124,7 +124,7 @@ scripts
 .code-review-state
 #openspec/
 code-reviews/
-AGENTS.md
+# AGENTS.md is tracked as repository governance for custom product branches.
 backend/cmd/server/server
 deploy/docker-compose.override.yml
 .gocache/
