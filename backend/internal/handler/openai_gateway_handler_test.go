@@ -931,11 +931,13 @@ func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T
 		return len(repo.logSnapshot()) == 1
 	}, time.Second, 10*time.Millisecond)
 	repo.resetLogs()
+	promptAuditRepo := &promptAuditHandlerTestRepository{records: make(chan service.PromptAuditLog, 1)}
 	h := &OpenAIGatewayHandler{
 		gatewayService:           &service.OpenAIGatewayService{},
 		billingCacheService:      &service.BillingCacheService{},
 		apiKeyService:            &service.APIKeyService{},
 		contentModerationService: moderationSvc,
+		promptAuditService:       service.NewPromptAuditService(promptAuditRepo),
 		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
 	}
 	wsServer := newOpenAIWSHandlerTestServer(t, h, middleware.AuthSubject{UserID: 1, Concurrency: 1})
@@ -978,6 +980,11 @@ func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, service.ContentModerationActionBlock, logs[0].Action)
 	require.Equal(t, "bad prompt", logs[0].InputExcerpt)
+	promptAuditLog := receivePromptAuditRecord(t, promptAuditRepo.records)
+	require.Equal(t, int64(1), promptAuditLog.UserID)
+	require.Equal(t, service.ContentModerationProtocolOpenAIResponses, promptAuditLog.Protocol)
+	require.Equal(t, "gpt-5.5", promptAuditLog.Model)
+	require.Equal(t, "bad prompt", promptAuditLog.PromptText)
 }
 
 func TestOpenAIResponsesWebSocket_PassthroughUsageLogPersistsUserAgentAndReasoningEffort(t *testing.T) {

@@ -13,7 +13,11 @@ import (
 )
 
 func (h *GatewayHandler) checkContentModeration(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {
-	if h == nil || h.contentModerationService == nil {
+	if h == nil {
+		return nil
+	}
+	recordPromptAudit(c, h.promptAuditService, apiKey, subject, protocol, model, body)
+	if h.contentModerationService == nil {
 		return nil
 	}
 	return runContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, protocol, model, body)
@@ -31,10 +35,43 @@ func contentModerationErrorCode(decision *service.ContentModerationDecision) str
 }
 
 func (h *OpenAIGatewayHandler) checkContentModeration(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {
-	if h == nil || h.contentModerationService == nil {
+	if h == nil {
+		return nil
+	}
+	recordPromptAudit(c, h.promptAuditService, apiKey, subject, protocol, model, body)
+	if h.contentModerationService == nil {
 		return nil
 	}
 	return runContentModeration(c, reqLog, h.contentModerationService, apiKey, subject, protocol, model, body)
+}
+
+func recordPromptAudit(c *gin.Context, svc *service.PromptAuditService, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) {
+	if svc == nil || c == nil || c.Request == nil {
+		return
+	}
+	svc.Record(buildPromptAuditInput(c, apiKey, subject, protocol, model, body))
+}
+
+func buildPromptAuditInput(c *gin.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) service.PromptAuditInput {
+	input := service.PromptAuditInput{
+		RequestID: contentModerationRequestID(c.Request.Context()),
+		UserID:    subject.UserID,
+		Endpoint:  GetInboundEndpoint(c),
+		Protocol:  protocol,
+		Model:     strings.TrimSpace(model),
+		Body:      body,
+	}
+	if apiKey != nil {
+		input.APIKeyID = apiKey.ID
+		if apiKey.GroupID != nil {
+			groupID := *apiKey.GroupID
+			input.GroupID = &groupID
+		}
+	}
+	if input.Endpoint == "" && c.Request.URL != nil {
+		input.Endpoint = c.Request.URL.Path
+	}
+	return input
 }
 
 func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.ContentModerationService, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) *service.ContentModerationDecision {
