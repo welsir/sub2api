@@ -63,6 +63,22 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 		"'default'",
 		"'legacy'",
 	)
+
+	// prompt_audit_logs: append-only latest-user-prompt audit storage
+	requireColumn(t, tx, "prompt_audit_logs", "request_id", "character varying", 64, false)
+	requireColumn(t, tx, "prompt_audit_logs", "user_id", "bigint", 0, false)
+	requireColumn(t, tx, "prompt_audit_logs", "api_key_id", "bigint", 0, false)
+	requireColumn(t, tx, "prompt_audit_logs", "group_id", "bigint", 0, true)
+	requireColumn(t, tx, "prompt_audit_logs", "endpoint", "character varying", 128, false)
+	requireColumn(t, tx, "prompt_audit_logs", "protocol", "character varying", 64, false)
+	requireColumn(t, tx, "prompt_audit_logs", "model", "character varying", 100, false)
+	requireColumn(t, tx, "prompt_audit_logs", "prompt_text", "text", 0, false)
+	requireColumn(t, tx, "prompt_audit_logs", "prompt_chars", "integer", 0, false)
+	requireColumn(t, tx, "prompt_audit_logs", "created_at", "timestamp with time zone", 0, false)
+	requireIndex(t, tx, "prompt_audit_logs", "idx_prompt_audit_logs_created_at")
+	requireIndex(t, tx, "prompt_audit_logs", "idx_prompt_audit_logs_user_created_at")
+	requireIndex(t, tx, "prompt_audit_logs", "idx_prompt_audit_logs_api_key_created_at")
+	requireIndex(t, tx, "prompt_audit_logs", "idx_prompt_audit_logs_request_id")
 	requireConstraintDefinitionContains(
 		t,
 		tx,
