@@ -63,7 +63,7 @@ Set:
 ```text
 site_name=Welsir AI
 site_subtitle=多模型 API 中转服务
-api_base_url=https://ai.welsir.com
+api_base_url=https://ai.welsir.com/v1
 frontend_url=https://ai.welsir.com
 ```
 
