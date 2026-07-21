@@ -135,6 +135,11 @@ docs/*
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
 !docs/legal/
 !docs/legal/*.md
+!docs/plans/
+!docs/plans/*.md
+!docs/governance/
+!docs/governance/runs/
+!docs/governance/runs/*.md
 .serena/
 .codex/
 frontend/coverage/

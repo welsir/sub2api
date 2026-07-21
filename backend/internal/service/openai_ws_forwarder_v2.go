@@ -294,11 +294,15 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		account,
 		stateStore,
 		groupID,
+		wsURL,
 	); err != nil {
 		return nil, err
 	}
 
+	upstreamAudit := StartWebSocketUpstreamAudit(ctx, account.ID, wsURL, payloadAsJSONBytes(payload))
+	defer upstreamAudit.CloseIfPending()
 	if err := lease.WriteJSONWithContextTimeout(ctx, payload, s.openAIWSWriteTimeout()); err != nil {
+		upstreamAudit.RecordTransportError(err)
 		lease.MarkBroken()
 		logOpenAIWSModeInfo(
 			"write_request_fail account_id=%d conn_id=%s cause=%s payload_bytes=%d",
@@ -422,6 +426,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	for {
 		message, readErr := lease.ReadMessageWithContextTimeout(ctx, readTimeout)
 		if readErr != nil {
+			upstreamAudit.Finish(UpstreamAuditOutcomeReadError, false, readErr)
 			lease.MarkBroken()
 			closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
 			logOpenAIWSModeInfo(
@@ -449,6 +454,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			setOpsUpstreamError(c, 0, sanitizeUpstreamErrorMessage(readErr.Error()), "")
 			return nil, fmt.Errorf("openai ws read event: %w", readErr)
 		}
+		upstreamAudit.AppendWebSocketMessage(message)
 
 		eventType, eventResponseID, responseField := parseOpenAIWSEventEnvelope(message)
 		if eventType == "" {
@@ -567,6 +573,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			// error 事件后连接不再可复用，避免回池后污染下一请求。
 			lease.MarkBroken()
 			if !wroteDownstream && canFallback {
+				upstreamAudit.Finish(UpstreamAuditOutcomeUpstreamError, true, errors.New(errMsg))
 				return nil, wrapOpenAIWSFallback(fallbackReason, errors.New(errMsg))
 			}
 			statusCode := openAIWSErrorHTTPStatusFromRaw(errCodeRaw, errTypeRaw)
@@ -583,6 +590,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					},
 				})
 			}
+			upstreamAudit.Finish(UpstreamAuditOutcomeUpstreamError, true, errors.New(errMsg))
 			return nil, fmt.Errorf("openai ws error event: %s", errMsg)
 		}
 
@@ -617,6 +625,11 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 
 		if isTerminalEvent {
+			auditOutcome := UpstreamAuditOutcomeCompleted
+			if eventType == "response.failed" || eventType == "response.incomplete" || eventType == "response.cancelled" || eventType == "response.canceled" {
+				auditOutcome = UpstreamAuditOutcomeUpstreamError
+			}
+			upstreamAudit.Finish(auditOutcome, true, nil)
 			cleanExit = true
 			break
 		}

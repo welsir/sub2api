@@ -689,7 +689,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 		turnStart := time.Now()
 		wroteDownstream := false
+		upstreamAudit := StartWebSocketUpstreamAudit(ctx, account.ID, wsURL, payload)
+		defer upstreamAudit.CloseIfPending()
 		if err := lease.WriteJSONWithContextTimeout(ctx, json.RawMessage(payload), s.openAIWSWriteTimeout()); err != nil {
+			upstreamAudit.RecordTransportError(err)
 			return nil, wrapOpenAIWSIngressTurnError(
 				"write_upstream",
 				fmt.Errorf("write upstream websocket request: %w", err),
@@ -736,6 +739,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		for {
 			upstreamMessage, readErr := lease.ReadMessageWithContextTimeout(ctx, s.openAIWSReadTimeout())
 			if readErr != nil {
+				upstreamAudit.Finish(UpstreamAuditOutcomeReadError, false, readErr)
 				lease.MarkBroken()
 				return nil, wrapOpenAIWSIngressTurnError(
 					"read_upstream",
@@ -743,6 +747,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					wroteDownstream,
 				)
 			}
+			upstreamAudit.AppendWebSocketMessage(upstreamMessage)
 
 			eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(upstreamMessage)
 			if responseID == "" && eventResponseID != "" {
@@ -760,6 +765,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				s.persistOpenAIWSRateLimitSignal(ctx, account, lease.HandshakeHeaders(), upstreamMessage, errCodeRaw, errTypeRaw, errMsgRaw)
 				fallbackReason, _ := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 				errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
+				upstreamAudit.Finish(UpstreamAuditOutcomeUpstreamError, true, errors.New(errMessage))
 				recoverablePrevNotFound := fallbackReason == openAIWSIngressStagePreviousResponseNotFound &&
 					turnPreviousResponseID != "" &&
 					!turnHasFunctionCallOutput &&
@@ -830,6 +836,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 			isTerminalEvent := isOpenAIWSTerminalEvent(eventType)
 			if isTerminalEvent {
+				auditOutcome := UpstreamAuditOutcomeCompleted
+				if eventType == "response.failed" || eventType == "response.incomplete" || eventType == "response.cancelled" || eventType == "response.canceled" {
+					auditOutcome = UpstreamAuditOutcomeUpstreamError
+				}
+				upstreamAudit.Finish(auditOutcome, true, nil)
 				terminalEventCount++
 			}
 			if firstTokenMs == nil && isTokenEvent {

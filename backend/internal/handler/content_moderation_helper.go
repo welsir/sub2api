@@ -49,17 +49,17 @@ func recordPromptAudit(c *gin.Context, svc *service.PromptAuditService, apiKey *
 	if svc == nil || c == nil || c.Request == nil {
 		return
 	}
-	svc.Record(buildPromptAuditInput(c, apiKey, subject, protocol, model, body))
+	metadata := buildPromptAuditInput(c, apiKey, subject, protocol, model, body)
+	c.Request = c.Request.WithContext(service.WithUpstreamAuditContext(c.Request.Context(), svc, metadata))
 }
 
-func buildPromptAuditInput(c *gin.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) service.PromptAuditInput {
-	input := service.PromptAuditInput{
+func buildPromptAuditInput(c *gin.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, _ []byte) service.UpstreamAuditMetadata {
+	input := service.UpstreamAuditMetadata{
 		RequestID: contentModerationRequestID(c.Request.Context()),
 		UserID:    subject.UserID,
 		Endpoint:  GetInboundEndpoint(c),
 		Protocol:  protocol,
 		Model:     strings.TrimSpace(model),
-		Body:      body,
 	}
 	if apiKey != nil {
 		input.APIKeyID = apiKey.ID

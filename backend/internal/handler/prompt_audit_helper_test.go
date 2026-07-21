@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"bytes"
 	"context"
-	"errors"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
@@ -14,21 +16,12 @@ import (
 )
 
 type promptAuditHandlerTestRepository struct {
-	records chan service.PromptAuditLog
-	err     error
+	records chan service.UpstreamAuditLog
 }
 
-func (r *promptAuditHandlerTestRepository) Create(_ context.Context, log *service.PromptAuditLog) error {
-	copyLog := *log
-	if log.GroupID != nil {
-		groupID := *log.GroupID
-		copyLog.GroupID = &groupID
-	}
-	select {
-	case r.records <- copyLog:
-	default:
-	}
-	return r.err
+func (r *promptAuditHandlerTestRepository) Create(_ context.Context, log *service.UpstreamAuditLog) error {
+	r.records <- *log
+	return nil
 }
 
 func promptAuditTestContext(path, requestID string) *gin.Context {
@@ -40,112 +33,52 @@ func promptAuditTestContext(path, requestID string) *gin.Context {
 	return c
 }
 
-func receivePromptAuditRecord(t *testing.T, records <-chan service.PromptAuditLog) service.PromptAuditLog {
-	t.Helper()
-	select {
-	case record := <-records:
-		return record
-	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for prompt audit record")
-		return service.PromptAuditLog{}
-	}
-}
-
-func TestOpenAIGatewayCheckContentModerationRecordsPromptAudit(t *testing.T) {
-	repo := &promptAuditHandlerTestRepository{records: make(chan service.PromptAuditLog, 1)}
+func TestOpenAIGatewayCheckContentModerationAttachesUpstreamAuditMetadata(t *testing.T) {
+	repo := &promptAuditHandlerTestRepository{records: make(chan service.UpstreamAuditLog, 1)}
 	h := &OpenAIGatewayHandler{promptAuditService: service.NewPromptAuditService(repo)}
 	groupID := int64(9)
 	apiKey := &service.APIKey{ID: 15, Name: "omni-key", GroupID: &groupID}
 	subject := middleware2.AuthSubject{UserID: 11}
 	c := promptAuditTestContext("/v1/responses", "req-responses-1")
 
-	decision := h.checkContentModeration(
-		c,
-		nil,
-		apiKey,
-		subject,
-		service.ContentModerationProtocolOpenAIResponses,
-		"gpt-5.6-sol",
-		[]byte(`{"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"second prompt"}]}]}`),
-	)
-	if decision != nil {
-		t.Fatalf("moderation decision = %#v, want nil when moderation is not configured", decision)
-	}
-
-	record := receivePromptAuditRecord(t, repo.records)
-	if record.RequestID != "req-responses-1" || record.UserID != 11 || record.APIKeyID != 15 {
-		t.Fatalf("unexpected identity metadata: %#v", record)
-	}
-	if record.GroupID == nil || *record.GroupID != 9 {
-		t.Fatalf("group id = %v, want 9", record.GroupID)
-	}
-	if record.Endpoint != "/v1/responses" || record.Protocol != service.ContentModerationProtocolOpenAIResponses || record.Model != "gpt-5.6-sol" {
-		t.Fatalf("unexpected request metadata: %#v", record)
-	}
-	if record.PromptText != "second prompt" {
-		t.Fatalf("prompt = %q, want second prompt", record.PromptText)
-	}
-}
-
-func TestGatewayCheckContentModerationRecordsChatPromptAudit(t *testing.T) {
-	repo := &promptAuditHandlerTestRepository{records: make(chan service.PromptAuditLog, 1)}
-	h := &GatewayHandler{promptAuditService: service.NewPromptAuditService(repo)}
-	c := promptAuditTestContext("/v1/chat/completions", "req-chat-1")
-
-	h.checkContentModeration(
-		c,
-		nil,
-		&service.APIKey{ID: 3},
-		middleware2.AuthSubject{UserID: 2},
-		service.ContentModerationProtocolOpenAIChat,
-		"gpt-5.6-sol",
-		[]byte(`{"messages":[{"role":"user","content":"first"},{"role":"assistant","content":"answer"},{"role":"user","content":"latest"}]}`),
-	)
-
-	record := receivePromptAuditRecord(t, repo.records)
-	if record.PromptText != "latest" || record.Endpoint != "/v1/chat/completions" {
-		t.Fatalf("unexpected audit record: %#v", record)
-	}
-}
-
-func TestOpenAIGatewayCheckContentModerationSkipsToolContinuationPromptAudit(t *testing.T) {
-	repo := &promptAuditHandlerTestRepository{records: make(chan service.PromptAuditLog, 1)}
-	h := &OpenAIGatewayHandler{promptAuditService: service.NewPromptAuditService(repo)}
-	c := promptAuditTestContext("/v1/responses", "req-tool-1")
-
-	h.checkContentModeration(
-		c,
-		nil,
-		&service.APIKey{ID: 3},
-		middleware2.AuthSubject{UserID: 2},
-		service.ContentModerationProtocolOpenAIResponses,
-		"gpt-5.6-sol",
-		[]byte(`{"input":[{"type":"function_call_output","call_id":"call_1","output":"done"}]}`),
-	)
-
-	select {
-	case record := <-repo.records:
-		t.Fatalf("unexpected audit record for tool continuation: %#v", record)
-	case <-time.After(50 * time.Millisecond):
-	}
-}
-
-func TestOpenAIGatewayPromptAuditRepositoryFailureDoesNotChangeRequestFlow(t *testing.T) {
-	repo := &promptAuditHandlerTestRepository{records: make(chan service.PromptAuditLog, 1), err: errors.New("database unavailable")}
-	h := &OpenAIGatewayHandler{promptAuditService: service.NewPromptAuditService(repo)}
-	c := promptAuditTestContext("/v1/responses", "req-fail-open")
-
-	decision := h.checkContentModeration(
-		c,
-		nil,
-		&service.APIKey{ID: 3},
-		middleware2.AuthSubject{UserID: 2},
-		service.ContentModerationProtocolOpenAIResponses,
-		"gpt-5.6-sol",
-		[]byte(`{"input":"keep serving"}`),
-	)
+	decision := h.checkContentModeration(c, nil, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, "gpt-5.6-sol", []byte(`{"input":"inbound payload"}`))
 	if decision != nil {
 		t.Fatalf("moderation decision = %#v, want nil", decision)
 	}
-	receivePromptAuditRecord(t, repo.records)
+
+	finalBody := []byte(`{"model":"mapped-model","input":"final upstream payload"}`)
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, "https://upstream.example/v1/responses", bytes.NewReader(finalBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	capture := service.StartHTTPUpstreamAudit(req, 42)
+	if capture == nil {
+		t.Fatal("audit context was not attached")
+	}
+	resp := capture.WrapResponse(&http.Response{StatusCode: 200, Body: io.NopCloser(bytes.NewReader([]byte(`{"id":"resp_1"}`)))})
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	select {
+	case record := <-repo.records:
+		if record.RequestID != "req-responses-1" || record.UserID != 11 || record.APIKeyID != 15 || record.AccountID != 42 {
+			t.Fatalf("unexpected identity metadata: %#v", record)
+		}
+		if record.GroupID == nil || *record.GroupID != 9 || record.Endpoint != "/v1/responses" || record.Protocol != service.ContentModerationProtocolOpenAIResponses || record.Model != "gpt-5.6-sol" {
+			t.Fatalf("unexpected route metadata: %#v", record)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for upstream audit")
+	}
+}
+
+func TestOpenAIGatewayToolContinuationStillGetsUpstreamAuditContext(t *testing.T) {
+	repo := &promptAuditHandlerTestRepository{records: make(chan service.UpstreamAuditLog, 1)}
+	h := &OpenAIGatewayHandler{promptAuditService: service.NewPromptAuditService(repo)}
+	c := promptAuditTestContext("/v1/responses", "req-tool-1")
+	h.checkContentModeration(c, nil, &service.APIKey{ID: 3}, middleware2.AuthSubject{UserID: 2}, service.ContentModerationProtocolOpenAIResponses, "gpt-5.6-sol", []byte(`{"input":[{"type":"function_call_output","output":"done"}]}`))
+	req, _ := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, "https://upstream.example/v1/responses", bytes.NewReader([]byte(`{"input":[{"type":"function_call_output","output":"done"}]}`)))
+	if service.StartHTTPUpstreamAudit(req, 7) == nil {
+		t.Fatal("tool continuation must retain complete upstream audit context")
+	}
 }

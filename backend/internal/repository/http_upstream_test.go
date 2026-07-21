@@ -1,9 +1,12 @@
 package repository
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +17,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 )
+
+type httpUpstreamAuditRepository struct {
+	records chan service.UpstreamAuditLog
+}
+
+func (r *httpUpstreamAuditRepository) Create(_ context.Context, log *service.UpstreamAuditLog) error {
+	r.records <- *log
+	return nil
+}
 
 // HTTPUpstreamSuite HTTP 上游服务测试套件
 // 使用 testify/suite 组织测试，支持 SetupTest 初始化
@@ -51,6 +63,39 @@ func (s *HTTPUpstreamSuite) TestDefaultResponseHeaderTimeout() {
 	transport, ok := entry.client.Transport.(*http.Transport)
 	require.True(s.T(), ok, "expected *http.Transport")
 	require.Equal(s.T(), time.Duration(0), transport.ResponseHeaderTimeout, "ResponseHeaderTimeout mismatch")
+}
+
+func (s *HTTPUpstreamSuite) TestDoCapturesActualRequestAndResponseAtTransportBoundary() {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		body, err := io.ReadAll(req.Body)
+		require.NoError(s.T(), err)
+		require.JSONEq(s.T(), `{"model":"mapped","input":"final"}`, string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"resp_1"}`))
+	}))
+	defer server.Close()
+
+	repo := &httpUpstreamAuditRepository{records: make(chan service.UpstreamAuditLog, 1)}
+	auditService := service.NewPromptAuditService(repo)
+	ctx := service.WithUpstreamAuditContext(context.Background(), auditService, service.UpstreamAuditMetadata{RequestID: "req-transport"})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/v1/responses?key=secret", bytes.NewReader([]byte(`{"model":"mapped","input":"final"}`)))
+	require.NoError(s.T(), err)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := s.newService().Do(req, "", 73, 1)
+	require.NoError(s.T(), err)
+	_, err = io.ReadAll(resp.Body)
+	require.NoError(s.T(), err)
+	require.NoError(s.T(), resp.Body.Close())
+
+	select {
+	case record := <-repo.records:
+		require.Equal(s.T(), int64(73), record.AccountID)
+		require.Equal(s.T(), server.URL+"/v1/responses", record.UpstreamURL)
+		require.Equal(s.T(), service.UpstreamAuditOutcomeCompleted, record.Outcome)
+	case <-time.After(time.Second):
+		s.T().Fatal("timed out waiting for transport audit")
+	}
 }
 
 // TestNilConfigResponseHeaderTimeoutFallback 验证 nil 配置使用代码级兜底值。

@@ -108,6 +108,12 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		h.responsesErrorResponse(c, contentModerationStatus(decision), contentModerationErrorCode(decision), decision.Message)
 		return
 	}
+	// checkContentModeration attaches the upstream audit metadata to the request.
+	// Refresh the local context so every failover attempt inherits it.
+	requestCtx = c.Request.Context()
+	if service.IsImageGenerationIntent("/v1/responses", reqModel, body) {
+		requestCtx = service.WithOpenAIImageGenerationIntent(requestCtx)
+	}
 
 	// Error passthrough binding
 	if h.errorPassthroughService != nil {

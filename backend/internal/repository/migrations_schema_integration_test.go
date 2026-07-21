@@ -5,10 +5,66 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
+
+func TestUpstreamAuditPartitionFunctionUsesShanghaiBoundaryAndIsConcurrentSafe(t *testing.T) {
+	ctx := context.Background()
+	partitions := []string{"upstream_audit_logs_20991230", "upstream_audit_logs_20991231"}
+	for _, partition := range partitions {
+		partition := partition
+		t.Cleanup(func() {
+			_, _ = integrationDB.ExecContext(ctx, `DROP TABLE IF EXISTS public."`+partition+`"`)
+		})
+	}
+
+	var beforeBoundary, atBoundary string
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		"SELECT public.ensure_upstream_audit_partition('2099-12-30 15:59:59+00'::timestamptz)",
+	).Scan(&beforeBoundary))
+	require.NoError(t, integrationDB.QueryRowContext(ctx,
+		"SELECT public.ensure_upstream_audit_partition('2099-12-30 16:00:00+00'::timestamptz)",
+	).Scan(&atBoundary))
+	require.Equal(t, partitions[0], beforeBoundary)
+	require.Equal(t, partitions[1], atBoundary)
+
+	var wg sync.WaitGroup
+	errs := make(chan error, 8)
+	for i := 0; i < cap(errs); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var name string
+			errs <- integrationDB.QueryRowContext(ctx,
+				"SELECT public.ensure_upstream_audit_partition('2099-12-30 16:00:00+00'::timestamptz)",
+			).Scan(&name)
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		require.NoError(t, err)
+	}
+
+	for _, partition := range partitions {
+		var attached bool
+		require.NoError(t, integrationDB.QueryRowContext(ctx, `
+SELECT EXISTS (
+    SELECT 1
+    FROM pg_inherits i
+    JOIN pg_class child ON child.oid = i.inhrelid
+    JOIN pg_namespace child_ns ON child_ns.oid = child.relnamespace
+    JOIN pg_class parent ON parent.oid = i.inhparent
+    JOIN pg_namespace parent_ns ON parent_ns.oid = parent.relnamespace
+    WHERE child.relname = $1 AND child_ns.nspname = 'public'
+      AND parent.relname = 'upstream_audit_logs' AND parent_ns.nspname = 'public'
+)`, partition).Scan(&attached))
+		require.True(t, attached, "expected %s to be attached", partition)
+	}
+}
 
 func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	tx := testTx(t)
@@ -79,6 +135,31 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireIndex(t, tx, "prompt_audit_logs", "idx_prompt_audit_logs_user_created_at")
 	requireIndex(t, tx, "prompt_audit_logs", "idx_prompt_audit_logs_api_key_created_at")
 	requireIndex(t, tx, "prompt_audit_logs", "idx_prompt_audit_logs_request_id")
+
+	// upstream_audit_logs: exact zstd-compressed upstream attempts, partitioned by Shanghai day.
+	requireColumn(t, tx, "upstream_audit_logs", "request_id", "character varying", 64, false)
+	requireColumn(t, tx, "upstream_audit_logs", "attempt_no", "integer", 0, false)
+	requireColumn(t, tx, "upstream_audit_logs", "account_id", "bigint", 0, false)
+	requireColumn(t, tx, "upstream_audit_logs", "request_body_zstd", "bytea", 0, true)
+	requireColumn(t, tx, "upstream_audit_logs", "response_body_zstd", "bytea", 0, true)
+	requireColumn(t, tx, "upstream_audit_logs", "response_complete", "boolean", 0, false)
+	requireColumn(t, tx, "upstream_audit_logs", "outcome", "character varying", 32, false)
+	requireColumn(t, tx, "upstream_audit_logs", "created_at", "timestamp with time zone", 0, false)
+	requireIndex(t, tx, "upstream_audit_logs", "idx_upstream_audit_request_attempt")
+	requireIndex(t, tx, "upstream_audit_logs", "idx_upstream_audit_user_created_at")
+	requireIndex(t, tx, "upstream_audit_logs", "idx_upstream_audit_api_key_created_at")
+	requireIndex(t, tx, "upstream_audit_logs", "idx_upstream_audit_outcome_created_at")
+	var upstreamAuditPartitioned bool
+	require.NoError(t, tx.QueryRowContext(context.Background(), `
+SELECT EXISTS (
+    SELECT 1 FROM pg_partitioned_table pt
+    JOIN pg_class c ON c.oid = pt.partrelid
+    WHERE c.relname = 'upstream_audit_logs'
+)`).Scan(&upstreamAuditPartitioned))
+	require.True(t, upstreamAuditPartitioned, "expected upstream_audit_logs to be partitioned")
+	var ensurePartitionFunction sql.NullString
+	require.NoError(t, tx.QueryRowContext(context.Background(), "SELECT to_regprocedure('ensure_upstream_audit_partition(timestamp with time zone)')").Scan(&ensurePartitionFunction))
+	require.True(t, ensurePartitionFunction.Valid, "expected ensure_upstream_audit_partition function")
 	requireConstraintDefinitionContains(
 		t,
 		tx,

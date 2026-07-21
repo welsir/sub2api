@@ -30,6 +30,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	account *Account,
 	stateStore OpenAIWSStateStore,
 	groupID int64,
+	upstreamURL string,
 ) error {
 	if s == nil {
 		return nil
@@ -77,8 +78,11 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	}
 	prewarmPayload["generate"] = false
 	prewarmPayloadJSON := payloadAsJSONBytes(prewarmPayload)
+	upstreamAudit := StartWebSocketUpstreamAudit(ctx, account.ID, upstreamURL, prewarmPayloadJSON)
+	defer upstreamAudit.CloseIfPending()
 
 	if err := lease.WriteJSONWithContextTimeout(ctx, prewarmPayload, s.openAIWSWriteTimeout()); err != nil {
+		upstreamAudit.RecordTransportError(err)
 		lease.MarkBroken()
 		logOpenAIWSModeInfo(
 			"prewarm_write_fail account_id=%d conn_id=%s cause=%s",
@@ -96,6 +100,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	for {
 		message, readErr := lease.ReadMessageWithContextTimeout(ctx, s.openAIWSReadTimeout())
 		if readErr != nil {
+			upstreamAudit.Finish(UpstreamAuditOutcomeReadError, false, readErr)
 			lease.MarkBroken()
 			closeStatus, closeReason := summarizeOpenAIWSReadCloseError(readErr)
 			logOpenAIWSModeInfo(
@@ -109,6 +114,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 			)
 			return wrapOpenAIWSFallback("prewarm_"+classifyOpenAIWSReadFallbackReason(readErr), readErr)
 		}
+		upstreamAudit.AppendWebSocketMessage(message)
 
 		eventType, eventResponseID, _ := parseOpenAIWSEventEnvelope(message)
 		if eventType == "" {
@@ -138,6 +144,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 			}
 			fallbackReason, canFallback := classifyOpenAIWSErrorEventFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
 			errCode, errType, errMessage := summarizeOpenAIWSErrorEventFieldsFromRaw(errCodeRaw, errTypeRaw, errMsgRaw)
+			upstreamAudit.Finish(UpstreamAuditOutcomeUpstreamError, true, errors.New(errMsg))
 			logOpenAIWSModeInfo(
 				"prewarm_error_event account_id=%d conn_id=%s idx=%d fallback_reason=%s can_fallback=%v err_code=%s err_type=%s err_message=%s",
 				account.ID,
@@ -158,6 +165,11 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 
 		if isOpenAIWSTerminalEvent(eventType) {
 			prewarmTerminalCount++
+			auditOutcome := UpstreamAuditOutcomeCompleted
+			if eventType == "response.failed" || eventType == "response.incomplete" || eventType == "response.cancelled" || eventType == "response.canceled" {
+				auditOutcome = UpstreamAuditOutcomeUpstreamError
+			}
+			upstreamAudit.Finish(auditOutcome, true, nil)
 			break
 		}
 	}
