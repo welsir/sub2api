@@ -6,6 +6,7 @@ services:
     mem_limit: 128m
     volumes:
       - /data/sub2api-v2/proxy-pool/mihomo:/root/.config/mihomo
+      - ${WGETCLOUD_PROVIDER_FILE:?WGETCLOUD_PROVIDER_FILE is required}:/root/.config/mihomo/providers/wgetcloud.yaml:ro
     command: ["-d", "/root/.config/mihomo"]
     healthcheck:
       test: ["CMD", "mihomo", "-v"]

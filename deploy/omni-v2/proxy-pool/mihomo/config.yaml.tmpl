@@ -7,10 +7,8 @@ secret: "__MIHOMO_SECRET__"
 
 proxy-providers:
   wgetcloud:
-    type: http
-    url: "__WGETCLOUD_SUBSCRIPTION_URL__"
+    type: file
     path: ./providers/wgetcloud.yaml
-    interval: 3600
 
 proxy-groups:
   - { name: V2-LANE-1, type: select, use: [wgetcloud] }

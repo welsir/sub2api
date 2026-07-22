@@ -10,7 +10,7 @@ func TestProxyPoolComposeIsV2OnlyAndPrivate(t *testing.T) {
 	compose := readFile(t, "docker-compose.proxy-pool.yml")
 	for _, required := range []string{
 		"sub2api-v2-mihomo", "sub2api-v2-proxy-controller", "v1.19.28",
-		"mem_limit:", "max-size:", "v2-network",
+		"mem_limit:", "max-size:", "v2-network", "WGETCLOUD_PROVIDER_FILE",
 	} {
 		if !strings.Contains(compose, required) {
 			t.Errorf("compose missing %q", required)
@@ -36,12 +36,14 @@ func TestMihomoTemplateDefinesFiveProductionThreeProbeOneCanary(t *testing.T) {
 			t.Errorf("template missing %s", name)
 		}
 	}
-	if got := strings.Count(template, "type: http"); got != 10 {
-		// 9 HTTP listeners plus one HTTP proxy-provider declaration.
-		t.Fatalf("HTTP type entries = %d, want 10", got)
+	if got := strings.Count(template, "type: http"); got != 9 {
+		t.Fatalf("HTTP type entries = %d, want 9", got)
 	}
-	if !strings.Contains(template, "__WGETCLOUD_SUBSCRIPTION_URL__") || !strings.Contains(template, "__MIHOMO_SECRET__") {
-		t.Fatal("template must contain secret placeholders")
+	if !strings.Contains(template, "type: file") || !strings.Contains(template, "path: ./providers/wgetcloud.yaml") || !strings.Contains(template, "__MIHOMO_SECRET__") {
+		t.Fatal("template must use the mounted provider file and secret placeholder")
+	}
+	if strings.Contains(template, "WGETCLOUD_SUBSCRIPTION_URL") || strings.Contains(template, "url:") {
+		t.Fatal("template must not embed a subscription URL")
 	}
 }
 
