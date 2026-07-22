@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   PAYMENT_CURRENCY_OPTIONS,
+  PROVIDER_CALLBACK_PATHS,
   PROVIDER_CONFIG_FIELDS,
+  PROVIDER_SUPPORTED_TYPES,
   isBuiltInAlipayMethod,
   isBuiltInWxpayMethod,
   parseEasyPayCustomMethods,
@@ -55,6 +57,19 @@ describe('PROVIDER_CONFIG_FIELDS.stripe', () => {
     expect(currency?.defaultValue).toBe('CNY')
     expect(currency?.hintKey).toBe('admin.settings.payment.field_paymentCurrencyHint')
     expect(currency?.options).toBe(PAYMENT_CURRENCY_OPTIONS)
+  })
+})
+
+describe('XunhuPay provider config', () => {
+  it('only exposes WeChat Pay with the required credentials and callbacks', () => {
+    expect(PROVIDER_SUPPORTED_TYPES.xunhupay).toEqual(['wxpay'])
+    expect(PROVIDER_CALLBACK_PATHS.xunhupay).toEqual({
+      notifyUrl: '/api/v1/payment/webhook/xunhupay',
+      returnUrl: '/payment/result',
+    })
+    expect(findField('xunhupay', 'appId')?.sensitive).toBe(false)
+    expect(findField('xunhupay', 'appSecret')?.sensitive).toBe(true)
+    expect(findField('xunhupay', 'apiBase')?.defaultValue).toBe('https://api.xunhupay.com')
   })
 })
 

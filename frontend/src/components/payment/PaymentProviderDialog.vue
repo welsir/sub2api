@@ -32,8 +32,8 @@
       <!-- Toggles + Payment mode + Supported types (single row) -->
       <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
         <ToggleSwitch :label="t('common.enabled')" :checked="form.enabled" @toggle="form.enabled = !form.enabled" />
-        <ToggleSwitch :label="t('admin.settings.payment.refundEnabled')" :checked="form.refund_enabled" @toggle="form.refund_enabled = !form.refund_enabled; if (!form.refund_enabled) form.allow_user_refund = false" />
-        <ToggleSwitch v-if="form.refund_enabled" :label="t('admin.settings.payment.allowUserRefund')" :checked="form.allow_user_refund" @toggle="form.allow_user_refund = !form.allow_user_refund" />
+        <ToggleSwitch v-if="form.provider_key !== 'xunhupay'" :label="t('admin.settings.payment.refundEnabled')" :checked="form.refund_enabled" @toggle="form.refund_enabled = !form.refund_enabled; if (!form.refund_enabled) form.allow_user_refund = false" />
+        <ToggleSwitch v-if="form.provider_key !== 'xunhupay' && form.refund_enabled" :label="t('admin.settings.payment.allowUserRefund')" :checked="form.allow_user_refund" @toggle="form.allow_user_refund = !form.allow_user_refund" />
         <div v-if="supportsPaymentMode" class="flex items-center gap-2">
           <span class="text-xs font-medium text-gray-500 dark:text-gray-400">{{ t('admin.settings.payment.paymentMode') }}</span>
           <div class="flex gap-1.5">
@@ -655,6 +655,10 @@ function serializeLimits(): string {
 }
 
 function handleSave() {
+  if (form.provider_key === 'xunhupay') {
+    form.refund_enabled = false
+    form.allow_user_refund = false
+  }
   // Validate required fields
   if (!form.name.trim()) {
     emitValidationError(t('admin.settings.payment.validationNameRequired'))
@@ -808,8 +812,8 @@ function loadProvider(provider: ProviderInstance) {
   form.payment_mode = isValidPaymentMode(provider.provider_key, provider.payment_mode || '')
     ? (provider.payment_mode || '')
     : defaultPaymentMode(provider.provider_key)
-  form.refund_enabled = provider.refund_enabled
-  form.allow_user_refund = provider.allow_user_refund
+  form.refund_enabled = provider.provider_key === 'xunhupay' ? false : provider.refund_enabled
+  form.allow_user_refund = provider.provider_key === 'xunhupay' ? false : provider.allow_user_refund
   clearConfig()
   // Pre-fill config from API response. Backend omits sensitive fields entirely,
   // so those inputs stay blank — submitting blank preserves the stored secret.

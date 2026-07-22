@@ -42,6 +42,7 @@ export const PROVIDER_SUPPORTED_TYPES: Record<string, string[]> = {
   wxpay: ['wxpay'],
   stripe: ['card', 'alipay', 'wxpay', 'link'],
   airwallex: ['airwallex'],
+  xunhupay: ['wxpay'],
 }
 
 /** Available payment modes for EasyPay providers. */
@@ -110,6 +111,7 @@ export const WEBHOOK_PATHS: Record<string, string> = {
   wxpay: '/api/v1/payment/webhook/wxpay',
   stripe: '/api/v1/payment/webhook/stripe',
   airwallex: '/api/v1/payment/webhook/airwallex',
+  xunhupay: '/api/v1/payment/webhook/xunhupay',
 }
 
 export const RETURN_PATH = '/payment/result'
@@ -119,6 +121,7 @@ export const PROVIDER_CALLBACK_PATHS: Record<string, CallbackPaths> = {
   easypay: { notifyUrl: WEBHOOK_PATHS.easypay, returnUrl: RETURN_PATH },
   alipay: { notifyUrl: WEBHOOK_PATHS.alipay, returnUrl: RETURN_PATH },
   wxpay: { notifyUrl: WEBHOOK_PATHS.wxpay },
+  xunhupay: { notifyUrl: WEBHOOK_PATHS.xunhupay, returnUrl: RETURN_PATH },
   // stripe: 不需要回调 URL 配置，Webhook 单独配置。
   // airwallex: 不需要回调 URL 配置，Webhook 在空中云汇后台配置。
 }
@@ -145,6 +148,11 @@ export const PROVIDER_CONFIG_FIELDS: Record<string, ConfigFieldDef[]> = {
     { key: 'certSerial', label: '', sensitive: false },
     { key: 'publicKey', label: '', sensitive: true },
     { key: 'publicKeyId', label: '', sensitive: false },
+  ],
+  xunhupay: [
+    { key: 'appId', label: 'APPID', sensitive: false },
+    { key: 'appSecret', label: '', sensitive: true },
+    { key: 'apiBase', label: '', sensitive: false, defaultValue: 'https://api.xunhupay.com' },
   ],
   stripe: [
     { key: 'secretKey', label: '', sensitive: true },

@@ -6,6 +6,7 @@ import { STRIPE_SDK_API_VERSION } from '@/components/payment/providerConfig'
 import type { ProviderInstance } from '@/types/payment'
 
 const messages: Record<string, string> = {
+  'common.enabled': 'Enabled',
   'admin.settings.payment.providerConfig': 'Credentials',
   'admin.settings.payment.easypayCustomMethods': 'Custom EasyPay methods',
   'admin.settings.payment.easypayCustomMethodsHint': 'Add provider-specific EasyPay type values.',
@@ -20,6 +21,8 @@ const messages: Record<string, string> = {
   'admin.settings.payment.stripeWebhookHint': 'Configure Stripe webhook.',
   'admin.settings.payment.stripeWebhookApiVersionHint': 'Use Stripe API version {version}.',
   'admin.settings.payment.airwallexWebhookHint': 'Select payment_intent.succeeded and use the latest stable API version.',
+  'admin.settings.payment.refundEnabled': 'Refund enabled',
+  'admin.settings.payment.allowUserRefund': 'Allow user refund',
 }
 
 vi.mock('vue-i18n', () => ({
@@ -64,12 +67,14 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
         { value: 'wxpay', label: 'WeChat Pay' },
         { value: 'stripe', label: 'Stripe' },
         { value: 'airwallex', label: 'Airwallex' },
+        { value: 'xunhupay', label: 'XunhuPay' },
       ],
       enabledKeyOptions: [
         { value: 'easypay', label: 'EasyPay' },
         { value: 'alipay', label: 'Alipay' },
         { value: 'wxpay', label: 'WeChat Pay' },
         { value: 'airwallex', label: 'Airwallex' },
+        { value: 'xunhupay', label: 'XunhuPay' },
       ],
       allPaymentTypes: [
         { value: 'alipay', label: 'Alipay' },
@@ -87,7 +92,8 @@ function mountDialog(options: { editing?: ProviderInstance | null } = {}) {
           template: '<div />',
         },
         ToggleSwitch: {
-          template: '<div />',
+          props: ['label'],
+          template: '<div class="toggle-stub">{{ label }}</div>',
         },
       },
     },
@@ -163,6 +169,37 @@ describe('PaymentProviderDialog payment guide', () => {
 
     const payload = wrapper.emitted('save')?.[0]?.[0] as { config: Record<string, string> }
     expect(payload.config.accountId).toBe('')
+  })
+
+  it('hides unsupported refund controls and forces refund flags off for XunhuPay', async () => {
+    const provider = providerFactory({
+      provider_key: 'xunhupay',
+      name: 'XunhuPay WeChat',
+      config: {
+        appId: 'app-123',
+        apiBase: 'https://api.xunhupay.com',
+        notifyUrl: 'https://example.com/api/v1/payment/webhook/xunhupay',
+        returnUrl: 'https://example.com/payment/result',
+      },
+      supported_types: ['wxpay'],
+      refund_enabled: true,
+      allow_user_refund: true,
+    })
+    const wrapper = mountDialog({ editing: provider })
+
+    ;(wrapper.vm as unknown as { loadProvider: (provider: ProviderInstance) => void }).loadProvider(provider)
+    await nextTick()
+
+    expect(wrapper.text()).not.toContain('Refund enabled')
+    expect(wrapper.text()).not.toContain('Allow user refund')
+
+    await wrapper.find('form').trigger('submit.prevent')
+    const payload = wrapper.emitted('save')?.[0]?.[0] as {
+      refund_enabled: boolean
+      allow_user_refund: boolean
+    }
+    expect(payload.refund_enabled).toBe(false)
+    expect(payload.allow_user_refund).toBe(false)
   })
 
   it('serializes EasyPay custom methods and adds them to supported_types', async () => {

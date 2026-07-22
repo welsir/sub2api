@@ -326,6 +326,7 @@ export default {
       wxpay: '微信支付',
       stripe: 'Stripe',
       airwallex: 'Airwallex',
+      xunhupay: '虎皮椒微信',
       card: '银行卡',
       link: 'Link',
       alipay_direct: '支付宝（直连）',
