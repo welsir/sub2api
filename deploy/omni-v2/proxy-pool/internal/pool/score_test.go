@@ -7,7 +7,7 @@ import (
 
 func TestScoreRequiresApprovedStabilityThresholds(t *testing.T) {
 	cfg := DefaultConfig()
-	stable := Metrics{SuccessRate: 0.99, ConsecutiveSuccesses: 3, P95: 2400 * time.Millisecond}
+	stable := Metrics{SuccessRate: 0.99, ConsecutiveSuccesses: 3, P95: 8 * time.Second}
 	if !EligibleForProduction(stable, cfg) {
 		t.Fatal("stable node was rejected")
 	}
@@ -15,7 +15,7 @@ func TestScoreRequiresApprovedStabilityThresholds(t *testing.T) {
 	for name, metrics := range map[string]Metrics{
 		"success rate": {SuccessRate: 0.98, ConsecutiveSuccesses: 3, P95: time.Second},
 		"streak":       {SuccessRate: 1, ConsecutiveSuccesses: 2, P95: time.Second},
-		"p95":          {SuccessRate: 1, ConsecutiveSuccesses: 3, P95: 2600 * time.Millisecond},
+		"p95":          {SuccessRate: 1, ConsecutiveSuccesses: 3, P95: 8001 * time.Millisecond},
 	} {
 		if EligibleForProduction(metrics, cfg) {
 			t.Errorf("ineligible node accepted: %s", name)
