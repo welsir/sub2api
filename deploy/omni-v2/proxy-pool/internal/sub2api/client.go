@@ -196,10 +196,31 @@ func (c *Client) TestAccount(ctx context.Context, accountID int64, model, prompt
 	if len(data) > maxResponseBytes {
 		return fmt.Errorf("V2 account test SSE exceeds limit")
 	}
-	if !bytes.Contains(data, []byte("response.completed")) {
-		return fmt.Errorf("V2 account test SSE did not contain response.completed")
+	if !accountTestSSESucceeded(data) {
+		return fmt.Errorf("V2 account test SSE did not contain response.completed or successful test_complete")
 	}
 	return nil
+}
+
+func accountTestSSESucceeded(data []byte) bool {
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		line = bytes.TrimSpace(line)
+		if !bytes.HasPrefix(line, []byte("data:")) {
+			continue
+		}
+		var event struct {
+			Type    string `json:"type"`
+			Success bool   `json:"success"`
+		}
+		if err := json.Unmarshal(bytes.TrimSpace(bytes.TrimPrefix(line, []byte("data:"))), &event); err != nil {
+			continue
+		}
+		if event.Type == "response.completed" || event.Type == "response.done" ||
+			(event.Type == "test_complete" && event.Success) {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *Client) doEnvelope(ctx context.Context, method, path string, input, output any) error {

@@ -33,7 +33,7 @@ func TestSub2APILoginListUpdateAndTestAccount(t *testing.T) {
 			_ = json.NewEncoder(w).Encode(envelope(map[string]any{"id": 12, "proxy_id": updatedProxy}))
 		case "POST /api/v1/admin/accounts/12/test":
 			w.Header().Set("Content-Type", "text/event-stream")
-			_, _ = w.Write([]byte("event: message\ndata: {\"type\":\"response.completed\"}\n\n"))
+			_, _ = w.Write([]byte("data: {\"type\":\"test_complete\",\"success\":true}\n\n"))
 		default:
 			http.NotFound(w, r)
 		}
