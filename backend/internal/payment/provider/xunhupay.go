@@ -192,18 +192,155 @@ func xunhuPayResponseSigningParams(response xunhuPayResponse) map[string]string 
 	return params
 }
 
-func (x *XunhuPay) CreatePayment(context.Context, payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
-	return nil, fmt.Errorf("xunhupay create payment not implemented")
+func (x *XunhuPay) CreatePayment(ctx context.Context, req payment.CreatePaymentRequest) (*payment.CreatePaymentResponse, error) {
+	if req.PaymentType != "" && req.PaymentType != payment.TypeWxpay {
+		return nil, fmt.Errorf("xunhupay unsupported payment type: %s", req.PaymentType)
+	}
+	notifyURL := strings.TrimSpace(req.NotifyURL)
+	if notifyURL == "" {
+		notifyURL = x.config["notifyUrl"]
+	}
+	returnURL := strings.TrimSpace(req.ReturnURL)
+	if returnURL == "" {
+		returnURL = x.config["returnUrl"]
+	}
+	result, err := x.postSigned(ctx, "/payment/do.html", map[string]string{
+		"version":        "1.1",
+		"trade_order_id": req.OrderID,
+		"total_fee":      req.Amount,
+		"title":          req.Subject,
+		"notify_url":     notifyURL,
+		"return_url":     returnURL,
+		"plugins":        "sub2api",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("xunhupay create: %w", err)
+	}
+	if err := xunhuPayResponseError(result); err != nil {
+		return nil, err
+	}
+	qrCode := result.String("url_qrcode")
+	payURL := result.String("url")
+	if qrCode == "" && payURL == "" {
+		return nil, fmt.Errorf("xunhupay create response missing payment URL")
+	}
+	return &payment.CreatePaymentResponse{
+		TradeNo: req.OrderID,
+		QRCode:  qrCode,
+		PayURL:  payURL,
+	}, nil
 }
 
-func (x *XunhuPay) QueryOrder(context.Context, string) (*payment.QueryOrderResponse, error) {
-	return nil, fmt.Errorf("xunhupay query order not implemented")
+func (x *XunhuPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {
+	result, err := x.postSigned(ctx, "/payment/query.html", map[string]string{
+		"out_trade_order": tradeNo,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("xunhupay query: %w", err)
+	}
+	if err := xunhuPayResponseError(result); err != nil {
+		return nil, err
+	}
+	var data struct {
+		Status        string `json:"status"`
+		TransactionID string `json:"transaction_id"`
+		TotalFee      string `json:"total_fee"`
+		PaidAt        string `json:"pay_time"`
+	}
+	if raw := result["data"]; len(raw) == 0 {
+		return nil, fmt.Errorf("xunhupay query response missing data")
+	} else if err := json.Unmarshal(raw, &data); err != nil {
+		return nil, fmt.Errorf("xunhupay decode query data: %w", err)
+	}
+	status := payment.ProviderStatusPending
+	switch strings.ToUpper(strings.TrimSpace(data.Status)) {
+	case "OD":
+		status = payment.ProviderStatusPaid
+	case "CD", "UD":
+		status = payment.ProviderStatusFailed
+	case "RD":
+		status = payment.ProviderStatusPending
+	}
+	amount, err := strconv.ParseFloat(strings.TrimSpace(data.TotalFee), 64)
+	if err != nil && strings.TrimSpace(data.TotalFee) != "" {
+		return nil, fmt.Errorf("xunhupay invalid query amount: %w", err)
+	}
+	responseTradeNo := strings.TrimSpace(data.TransactionID)
+	if responseTradeNo == "" {
+		responseTradeNo = tradeNo
+	}
+	return &payment.QueryOrderResponse{
+		TradeNo:  responseTradeNo,
+		Status:   status,
+		Amount:   amount,
+		PaidAt:   strings.TrimSpace(data.PaidAt),
+		Metadata: x.MerchantIdentityMetadata(),
+	}, nil
 }
 
-func (x *XunhuPay) VerifyNotification(context.Context, string, map[string]string) (*payment.PaymentNotification, error) {
-	return nil, fmt.Errorf("xunhupay notification verification not implemented")
+func (x *XunhuPay) VerifyNotification(_ context.Context, rawBody string, _ map[string]string) (*payment.PaymentNotification, error) {
+	values, err := url.ParseQuery(rawBody)
+	if err != nil {
+		return nil, fmt.Errorf("xunhupay parse notification: %w", err)
+	}
+	params := make(map[string]string, len(values))
+	for key := range values {
+		params[key] = values.Get(key)
+	}
+	signature := strings.TrimSpace(params["hash"])
+	if signature == "" {
+		return nil, fmt.Errorf("xunhupay notification missing hash")
+	}
+	if !xunhuPayVerifySign(params, x.config["appSecret"], signature) {
+		return nil, fmt.Errorf("xunhupay invalid notification hash")
+	}
+	if strings.TrimSpace(params["appid"]) != x.config["appId"] {
+		return nil, fmt.Errorf("xunhupay notification appid mismatch")
+	}
+	if plugin := strings.TrimSpace(params["plugins"]); plugin != "" && plugin != "sub2api" {
+		return nil, fmt.Errorf("xunhupay notification plugin mismatch")
+	}
+	orderID := strings.TrimSpace(params["trade_order_id"])
+	if orderID == "" {
+		return nil, fmt.Errorf("xunhupay notification missing trade_order_id")
+	}
+	amount, err := strconv.ParseFloat(strings.TrimSpace(params["total_fee"]), 64)
+	if err != nil {
+		return nil, fmt.Errorf("xunhupay invalid notification amount: %w", err)
+	}
+	tradeNo := strings.TrimSpace(params["transaction_id"])
+	if tradeNo == "" {
+		tradeNo = strings.TrimSpace(params["open_order_id"])
+	}
+	status := payment.ProviderStatusFailed
+	if strings.EqualFold(strings.TrimSpace(params["status"]), "OD") {
+		status = payment.NotificationStatusSuccess
+	}
+	return &payment.PaymentNotification{
+		TradeNo:  tradeNo,
+		OrderID:  orderID,
+		Amount:   amount,
+		Status:   status,
+		RawData:  rawBody,
+		Metadata: x.MerchantIdentityMetadata(),
+	}, nil
 }
 
 func (x *XunhuPay) Refund(context.Context, payment.RefundRequest) (*payment.RefundResponse, error) {
 	return nil, fmt.Errorf("xunhupay refunds are not supported")
+}
+
+func xunhuPayResponseError(result xunhuPayResponse) error {
+	errCode, err := strconv.Atoi(result.String("errcode"))
+	if err != nil {
+		return fmt.Errorf("xunhupay invalid errcode: %w", err)
+	}
+	if errCode != 0 {
+		message := strings.TrimSpace(result.String("errmsg"))
+		if message == "" {
+			message = "unknown upstream error"
+		}
+		return fmt.Errorf("xunhupay error %d: %s", errCode, message)
+	}
+	return nil
 }

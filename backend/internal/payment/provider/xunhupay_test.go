@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/md5"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -161,4 +162,183 @@ func TestFactoryCreatesXunhuPay(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, payment.TypeXunhuPay, provider.ProviderKey())
+}
+
+func TestXunhuPayCreatePaymentMapsQRCodeAndMerchantOrderID(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/payment/do.html", r.URL.Path)
+		require.NoError(t, r.ParseForm())
+		require.Equal(t, "1.1", r.PostForm.Get("version"))
+		require.Equal(t, "order-123", r.PostForm.Get("trade_order_id"))
+		require.Equal(t, "12.34", r.PostForm.Get("total_fee"))
+		require.Equal(t, "Balance recharge", r.PostForm.Get("title"))
+		require.Equal(t, "https://merchant.example.com/notify", r.PostForm.Get("notify_url"))
+		require.Equal(t, "https://merchant.example.com/result", r.PostForm.Get("return_url"))
+		require.Equal(t, "sub2api", r.PostForm.Get("plugins"))
+
+		writeSignedXunhuPayJSON(t, w, map[string]any{
+			"errcode":    0,
+			"errmsg":     "success!",
+			"openid":     "xunhu-order-1",
+			"url_qrcode": "weixin://wxpay/bizpayurl?pr=test",
+			"url":        "https://api.xunhupay.com/pay/mobile",
+		}, "secret-1")
+	}))
+	defer server.Close()
+
+	provider := mustTestXunhuPay(t, server)
+	response, err := provider.CreatePayment(context.Background(), payment.CreatePaymentRequest{
+		OrderID:     "order-123",
+		Amount:      "12.34",
+		PaymentType: payment.TypeWxpay,
+		Subject:     "Balance recharge",
+		NotifyURL:   "https://merchant.example.com/notify",
+		ReturnURL:   "https://merchant.example.com/result",
+		IsMobile:    true,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "order-123", response.TradeNo)
+	require.Equal(t, "weixin://wxpay/bizpayurl?pr=test", response.QRCode)
+	require.Equal(t, "https://api.xunhupay.com/pay/mobile", response.PayURL)
+}
+
+func TestXunhuPayCreatePaymentRejectsUpstreamError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeSignedXunhuPayJSON(t, w, map[string]any{"errcode": 500, "errmsg": "invalid sign!"}, "secret-1")
+	}))
+	defer server.Close()
+
+	provider := mustTestXunhuPay(t, server)
+	_, err := provider.CreatePayment(context.Background(), payment.CreatePaymentRequest{
+		OrderID: "order-123", Amount: "12.34", PaymentType: payment.TypeWxpay, Subject: "Recharge",
+	})
+	require.ErrorContains(t, err, "invalid sign")
+}
+
+func TestXunhuPayQueryOrderMapsStatuses(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		upstreamStatus string
+		wantStatus     string
+	}{
+		{upstreamStatus: "OD", wantStatus: payment.ProviderStatusPaid},
+		{upstreamStatus: "WP", wantStatus: payment.ProviderStatusPending},
+		{upstreamStatus: "CD", wantStatus: payment.ProviderStatusFailed},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.upstreamStatus, func(t *testing.T) {
+			t.Parallel()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/payment/query.html", r.URL.Path)
+				require.NoError(t, r.ParseForm())
+				require.Equal(t, "order-123", r.PostForm.Get("out_trade_order"))
+				writeSignedXunhuPayJSON(t, w, map[string]any{
+					"errcode": 0,
+					"errmsg":  "success!",
+					"data": map[string]any{
+						"status":         tt.upstreamStatus,
+						"transaction_id": "wx-transaction-1",
+						"total_fee":      "12.34",
+					},
+				}, "secret-1")
+			}))
+			defer server.Close()
+
+			provider := mustTestXunhuPay(t, server)
+			response, err := provider.QueryOrder(context.Background(), "order-123")
+			require.NoError(t, err)
+			require.Equal(t, tt.wantStatus, response.Status)
+			require.Equal(t, "wx-transaction-1", response.TradeNo)
+			require.InDelta(t, 12.34, response.Amount, 0.000001)
+			require.Equal(t, "app-1", response.Metadata["appId"])
+		})
+	}
+}
+
+func TestXunhuPayVerifyNotificationAcceptsOnlySignedPaidStatus(t *testing.T) {
+	t.Parallel()
+
+	provider, err := NewXunhuPay("instance-1", map[string]string{
+		"appId": "app-1", "appSecret": "secret-1", "notifyUrl": "https://merchant.example.com/notify",
+	})
+	require.NoError(t, err)
+	params := map[string]string{
+		"trade_order_id": "order-123", "total_fee": "12.34", "transaction_id": "wx-transaction-1",
+		"open_order_id": "xunhu-order-1", "status": "OD", "appid": "app-1", "time": "1784700000",
+		"nonce_str": "nonce-1", "future_field": "extension-value",
+	}
+	notification, err := provider.VerifyNotification(context.Background(), encodeSignedXunhuPayForm(params, "secret-1"), nil)
+	require.NoError(t, err)
+	require.Equal(t, payment.NotificationStatusSuccess, notification.Status)
+	require.Equal(t, "order-123", notification.OrderID)
+	require.Equal(t, "wx-transaction-1", notification.TradeNo)
+	require.InDelta(t, 12.34, notification.Amount, 0.000001)
+	require.Equal(t, "app-1", notification.Metadata["appId"])
+
+	params["status"] = "WP"
+	nonPaid, err := provider.VerifyNotification(context.Background(), encodeSignedXunhuPayForm(params, "secret-1"), nil)
+	require.NoError(t, err)
+	require.NotEqual(t, payment.NotificationStatusSuccess, nonPaid.Status)
+}
+
+func TestXunhuPayVerifyNotificationRejectsForgeryAndWrongApp(t *testing.T) {
+	t.Parallel()
+
+	provider, err := NewXunhuPay("instance-1", map[string]string{
+		"appId": "app-1", "appSecret": "secret-1", "notifyUrl": "https://merchant.example.com/notify",
+	})
+	require.NoError(t, err)
+	base := map[string]string{
+		"trade_order_id": "order-123", "total_fee": "12.34", "transaction_id": "tx-1",
+		"status": "OD", "appid": "app-1", "time": "1784700000", "nonce_str": "nonce-1",
+	}
+	_, err = provider.VerifyNotification(context.Background(), encodeSignedXunhuPayForm(base, "wrong-secret"), nil)
+	require.ErrorContains(t, err, "invalid notification hash")
+
+	base["appid"] = "other-app"
+	_, err = provider.VerifyNotification(context.Background(), encodeSignedXunhuPayForm(base, "secret-1"), nil)
+	require.ErrorContains(t, err, "appid mismatch")
+}
+
+func TestXunhuPayRefundIsUnsupported(t *testing.T) {
+	t.Parallel()
+
+	provider, err := NewXunhuPay("instance-1", map[string]string{
+		"appId": "app-1", "appSecret": "secret-1", "notifyUrl": "https://merchant.example.com/notify",
+	})
+	require.NoError(t, err)
+	_, err = provider.Refund(context.Background(), payment.RefundRequest{OrderID: "order-123", Amount: "12.34"})
+	require.ErrorContains(t, err, "not supported")
+}
+
+func encodeSignedXunhuPayForm(params map[string]string, secret string) string {
+	values := url.Values{}
+	for key, value := range params {
+		values.Set(key, value)
+	}
+	values.Set("hash", xunhuPaySign(params, secret))
+	return values.Encode()
+}
+
+func writeSignedXunhuPayJSON(t *testing.T, w http.ResponseWriter, values map[string]any, secret string) {
+	t.Helper()
+	signing := make(map[string]string, len(values))
+	for key, value := range values {
+		switch value := value.(type) {
+		case string:
+			signing[key] = value
+		case map[string]any:
+			signing[key] = "Array"
+		default:
+			signing[key] = fmt.Sprint(value)
+		}
+	}
+	values["hash"] = xunhuPaySign(signing, secret)
+	require.NoError(t, json.NewEncoder(w).Encode(values))
 }
