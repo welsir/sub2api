@@ -458,6 +458,7 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		SetNillablePaymentTradeNo(psNilIfEmpty(pr.TradeNo)).
 		SetNillablePayURL(psNilIfEmpty(pr.PayURL)).
 		SetNillableQrCode(psNilIfEmpty(pr.QRCode)).
+		SetNillableQrCodeImg(psNilIfEmpty(pr.QRCodeImageURL)).
 		SetNillableProviderInstanceID(psNilIfEmpty(sel.InstanceID)).
 		SetNillableProviderKey(psNilIfEmpty(sel.ProviderKey)).
 		Save(ctx)
@@ -488,6 +489,7 @@ func sanitizeCreatePaymentResponseDetails(pr *payment.CreatePaymentResponse) {
 	pr.TradeNo = removePostgresTextNUL(pr.TradeNo)
 	pr.PayURL = removePostgresTextNUL(pr.PayURL)
 	pr.QRCode = removePostgresTextNUL(pr.QRCode)
+	pr.QRCodeImageURL = removePostgresTextNUL(pr.QRCodeImageURL)
 }
 
 func removePostgresTextNUL(value string) string {
@@ -717,27 +719,44 @@ func classifyCreatePaymentError(req CreateOrderRequest, providerKey string, err 
 }
 
 func buildCreateOrderResponse(order *dbent.PaymentOrder, req CreateOrderRequest, payAmount float64, sel *payment.InstanceSelection, pr *payment.CreatePaymentResponse, resultType payment.CreatePaymentResultType) *CreateOrderResponse {
+	paymentActionKind := ""
+	qrImageURL := ""
+	publicPayURL := pr.PayURL
+	switch {
+	case strings.TrimSpace(pr.QRCodeImageURL) != "" && !req.IsMobile:
+		paymentActionKind = payment.PaymentActionQRImage
+		qrImageURL = fmt.Sprintf("/payment/orders/%d/qr-image", order.ID)
+		publicPayURL = ""
+	case strings.TrimSpace(pr.PayURL) != "" && req.IsMobile:
+		paymentActionKind = payment.PaymentActionRedirect
+	case strings.TrimSpace(pr.QRCode) != "":
+		paymentActionKind = payment.PaymentActionQRCode
+	case strings.TrimSpace(pr.PayURL) != "":
+		paymentActionKind = payment.PaymentActionRedirect
+	}
 	return &CreateOrderResponse{
-		OrderID:      order.ID,
-		Amount:       order.Amount,
-		PayAmount:    payAmount,
-		FeeRate:      order.FeeRate,
-		Status:       OrderStatusPending,
-		ResultType:   resultType,
-		PaymentType:  req.PaymentType,
-		OutTradeNo:   order.OutTradeNo,
-		PayURL:       pr.PayURL,
-		QRCode:       pr.QRCode,
-		ClientSecret: pr.ClientSecret,
-		IntentID:     pr.IntentID,
-		Currency:     pr.Currency,
-		CountryCode:  pr.CountryCode,
-		PaymentEnv:   pr.PaymentEnv,
-		OAuth:        pr.OAuth,
-		JSAPI:        pr.JSAPI,
-		JSAPIPayload: pr.JSAPI,
-		ExpiresAt:    order.ExpiresAt,
-		PaymentMode:  sel.PaymentMode,
+		OrderID:           order.ID,
+		Amount:            order.Amount,
+		PayAmount:         payAmount,
+		FeeRate:           order.FeeRate,
+		Status:            OrderStatusPending,
+		ResultType:        resultType,
+		PaymentType:       req.PaymentType,
+		OutTradeNo:        order.OutTradeNo,
+		PayURL:            publicPayURL,
+		QRCode:            pr.QRCode,
+		QRCodeImageURL:    qrImageURL,
+		PaymentActionKind: paymentActionKind,
+		ClientSecret:      pr.ClientSecret,
+		IntentID:          pr.IntentID,
+		Currency:          pr.Currency,
+		CountryCode:       pr.CountryCode,
+		PaymentEnv:        pr.PaymentEnv,
+		OAuth:             pr.OAuth,
+		JSAPI:             pr.JSAPI,
+		JSAPIPayload:      pr.JSAPI,
+		ExpiresAt:         order.ExpiresAt,
+		PaymentMode:       sel.PaymentMode,
 	}
 }
 
@@ -817,6 +836,46 @@ func (s *PaymentService) GetOrder(ctx context.Context, orderID, userID int64) (*
 		return nil, infraerrors.Forbidden("FORBIDDEN", "no permission for this order")
 	}
 	return o, nil
+}
+
+func (s *PaymentService) GetOrderQRCodeImage(ctx context.Context, orderID, userID int64) ([]byte, string, error) {
+	order, err := s.GetOrder(ctx, orderID, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	if order.Status != OrderStatusPending || !time.Now().Before(order.ExpiresAt) {
+		return nil, "", infraerrors.Conflict("PAYMENT_SESSION_UNAVAILABLE", "payment session is unavailable")
+	}
+	targetURL := strings.TrimSpace(psStringValue(order.QrCodeImg))
+	if targetURL == "" {
+		return nil, "", infraerrors.Conflict("PAYMENT_QR_IMAGE_UNAVAILABLE", "payment QR image is unavailable")
+	}
+	instanceID, err := strconv.ParseInt(strings.TrimSpace(psStringValue(order.ProviderInstanceID)), 10, 64)
+	if err != nil {
+		return nil, "", infraerrors.Conflict("PAYMENT_PROVIDER_UNAVAILABLE", "payment provider is unavailable")
+	}
+	instance, err := s.entClient.PaymentProviderInstance.Get(ctx, instanceID)
+	if err != nil {
+		return nil, "", infraerrors.Conflict("PAYMENT_PROVIDER_UNAVAILABLE", "payment provider is unavailable")
+	}
+	if !strings.EqualFold(instance.ProviderKey, payment.TypeXunhuPay) ||
+		!strings.EqualFold(psStringValue(order.ProviderKey), payment.TypeXunhuPay) {
+		return nil, "", infraerrors.Conflict("PAYMENT_ACTION_MISMATCH", "payment action does not provide a QR image")
+	}
+	prov, err := s.createProviderFromInstance(ctx, instance)
+	if err != nil {
+		return nil, "", infraerrors.ServiceUnavailable("PAYMENT_PROVIDER_UNAVAILABLE", "payment provider is unavailable")
+	}
+	fetcher, ok := prov.(payment.QRCodeImageProvider)
+	if !ok {
+		return nil, "", infraerrors.Conflict("PAYMENT_ACTION_MISMATCH", "payment action does not provide a QR image")
+	}
+	content, contentType, err := fetcher.FetchQRCodeImage(ctx, targetURL)
+	if err != nil {
+		slog.Warn("payment QR image fetch failed", "orderID", order.ID, "provider", instance.ProviderKey, "error", err)
+		return nil, "", infraerrors.ServiceUnavailable("PAYMENT_QR_IMAGE_UNAVAILABLE", "payment QR image is temporarily unavailable")
+	}
+	return content, contentType, nil
 }
 
 func (s *PaymentService) GetOrderByID(ctx context.Context, orderID int64) (*dbent.PaymentOrder, error) {

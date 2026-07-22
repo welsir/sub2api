@@ -22,6 +22,7 @@ export type VisiblePaymentMethod = 'alipay' | 'wxpay' | 'stripe' | 'airwallex'
 export type StripeVisibleMethod = 'alipay' | 'wechat_pay'
 export type PaymentLaunchKind =
   | 'qr_waiting'
+  | 'qr_image_waiting'
   | 'redirect_waiting'
   | 'stripe_popup'
   | 'stripe_route'
@@ -34,6 +35,7 @@ export interface PaymentRecoverySnapshot {
   orderId: number
   amount: number
   qrCode: string
+  qrImageUrl: string
   expiresAt: string
   paymentType: string
   payUrl: string
@@ -149,6 +151,7 @@ export function decidePaymentLaunch(
     orderId: result.order_id,
     amount: result.amount,
     qrCode: result.qr_code || '',
+    qrImageUrl: result.qr_image_url || '',
     expiresAt: result.expires_at || '',
     paymentType: visibleMethod,
     payUrl: result.pay_url || '',
@@ -199,6 +202,10 @@ export function decidePaymentLaunch(
   }
 
   const normalizedPaymentMode = baseState.paymentMode.trim().toLowerCase()
+  const paymentActionKind = String(result.payment_action_kind || '').trim().toUpperCase()
+  if (paymentActionKind === 'QR_IMAGE' && baseState.qrImageUrl) {
+    return { kind: 'qr_image_waiting', paymentState: baseState, recovery: baseState }
+  }
   // When forceQRCode is on for alipay, treat the device as desktop so the mobile-redirect
   // branch is bypassed and we fall through to qr_waiting.
   const effectiveMobile = (context.forceQRCode && visibleMethod === 'alipay')
@@ -267,6 +274,7 @@ export function readPaymentRecoverySnapshot(
       typeof parsed.orderId !== 'number'
       || typeof parsed.amount !== 'number'
       || typeof parsed.qrCode !== 'string'
+      || (parsed.qrImageUrl != null && typeof parsed.qrImageUrl !== 'string')
       || typeof parsed.expiresAt !== 'string'
       || typeof parsed.paymentType !== 'string'
       || typeof parsed.payUrl !== 'string'
@@ -297,6 +305,7 @@ export function readPaymentRecoverySnapshot(
       orderId: parsed.orderId,
       amount: parsed.amount,
       qrCode: parsed.qrCode,
+      qrImageUrl: parsed.qrImageUrl || '',
       expiresAt: parsed.expiresAt,
       paymentType: parsed.paymentType,
       payUrl: parsed.payUrl,

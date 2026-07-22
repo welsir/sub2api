@@ -65,6 +65,11 @@ export const paymentAPI = {
     return apiClient.get<PaymentOrder>(`/payment/orders/${id}`)
   },
 
+  /** Fetch an authenticated provider-neutral QR image for an order. */
+  getOrderQrImage(id: number) {
+    return apiClient.get<Blob>(`/payment/orders/${id}/qr-image`, { responseType: 'blob' })
+  },
+
   /** Cancel a pending order */
   cancelOrder(id: number) {
     return apiClient.post(`/payment/orders/${id}/cancel`)

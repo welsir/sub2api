@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -200,7 +201,10 @@ func TestXunhuPayCreatePaymentMapsQRCodeAndMerchantOrderID(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.Equal(t, "order-123", response.TradeNo)
-	require.Equal(t, "weixin://wxpay/bizpayurl?pr=test", response.QRCode)
+	qrImageURL := reflect.ValueOf(response).Elem().FieldByName("QRCodeImageURL")
+	require.True(t, qrImageURL.IsValid(), "create response must distinguish provider QR images from QR content")
+	require.Equal(t, "weixin://wxpay/bizpayurl?pr=test", qrImageURL.String())
+	require.Empty(t, response.QRCode, "provider QR image URLs must not be encoded as QR content")
 	require.Equal(t, "https://api.xunhupay.com/pay/mobile", response.PayURL)
 }
 
@@ -217,6 +221,60 @@ func TestXunhuPayCreatePaymentRejectsUpstreamError(t *testing.T) {
 		OrderID: "order-123", Amount: "12.34", PaymentType: payment.TypeWxpay, Subject: "Recharge",
 	})
 	require.ErrorContains(t, err, "invalid sign")
+}
+
+func TestXunhuPayFetchQRCodeImageReturnsTrustedPNG(t *testing.T) {
+	t.Parallel()
+
+	png := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/qr/order-123", r.URL.Path)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(png)
+	}))
+	defer server.Close()
+
+	provider := mustTestXunhuPay(t, server)
+	type qrImageFetcher interface {
+		FetchQRCodeImage(context.Context, string) ([]byte, string, error)
+	}
+	fetcher, ok := any(provider).(qrImageFetcher)
+	require.True(t, ok, "Xunhupay must provide bounded QR image fetching")
+	if !ok {
+		return
+	}
+
+	content, contentType, err := fetcher.FetchQRCodeImage(context.Background(), server.URL+"/qr/order-123")
+	require.NoError(t, err)
+	require.Equal(t, png, content)
+	require.Equal(t, "image/png", contentType)
+}
+
+func TestXunhuPayFetchQRCodeImageRejectsUntrustedHost(t *testing.T) {
+	t.Parallel()
+
+	provider, err := NewXunhuPay("instance-1", map[string]string{
+		"appId": "app-1", "appSecret": "secret-1",
+		"apiBase":   "https://api.xunhupay.com",
+		"notifyUrl": "https://merchant.example.com/api/v1/payment/webhook/xunhupay",
+	})
+	require.NoError(t, err)
+	_, _, err = provider.FetchQRCodeImage(context.Background(), "https://attacker.example.com/qr/order-123")
+	require.ErrorContains(t, err, "untrusted")
+}
+
+func TestXunhuPayFetchQRCodeImageRejectsNonPNG(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = io.WriteString(w, "<html>not a QR image</html>")
+	}))
+	defer server.Close()
+
+	provider := mustTestXunhuPay(t, server)
+	_, _, err := provider.FetchQRCodeImage(context.Background(), server.URL+"/qr/order-123")
+	require.ErrorContains(t, err, "invalid content type")
 }
 
 func TestXunhuPayQueryOrderMapsStatuses(t *testing.T) {

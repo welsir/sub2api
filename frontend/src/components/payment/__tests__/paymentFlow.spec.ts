@@ -74,6 +74,22 @@ describe('getVisibleMethods', () => {
 })
 
 describe('decidePaymentLaunch', () => {
+  it('uses direct image rendering for provider QR image actions', () => {
+    const decision = decidePaymentLaunch(createOrderResult({
+      payment_action_kind: 'QR_IMAGE',
+      qr_image_url: '/payment/orders/101/qr-image',
+      pay_url: 'https://provider.example.com/mobile/session',
+    } as Partial<CreateOrderResult>), {
+      visibleMethod: 'wxpay',
+      orderType: 'balance',
+      isMobile: false,
+    })
+
+    expect(decision.kind).toBe('qr_image_waiting')
+    expect(decision.paymentState.qrImageUrl).toBe('/payment/orders/101/qr-image')
+    expect(decision.paymentState.qrCode).toBe('')
+  })
+
   it('uses Stripe popup waiting flow for desktop Alipay client secret', () => {
     const decision = decidePaymentLaunch(createOrderResult({
       client_secret: 'cs_test',

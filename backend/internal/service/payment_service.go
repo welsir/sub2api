@@ -88,27 +88,29 @@ type CreateOrderRequest struct {
 }
 
 type CreateOrderResponse struct {
-	OrderID      int64                           `json:"order_id"`
-	Amount       float64                         `json:"amount"`
-	PayAmount    float64                         `json:"pay_amount"`
-	FeeRate      float64                         `json:"fee_rate"`
-	Status       string                          `json:"status"`
-	ResultType   payment.CreatePaymentResultType `json:"result_type,omitempty"`
-	PaymentType  string                          `json:"payment_type"`
-	OutTradeNo   string                          `json:"out_trade_no,omitempty"`
-	PayURL       string                          `json:"pay_url,omitempty"`
-	QRCode       string                          `json:"qr_code,omitempty"`
-	ClientSecret string                          `json:"client_secret,omitempty"`
-	IntentID     string                          `json:"intent_id,omitempty"`
-	Currency     string                          `json:"currency,omitempty"`
-	CountryCode  string                          `json:"country_code,omitempty"`
-	PaymentEnv   string                          `json:"payment_env,omitempty"`
-	OAuth        *payment.WechatOAuthInfo        `json:"oauth,omitempty"`
-	JSAPI        *payment.WechatJSAPIPayload     `json:"jsapi,omitempty"`
-	JSAPIPayload *payment.WechatJSAPIPayload     `json:"jsapi_payload,omitempty"`
-	ExpiresAt    time.Time                       `json:"expires_at"`
-	PaymentMode  string                          `json:"payment_mode,omitempty"`
-	ResumeToken  string                          `json:"resume_token,omitempty"`
+	OrderID           int64                           `json:"order_id"`
+	Amount            float64                         `json:"amount"`
+	PayAmount         float64                         `json:"pay_amount"`
+	FeeRate           float64                         `json:"fee_rate"`
+	Status            string                          `json:"status"`
+	ResultType        payment.CreatePaymentResultType `json:"result_type,omitempty"`
+	PaymentType       string                          `json:"payment_type"`
+	OutTradeNo        string                          `json:"out_trade_no,omitempty"`
+	PayURL            string                          `json:"pay_url,omitempty"`
+	QRCode            string                          `json:"qr_code,omitempty"`
+	QRCodeImageURL    string                          `json:"qr_image_url,omitempty"`
+	PaymentActionKind string                          `json:"payment_action_kind,omitempty"`
+	ClientSecret      string                          `json:"client_secret,omitempty"`
+	IntentID          string                          `json:"intent_id,omitempty"`
+	Currency          string                          `json:"currency,omitempty"`
+	CountryCode       string                          `json:"country_code,omitempty"`
+	PaymentEnv        string                          `json:"payment_env,omitempty"`
+	OAuth             *payment.WechatOAuthInfo        `json:"oauth,omitempty"`
+	JSAPI             *payment.WechatJSAPIPayload     `json:"jsapi,omitempty"`
+	JSAPIPayload      *payment.WechatJSAPIPayload     `json:"jsapi_payload,omitempty"`
+	ExpiresAt         time.Time                       `json:"expires_at"`
+	PaymentMode       string                          `json:"payment_mode,omitempty"`
+	ResumeToken       string                          `json:"resume_token,omitempty"`
 }
 
 type OrderListParams struct {

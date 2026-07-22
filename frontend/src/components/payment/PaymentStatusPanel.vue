@@ -70,14 +70,15 @@
     <!-- ═══ Active States: QR or Popup waiting ═══ -->
 
     <!-- QR Code Mode -->
-    <template v-else-if="qrUrl">
+    <template v-else-if="qrUrl || qrImageObjectUrl">
       <div class="card p-6">
         <div class="flex flex-col items-center space-y-4">
           <p class="text-lg font-semibold text-gray-900 dark:text-white">{{ scanTitle }}</p>
           <div :class="['relative rounded-lg border-2 p-4', qrBorderClass]">
-            <canvas ref="qrCanvas" class="mx-auto"></canvas>
+            <img v-if="qrImageObjectUrl" :src="qrImageObjectUrl" :alt="scanTitle" class="mx-auto h-[220px] w-[220px]" />
+            <canvas v-else ref="qrCanvas" class="mx-auto"></canvas>
             <!-- Brand logo overlay -->
-            <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div v-if="!qrImageObjectUrl" class="pointer-events-none absolute inset-0 flex items-center justify-center">
               <span :class="['rounded-full p-2 shadow ring-2 ring-white', qrLogoBgClass]">
                 <img :src="qrLogoIcon" alt="" class="h-5 w-5 brightness-0 invert" />
               </span>
@@ -140,6 +141,7 @@ import paymentIcon from '@/assets/icons/payment.svg'
 const props = defineProps<{
   orderId: number
   qrCode: string
+  qrImageUrl?: string
   expiresAt: string
   paymentType: string
   payUrl?: string
@@ -158,6 +160,7 @@ const appStore = useAppStore()
 
 const qrCanvas = ref<HTMLCanvasElement | null>(null)
 const qrUrl = ref('')
+const qrImageObjectUrl = ref('')
 const remainingSeconds = ref(0)
 const cancelling = ref(false)
 const paidOrder = ref<PaymentOrder | null>(null)
@@ -179,6 +182,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let countdownTimer: ReturnType<typeof setInterval> | null = null
 let verifyAttempts = 0
 let lastVerifyAt = 0
+let qrImageLoadInFlight = false
 
 const VERIFY_RETRY_INTERVAL_MS = 15000
 const VERIFY_RETRY_MAX_ATTEMPTS = 6
@@ -254,6 +258,20 @@ async function renderQR() {
   })
 }
 
+async function loadQrImage() {
+  if (!props.qrImageUrl || !props.orderId || qrImageLoadInFlight || qrImageObjectUrl.value) return
+  qrImageLoadInFlight = true
+  try {
+    const response = await paymentAPI.getOrderQrImage(props.orderId)
+    const blob = response instanceof Blob ? response : response.data
+    qrImageObjectUrl.value = URL.createObjectURL(blob)
+  } catch {
+    // The polling loop retries transient provider/proxy failures.
+  } finally {
+    qrImageLoadInFlight = false
+  }
+}
+
 async function tryRecoverPendingOrder(order: PaymentOrder): Promise<PaymentOrder> {
   if (!isWxpay.value) return order
   const outTradeNo = String(order.out_trade_no || '').trim()
@@ -282,6 +300,9 @@ async function pollStatus() {
   if (pollInFlight) return
   pollInFlight = true
   try {
+    if (props.qrImageUrl && !qrImageObjectUrl.value) {
+      await loadQrImage()
+    }
     let order = await paymentStore.pollOrderStatus(props.orderId)
     if (!order) return
     // 已进入终态则不再处理迟到的响应。
@@ -333,6 +354,10 @@ function handleDone() { cleanup(); emit('done') }
 function cleanup() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null }
   if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null }
+  if (qrImageObjectUrl.value) {
+    URL.revokeObjectURL(qrImageObjectUrl.value)
+    qrImageObjectUrl.value = ''
+  }
 }
 
 // Initialize on mount
@@ -346,6 +371,7 @@ if (props.expiresAt) {
 startCountdown(seconds)
 pollTimer = setInterval(pollStatus, 3000)
 renderQR()
+void loadQrImage()
 
 watch(() => qrUrl.value, () => renderQR())
 onUnmounted(() => cleanup())

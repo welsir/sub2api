@@ -377,6 +377,28 @@ func (h *PaymentHandler) GetOrder(c *gin.Context) {
 	response.Success(c, sanitizePaymentOrderForResponse(order))
 }
 
+// GetOrderQRCodeImage returns a validated provider QR image for the authenticated order owner.
+// GET /api/v1/payment/orders/:id/qr-image
+func (h *PaymentHandler) GetOrderQRCodeImage(c *gin.Context) {
+	subject, ok := requireAuth(c)
+	if !ok {
+		return
+	}
+	orderID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid order ID")
+		return
+	}
+	content, contentType, err := h.paymentService.GetOrderQRCodeImage(c.Request.Context(), orderID, subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	c.Header("Cache-Control", "no-store")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Data(200, contentType, content)
+}
+
 // CancelOrder cancels a pending order for the authenticated user.
 // POST /api/v1/payment/orders/:id/cancel
 func (h *PaymentHandler) CancelOrder(c *gin.Context) {

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"crypto/rand"
@@ -23,7 +24,11 @@ const (
 	xunhuPayDefaultAPIBase  = "https://api.xunhupay.com"
 	xunhuPayHTTPTimeout     = 10 * time.Second
 	xunhuPayMaxResponseSize = 1 << 20
+	xunhuPayMaxQRImageSize  = 512 << 10
+	xunhuPayMaxQRRedirects  = 3
 )
+
+var xunhuPayPNGSignature = []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
 
 type xunhuPayResponse map[string]json.RawMessage
 
@@ -225,10 +230,67 @@ func (x *XunhuPay) CreatePayment(ctx context.Context, req payment.CreatePaymentR
 		return nil, fmt.Errorf("xunhupay create response missing payment URL")
 	}
 	return &payment.CreatePaymentResponse{
-		TradeNo: req.OrderID,
-		QRCode:  qrCode,
-		PayURL:  payURL,
+		TradeNo:        req.OrderID,
+		QRCodeImageURL: qrCode,
+		PayURL:         payURL,
 	}, nil
+}
+
+func (x *XunhuPay) FetchQRCodeImage(ctx context.Context, targetURL string) ([]byte, string, error) {
+	target, err := x.trustedQRCodeImageURL(targetURL)
+	if err != nil {
+		return nil, "", err
+	}
+	client := *x.httpClient
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) > xunhuPayMaxQRRedirects {
+			return fmt.Errorf("xunhupay qr image redirect limit exceeded")
+		}
+		_, err := x.trustedQRCodeImageURL(req.URL.String())
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("xunhupay qr image request: %w", err)
+	}
+	req.Header.Set("Accept", "image/png")
+	req.Header.Set("User-Agent", "Sub2API-Payment-QR/1.0")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("xunhupay qr image fetch: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, "", fmt.Errorf("xunhupay qr image status %d", resp.StatusCode)
+	}
+	contentType := strings.ToLower(strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0]))
+	if contentType != "image/png" {
+		return nil, "", fmt.Errorf("xunhupay qr image invalid content type")
+	}
+	if resp.ContentLength > xunhuPayMaxQRImageSize {
+		return nil, "", fmt.Errorf("xunhupay qr image too large")
+	}
+	content, err := io.ReadAll(io.LimitReader(resp.Body, xunhuPayMaxQRImageSize+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("xunhupay qr image read: %w", err)
+	}
+	if len(content) > xunhuPayMaxQRImageSize || !bytes.HasPrefix(content, xunhuPayPNGSignature) {
+		return nil, "", fmt.Errorf("xunhupay qr image invalid content")
+	}
+	return content, "image/png", nil
+}
+
+func (x *XunhuPay) trustedQRCodeImageURL(value string) (*url.URL, error) {
+	base, err := url.Parse(strings.TrimSpace(x.config["apiBase"]))
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return nil, fmt.Errorf("xunhupay qr image base URL is invalid")
+	}
+	target, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || target.Scheme == "" || target.Host == "" || target.User != nil ||
+		!strings.EqualFold(target.Scheme, base.Scheme) || !strings.EqualFold(target.Host, base.Host) {
+		return nil, fmt.Errorf("xunhupay qr image URL is untrusted")
+	}
+	return target, nil
 }
 
 func (x *XunhuPay) QueryOrder(ctx context.Context, tradeNo string) (*payment.QueryOrderResponse, error) {

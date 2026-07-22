@@ -199,6 +199,8 @@ export interface CreateOrderResult {
   amount: number
   pay_url?: string
   qr_code?: string
+  qr_image_url?: string
+  payment_action_kind?: 'QR_IMAGE' | 'QR_CODE' | 'REDIRECT' | string
   client_secret?: string
   intent_id?: string
   currency?: string

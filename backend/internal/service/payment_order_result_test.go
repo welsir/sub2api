@@ -91,6 +91,52 @@ func TestBuildCreateOrderResponseCopiesJSAPIPayload(t *testing.T) {
 	}
 }
 
+func TestBuildCreateOrderResponseHidesProviderURLsForDesktopQRCodeImage(t *testing.T) {
+	t.Parallel()
+
+	resp := buildCreateOrderResponse(
+		&dbent.PaymentOrder{ID: 42, ExpiresAt: time.Now().Add(time.Minute), OutTradeNo: "sub2_42"},
+		CreateOrderRequest{PaymentType: payment.TypeWxpay, IsMobile: false},
+		1,
+		&payment.InstanceSelection{},
+		&payment.CreatePaymentResponse{
+			PayURL:         "https://api.xunhupay.com/mobile/42",
+			QRCodeImageURL: "https://api.xunhupay.com/qr/42",
+		},
+		payment.CreatePaymentResultOrderCreated,
+	)
+
+	if resp.PaymentActionKind != payment.PaymentActionQRImage {
+		t.Fatalf("payment_action_kind = %q, want QR_IMAGE", resp.PaymentActionKind)
+	}
+	if resp.QRCodeImageURL != "/payment/orders/42/qr-image" {
+		t.Fatalf("qr_image_url = %q, want provider-neutral order endpoint", resp.QRCodeImageURL)
+	}
+	if resp.PayURL != "" || strings.Contains(resp.QRCodeImageURL, "xunhupay") {
+		t.Fatalf("desktop response leaked provider URL: pay_url=%q qr_image_url=%q", resp.PayURL, resp.QRCodeImageURL)
+	}
+}
+
+func TestBuildCreateOrderResponseUsesMobileRedirectInsteadOfQRCodeImage(t *testing.T) {
+	t.Parallel()
+
+	resp := buildCreateOrderResponse(
+		&dbent.PaymentOrder{ID: 42, ExpiresAt: time.Now().Add(time.Minute), OutTradeNo: "sub2_42"},
+		CreateOrderRequest{PaymentType: payment.TypeWxpay, IsMobile: true},
+		1,
+		&payment.InstanceSelection{},
+		&payment.CreatePaymentResponse{
+			PayURL:         "https://api.xunhupay.com/mobile/42",
+			QRCodeImageURL: "https://api.xunhupay.com/qr/42",
+		},
+		payment.CreatePaymentResultOrderCreated,
+	)
+
+	if resp.PaymentActionKind != payment.PaymentActionRedirect || resp.PayURL == "" || resp.QRCodeImageURL != "" {
+		t.Fatalf("mobile response = action:%q pay:%q image:%q", resp.PaymentActionKind, resp.PayURL, resp.QRCodeImageURL)
+	}
+}
+
 func TestSanitizeCreatePaymentResponseDetailsRemovesNULBytes(t *testing.T) {
 	t.Parallel()
 
