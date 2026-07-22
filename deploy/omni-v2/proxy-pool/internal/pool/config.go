@@ -3,6 +3,8 @@ package pool
 import (
 	"fmt"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -29,6 +31,28 @@ type Config struct {
 	ObservationPeriod         time.Duration
 	CanaryPeriod              time.Duration
 	RollbackProxyID           int64
+}
+
+func LoadConfigFromEnv() (Config, error) {
+	cfg := DefaultConfig()
+	if raw := strings.TrimSpace(os.Getenv("PROXY_POOL_ENABLED")); raw != "" {
+		enabled, err := strconv.ParseBool(raw)
+		if err != nil {
+			return cfg, fmt.Errorf("parse PROXY_POOL_ENABLED: %w", err)
+		}
+		cfg.Enabled = enabled
+	}
+	if raw := strings.TrimSpace(os.Getenv("PROXY_POOL_MODE")); raw != "" {
+		cfg.Mode = Mode(raw)
+	}
+	cfg.InstanceID = strings.TrimSpace(os.Getenv("PROXY_POOL_INSTANCE_ID"))
+	cfg.Sub2APIBaseURL = strings.TrimSpace(os.Getenv("PROXY_POOL_SUB2API_BASE_URL"))
+	cfg.MihomoBaseURL = strings.TrimSpace(os.Getenv("PROXY_POOL_MIHOMO_BASE_URL"))
+	cfg.MihomoSecret = strings.TrimSpace(os.Getenv("PROXY_POOL_MIHOMO_SECRET"))
+	if err := cfg.Validate(); err != nil {
+		return cfg, err
+	}
+	return cfg, nil
 }
 
 func DefaultConfig() Config {

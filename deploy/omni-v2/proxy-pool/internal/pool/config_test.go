@@ -87,3 +87,20 @@ func TestTypesKeepExpectedAndActualLaneStateSeparate(t *testing.T) {
 		t.Fatalf("unexpected lane: %+v", lane)
 	}
 }
+
+func TestConfigLoadsV2RuntimeEnvironment(t *testing.T) {
+	t.Setenv("PROXY_POOL_ENABLED", "true")
+	t.Setenv("PROXY_POOL_MODE", "observe")
+	t.Setenv("PROXY_POOL_INSTANCE_ID", "sub2api-v2")
+	t.Setenv("PROXY_POOL_SUB2API_BASE_URL", "http://app:8080")
+	t.Setenv("PROXY_POOL_MIHOMO_BASE_URL", "http://mihomo:9090")
+	t.Setenv("PROXY_POOL_MIHOMO_SECRET", strings.Repeat("m", 32))
+
+	cfg, err := LoadConfigFromEnv()
+	if err != nil {
+		t.Fatalf("LoadConfigFromEnv() error = %v", err)
+	}
+	if !cfg.Enabled || cfg.InstanceID != "sub2api-v2" || cfg.RollbackProxyID != 6 {
+		t.Fatalf("config = %+v", cfg)
+	}
+}

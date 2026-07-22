@@ -15,7 +15,7 @@ import (
 func TestControllerObserveRecordsButDoesNotApplyProposal(t *testing.T) {
 	var applied atomic.Int32
 	controller := NewController(DefaultConfig(), func(context.Context) (CycleResult, error) {
-		return CycleResult{Proposal: &Proposal{Description: "switch lane 1", Apply: func(context.Context) error {
+		return CycleResult{Nodes: []Node{{Key: "wgetcloud/hk-01"}}, Lanes: []Lane{{Number: 1}}, Proposal: &Proposal{Description: "switch lane 1", Apply: func(context.Context) error {
 			applied.Add(1)
 			return nil
 		}}}, nil
@@ -29,6 +29,9 @@ func TestControllerObserveRecordsButDoesNotApplyProposal(t *testing.T) {
 	}
 	if controller.Status().LastProposal != "switch lane 1" {
 		t.Fatalf("status = %+v", controller.Status())
+	}
+	if len(controller.Status().Nodes) != 1 || len(controller.Status().Lanes) != 1 {
+		t.Fatalf("status details = %+v", controller.Status())
 	}
 }
 

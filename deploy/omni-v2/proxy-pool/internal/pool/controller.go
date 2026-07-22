@@ -35,6 +35,8 @@ type ControllerStatus struct {
 	LastError    string    `json:"last_error,omitempty"`
 	NodeCount    int       `json:"node_count"`
 	LaneCount    int       `json:"lane_count"`
+	Nodes        []Node    `json:"nodes,omitempty"`
+	Lanes        []Lane    `json:"lanes,omitempty"`
 }
 
 type Controller struct {
@@ -66,6 +68,8 @@ func (c *Controller) RunOnce(ctx context.Context) error {
 	c.status.LastCycleAt = time.Now().UTC()
 	c.status.NodeCount = len(result.Nodes)
 	c.status.LaneCount = len(result.Lanes)
+	c.status.Nodes = append([]Node(nil), result.Nodes...)
+	c.status.Lanes = append([]Lane(nil), result.Lanes...)
 	c.status.LastError = ""
 	if result.Proposal != nil {
 		c.status.LastProposal = result.Proposal.Description
