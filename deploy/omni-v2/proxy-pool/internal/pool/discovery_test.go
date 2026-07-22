@@ -18,7 +18,7 @@ func TestDiscoveryFiltersPseudoNodes(t *testing.T) {
 }
 
 func TestDiscoveryFiltersProviderNotices(t *testing.T) {
-	for _, name := range []string{"官网：www.example.com", "订阅即将到期", "流量用尽请续费"} {
+	for _, name := range []string{"官网：www.example.com", "订阅即将到期", "订阅获取时间：2026-07-21 15:43", "流量用尽请续费"} {
 		if !IsPseudoNode(name) {
 			t.Errorf("IsPseudoNode(%q) = false", name)
 		}
