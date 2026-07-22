@@ -1,0 +1,67 @@
+services:
+  mihomo:
+    image: docker.io/metacubex/mihomo:v1.19.28@sha256:e6acd921addecfd59a8e2d38203f88356d635b54de6c0673db0e015139989312
+    container_name: sub2api-v2-mihomo
+    restart: unless-stopped
+    mem_limit: 128m
+    volumes:
+      - /data/sub2api-v2/proxy-pool/mihomo:/root/.config/mihomo
+    command: ["-d", "/root/.config/mihomo"]
+    healthcheck:
+      test: ["CMD", "mihomo", "-v"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      - v2-network
+
+  proxy-controller:
+    build:
+      context: ./proxy-pool
+      dockerfile: Dockerfile
+    image: tml/sub2api-v2-proxy-controller:local
+    container_name: sub2api-v2-proxy-controller
+    restart: unless-stopped
+    mem_limit: 64m
+    environment:
+      PROXY_POOL_ENABLED: "true"
+      PROXY_POOL_MODE: observe
+      PROXY_POOL_INSTANCE_ID: sub2api-v2
+      PROXY_POOL_SUB2API_BASE_URL: http://app:8080
+      PROXY_POOL_MIHOMO_BASE_URL: http://mihomo:9090
+      PROXY_POOL_MIHOMO_SECRET: ${MIHOMO_SECRET:?MIHOMO_SECRET is required}
+      PROXY_POOL_INTERNAL_SECRET: ${PROXY_POOL_INTERNAL_SECRET:?PROXY_POOL_INTERNAL_SECRET is required}
+      PROXY_POOL_ADMIN_EMAIL: ${ADMIN_EMAIL:?ADMIN_EMAIL is required}
+      PROXY_POOL_ADMIN_PASSWORD: ${ADMIN_PASSWORD:?ADMIN_PASSWORD is required}
+      PROXY_POOL_STATE_DIR: /var/lib/proxy-pool
+      PROXY_POOL_LISTEN: 0.0.0.0:9080
+    volumes:
+      - /data/sub2api-v2/proxy-pool/state:/var/lib/proxy-pool
+    depends_on:
+      mihomo:
+        condition: service_healthy
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/proxy-controller", "-healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+    networks:
+      - v2-network
+
+networks:
+  v2-network:
+    name: sub2api-v2-network

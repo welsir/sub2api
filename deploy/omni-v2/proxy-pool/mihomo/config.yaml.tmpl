@@ -1,0 +1,38 @@
+mode: rule
+log-level: info
+ipv6: false
+allow-lan: false
+external-controller: 0.0.0.0:9090
+secret: "__MIHOMO_SECRET__"
+
+proxy-providers:
+  wgetcloud:
+    type: http
+    url: "__WGETCLOUD_SUBSCRIPTION_URL__"
+    path: ./providers/wgetcloud.yaml
+    interval: 3600
+
+proxy-groups:
+  - { name: V2-LANE-1, type: select, use: [wgetcloud] }
+  - { name: V2-LANE-2, type: select, use: [wgetcloud] }
+  - { name: V2-LANE-3, type: select, use: [wgetcloud] }
+  - { name: V2-LANE-4, type: select, use: [wgetcloud] }
+  - { name: V2-LANE-5, type: select, use: [wgetcloud] }
+  - { name: V2-PROBE-1, type: select, use: [wgetcloud] }
+  - { name: V2-PROBE-2, type: select, use: [wgetcloud] }
+  - { name: V2-PROBE-3, type: select, use: [wgetcloud] }
+  - { name: V2-CANARY, type: select, use: [wgetcloud] }
+
+listeners:
+  - { name: v2-lane-1, type: http, listen: 0.0.0.0, port: 19081, proxy: V2-LANE-1, users: [] }
+  - { name: v2-lane-2, type: http, listen: 0.0.0.0, port: 19082, proxy: V2-LANE-2, users: [] }
+  - { name: v2-lane-3, type: http, listen: 0.0.0.0, port: 19083, proxy: V2-LANE-3, users: [] }
+  - { name: v2-lane-4, type: http, listen: 0.0.0.0, port: 19084, proxy: V2-LANE-4, users: [] }
+  - { name: v2-lane-5, type: http, listen: 0.0.0.0, port: 19085, proxy: V2-LANE-5, users: [] }
+  - { name: v2-probe-1, type: http, listen: 0.0.0.0, port: 19101, proxy: V2-PROBE-1, users: [] }
+  - { name: v2-probe-2, type: http, listen: 0.0.0.0, port: 19102, proxy: V2-PROBE-2, users: [] }
+  - { name: v2-probe-3, type: http, listen: 0.0.0.0, port: 19103, proxy: V2-PROBE-3, users: [] }
+  - { name: v2-canary, type: http, listen: 0.0.0.0, port: 19201, proxy: V2-CANARY, users: [] }
+
+rules:
+  - MATCH,DIRECT
