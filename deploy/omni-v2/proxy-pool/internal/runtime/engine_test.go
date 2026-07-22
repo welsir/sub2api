@@ -3,7 +3,10 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/welsir/sub2api-v2-proxy-pool/internal/mihomo"
 	"github.com/welsir/sub2api-v2-proxy-pool/internal/pool"
@@ -36,6 +39,82 @@ func TestEngineFiltersPseudoNodesAndRotatesThreeCandidates(t *testing.T) {
 		t.Fatalf("second candidates = %v", got)
 	}
 	_ = second
+}
+
+func TestEngineProbesThreeCandidateLanesConcurrently(t *testing.T) {
+	fake := newFakeMihomo([]string{"香港01", "香港02", "香港03"})
+	var active atomic.Int32
+	var maximum atomic.Int32
+	engine := NewEngine(pool.DefaultConfig(), fake, func(context.Context, string, string) pool.ProbeResult {
+		current := active.Add(1)
+		for {
+			old := maximum.Load()
+			if current <= old || maximum.CompareAndSwap(old, current) {
+				break
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+		active.Add(-1)
+		return pool.ProbeResult{Success: true, Reachable: true, Duration: time.Millisecond}
+	})
+	if _, err := engine.Cycle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if maximum.Load() != 3 {
+		t.Fatalf("maximum concurrent probes = %d, want 3", maximum.Load())
+	}
+}
+
+func TestPrepareCanaryRequiresStableNodeAndSelectsBestP95(t *testing.T) {
+	fake := newFakeMihomo([]string{"香港01", "香港02", "香港03"})
+	engine := NewEngine(pool.DefaultConfig(), fake, func(_ context.Context, _ string, node string) pool.ProbeResult {
+		duration := map[string]time.Duration{"香港01": 300 * time.Millisecond, "香港02": 100 * time.Millisecond, "香港03": 200 * time.Millisecond}[node]
+		return pool.ProbeResult{Success: true, Reachable: true, Duration: duration}
+	})
+	if _, err := engine.PrepareCanary(context.Background()); err == nil || !strings.Contains(err.Error(), "no stable") {
+		t.Fatalf("early PrepareCanary() error = %v", err)
+	}
+	for cycle := 0; cycle < 3; cycle++ {
+		if _, err := engine.Cycle(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	selected, err := engine.PrepareCanary(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected != "香港02" || fake.current["V2-CANARY"] != "香港02" {
+		t.Fatalf("selected=%q current=%q", selected, fake.current["V2-CANARY"])
+	}
+}
+
+func TestEngineProposesAtMostOneProductionLaneChange(t *testing.T) {
+	fake := newFakeMihomo([]string{"香港01", "香港02", "香港03", "香港04", "香港05"})
+	engine := NewEngine(pool.DefaultConfig(), fake, func(_ context.Context, _ string, node string) pool.ProbeResult {
+		duration := map[string]time.Duration{
+			"香港01": 500 * time.Millisecond, "香港02": 400 * time.Millisecond, "香港03": 300 * time.Millisecond,
+			"香港04": 200 * time.Millisecond, "香港05": 100 * time.Millisecond,
+		}[node]
+		return pool.ProbeResult{Success: true, Reachable: true, Duration: duration}
+	})
+	var result pool.CycleResult
+	for cycle := 0; cycle < 6; cycle++ {
+		var err error
+		result, err = engine.Cycle(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if result.Proposal == nil {
+		t.Fatal("Cycle() returned no initial lane proposal")
+	}
+	before := append([]string(nil), fake.selections...)
+	if err := result.Proposal.Apply(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.selections) != len(before)+1 {
+		t.Fatalf("proposal performed %d selections, want 1", len(fake.selections)-len(before))
+	}
 }
 
 func TestEnginePromotesNodeOnlyAfterThreeSuccessfulSamples(t *testing.T) {

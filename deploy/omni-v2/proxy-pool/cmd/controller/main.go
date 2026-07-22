@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -65,10 +63,20 @@ func run() error {
 		return fmt.Errorf("authenticate to Sub2API V2: %w", err)
 	}
 
-	mihomoClient := mihomo.NewClient(cfg.MihomoBaseURL, cfg.MihomoSecret, httpClient)
-	engine := poolruntime.NewEngine(cfg, mihomoClient, networkProbe)
 	stateDir := envOrDefault("PROXY_POOL_STATE_DIR", "/var/lib/proxy-pool")
 	store := state.NewStore(stateDir)
+	operator := poolruntime.NewOperator(v2Client, cfg.ProductionLanes, cfg.RollbackProxyID)
+	topologyContext, cancelTopology := context.WithTimeout(context.Background(), 30*time.Second)
+	topology, err := operator.EnsureTopology(topologyContext)
+	cancelTopology()
+	if err != nil {
+		return fmt.Errorf("ensure V2 managed proxy topology: %w", err)
+	}
+	mihomoClient := mihomo.NewClient(cfg.MihomoBaseURL, cfg.MihomoSecret, httpClient)
+	accountProbe := poolruntime.NewAccountProbe(v2Client, topology.Probes, cfg.RollbackProxyID)
+	engine := poolruntime.NewEngine(cfg, mihomoClient, accountProbe.Probe)
+	engine.SetManagedTopology(topology)
+	operator.SetCanaryPreparer(engine.PrepareCanary)
 	cycle := func(ctx context.Context) (pool.CycleResult, error) {
 		result, err := engine.Cycle(ctx)
 		audit := state.AuditEvent{Action: "observe_cycle", Result: "success"}
@@ -80,6 +88,21 @@ func run() error {
 		return result, err
 	}
 	controller := pool.NewController(cfg, cycle)
+	registerOperation := func(name string, operation func(context.Context) (poolruntime.OperationResult, error)) {
+		controller.SetOperation(name, func(ctx context.Context) (any, error) {
+			result, operationErr := operation(ctx)
+			audit := state.AuditEvent{Action: name, Result: "success", Detail: fmt.Sprintf("%+v", result)}
+			if operationErr != nil {
+				audit.Result = "failed"
+				audit.Detail = operationErr.Error()
+			}
+			_ = store.AppendAudit(audit)
+			return result, operationErr
+		})
+	}
+	registerOperation("canary", operator.StartCanary)
+	registerOperation("reconcile", operator.Reconcile)
+	registerOperation("rollback", operator.Rollback)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -104,24 +127,6 @@ func run() error {
 		}
 		return err
 	}
-}
-
-func networkProbe(ctx context.Context, group, _ string) pool.ProbeResult {
-	prefix := "V2-PROBE-"
-	index, err := strconv.Atoi(strings.TrimPrefix(group, prefix))
-	if err != nil || index < 1 || index > 3 {
-		return pool.ProbeResult{Failure: pool.FailureTransport, Message: "invalid probe group"}
-	}
-	proxyURL, _ := url.Parse(fmt.Sprintf("http://mihomo:%d", 19100+index))
-	client := &http.Client{
-		Timeout: 15 * time.Second,
-		Transport: &http.Transport{
-			Proxy:                 http.ProxyURL(proxyURL),
-			TLSHandshakeTimeout:   8 * time.Second,
-			ResponseHeaderTimeout: 10 * time.Second,
-		},
-	}
-	return pool.ProbeHTTP(ctx, client, "https://chatgpt.com/backend-api/codex/responses")
 }
 
 func runHealthcheck() error {

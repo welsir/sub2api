@@ -24,6 +24,27 @@ type Account struct {
 	ProxyID  *int64 `json:"proxy_id"`
 }
 
+type Proxy struct {
+	ID       int64  `json:"id"`
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+}
+
+type CreateProxyRequest struct {
+	Name     string `json:"name"`
+	Protocol string `json:"protocol"`
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+}
+
+type ManagedTopology struct {
+	Lanes  []Proxy `json:"lanes"`
+	Probes []Proxy `json:"probes"`
+	Canary Proxy   `json:"canary"`
+}
+
 type Client struct {
 	baseURL string
 	http    *http.Client
@@ -85,6 +106,68 @@ func (c *Client) UpdateAccountProxy(ctx context.Context, accountID, proxyID int6
 	return c.doEnvelope(ctx, http.MethodPut, "/api/v1/admin/accounts/"+strconv.FormatInt(accountID, 10), map[string]int64{
 		"proxy_id": proxyID,
 	}, nil)
+}
+
+func (c *Client) ListProxies(ctx context.Context) ([]Proxy, error) {
+	var proxies []Proxy
+	if err := c.doEnvelope(ctx, http.MethodGet, "/api/v1/admin/proxies/all", nil, &proxies); err != nil {
+		return nil, err
+	}
+	return proxies, nil
+}
+
+func (c *Client) CreateProxy(ctx context.Context, request CreateProxyRequest) (Proxy, error) {
+	var proxy Proxy
+	if err := c.doEnvelope(ctx, http.MethodPost, "/api/v1/admin/proxies", request, &proxy); err != nil {
+		return Proxy{}, err
+	}
+	return proxy, nil
+}
+
+func (c *Client) EnsureManagedProxies(ctx context.Context, host string, laneCount int) (ManagedTopology, error) {
+	proxies, err := c.ListProxies(ctx)
+	if err != nil {
+		return ManagedTopology{}, fmt.Errorf("list V2 proxies: %w", err)
+	}
+	byName := make(map[string]Proxy, len(proxies))
+	for _, proxy := range proxies {
+		byName[proxy.Name] = proxy
+	}
+	ensure := func(name string, port int) (Proxy, error) {
+		if proxy, ok := byName[name]; ok {
+			if proxy.Protocol != "http" || proxy.Host != host || proxy.Port != port {
+				return Proxy{}, fmt.Errorf("managed proxy name collision for %q: got %s://%s:%d", name, proxy.Protocol, proxy.Host, proxy.Port)
+			}
+			return proxy, nil
+		}
+		proxy, err := c.CreateProxy(ctx, CreateProxyRequest{Name: name, Protocol: "http", Host: host, Port: port})
+		if err != nil {
+			return Proxy{}, fmt.Errorf("create managed proxy %q: %w", name, err)
+		}
+		byName[name] = proxy
+		return proxy, nil
+	}
+
+	topology := ManagedTopology{Lanes: make([]Proxy, 0, laneCount)}
+	for number := 1; number <= laneCount; number++ {
+		proxy, err := ensure(fmt.Sprintf("v2-stable-lane-%d", number), 19080+number)
+		if err != nil {
+			return ManagedTopology{}, err
+		}
+		topology.Lanes = append(topology.Lanes, proxy)
+	}
+	for number := 1; number <= 3; number++ {
+		proxy, err := ensure(fmt.Sprintf("v2-stable-probe-%d", number), 19100+number)
+		if err != nil {
+			return ManagedTopology{}, err
+		}
+		topology.Probes = append(topology.Probes, proxy)
+	}
+	topology.Canary, err = ensure("v2-stable-canary", 19201)
+	if err != nil {
+		return ManagedTopology{}, err
+	}
+	return topology, nil
 }
 
 func (c *Client) TestAccount(ctx context.Context, accountID int64, model, prompt string) error {

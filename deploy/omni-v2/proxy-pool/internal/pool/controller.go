@@ -26,6 +26,7 @@ type CycleResult struct {
 }
 
 type CycleFunc func(context.Context) (CycleResult, error)
+type OperationFunc func(context.Context) (any, error)
 
 type ControllerStatus struct {
 	Mode         Mode      `json:"mode"`
@@ -40,11 +41,12 @@ type ControllerStatus struct {
 }
 
 type Controller struct {
-	cfg     Config
-	cycle   CycleFunc
-	running atomic.Bool
-	mu      sync.RWMutex
-	status  ControllerStatus
+	cfg        Config
+	cycle      CycleFunc
+	running    atomic.Bool
+	mu         sync.RWMutex
+	status     ControllerStatus
+	operations map[string]OperationFunc
 }
 
 func NewController(cfg Config, cycle CycleFunc) *Controller {
@@ -54,7 +56,18 @@ func NewController(cfg Config, cycle CycleFunc) *Controller {
 		status: ControllerStatus{
 			Mode: cfg.Mode,
 		},
+		operations: make(map[string]OperationFunc),
 	}
+}
+
+func (c *Controller) SetOperation(name string, operation OperationFunc) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if operation == nil {
+		delete(c.operations, name)
+		return
+	}
+	c.operations[name] = operation
 }
 
 func (c *Controller) RunOnce(ctx context.Context) error {
@@ -152,6 +165,26 @@ func (c *Controller) Handler(secret string) http.Handler {
 			return
 		}
 		writeJSON(w, http.StatusOK, c.Status())
+	})
+	mux.HandleFunc("POST /operations/{name}", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Proxy-Pool-Confirm") != "v2-only" {
+			writeJSON(w, http.StatusPreconditionFailed, map[string]string{"error": "X-Proxy-Pool-Confirm must be v2-only"})
+			return
+		}
+		name := r.PathValue("name")
+		c.mu.RLock()
+		operation := c.operations[name]
+		c.mu.RUnlock()
+		if operation == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "unknown operation"})
+			return
+		}
+		result, err := operation(r.Context())
+		if err != nil {
+			writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error(), "result": result})
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		provided := []byte(r.Header.Get("X-Proxy-Pool-Secret"))

@@ -103,6 +103,71 @@ func TestSub2APITestAccountRequiresCompletedSSE(t *testing.T) {
 	}
 }
 
+func TestEnsureManagedProxiesCreatesMissingAndIsIdempotent(t *testing.T) {
+	proxies := []Proxy{{ID: 6, Name: "rollback", Protocol: "http", Host: "old-proxy", Port: 8080}}
+	created := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method + " " + r.URL.Path {
+		case "GET /api/v1/admin/proxies/all":
+			_ = json.NewEncoder(w).Encode(envelope(proxies))
+		case "POST /api/v1/admin/proxies":
+			var request CreateProxyRequest
+			_ = json.NewDecoder(r.Body).Decode(&request)
+			created++
+			proxy := Proxy{ID: int64(20 + created), Name: request.Name, Protocol: request.Protocol, Host: request.Host, Port: request.Port}
+			proxies = append(proxies, proxy)
+			_ = json.NewEncoder(w).Encode(envelope(proxy))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient(server.URL, "sub2api-v2", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.token = "token"
+	first, err := client.EnsureManagedProxies(context.Background(), "mihomo", 5)
+	if err != nil {
+		t.Fatalf("EnsureManagedProxies() error = %v", err)
+	}
+	second, err := client.EnsureManagedProxies(context.Background(), "mihomo", 5)
+	if err != nil {
+		t.Fatalf("second EnsureManagedProxies() error = %v", err)
+	}
+	if created != 9 {
+		t.Fatalf("created = %d, want 9", created)
+	}
+	if len(first.Lanes) != 5 || len(first.Probes) != 3 || first.Canary.ID == 0 || first.Lanes[0].Port != 19081 || first.Probes[0].Port != 19101 {
+		t.Fatalf("first topology = %+v", first)
+	}
+	if second.Canary.ID != first.Canary.ID || second.Lanes[4].ID != first.Lanes[4].ID {
+		t.Fatalf("topology changed: first=%+v second=%+v", first, second)
+	}
+	if proxies[0].ID != 6 || proxies[0].Host != "old-proxy" {
+		t.Fatalf("rollback proxy was modified: %+v", proxies[0])
+	}
+}
+
+func TestEnsureManagedProxiesRejectsNameCollision(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(envelope([]Proxy{{
+			ID: 31, Name: "v2-stable-lane-1", Protocol: "http", Host: "wrong-host", Port: 19081,
+		}}))
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL, "sub2api-v2", server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.token = "token"
+	_, err = client.EnsureManagedProxies(context.Background(), "mihomo", 5)
+	if err == nil || !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("EnsureManagedProxies() error = %v", err)
+	}
+}
+
 func envelope(data any) map[string]any {
 	return map[string]any{"code": 0, "message": "success", "data": data}
 }

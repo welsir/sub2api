@@ -126,3 +126,37 @@ func TestControllerTickerUsesConfiguredInterval(t *testing.T) {
 		t.Fatalf("cycles = %d", cycles.Load())
 	}
 }
+
+func TestControllerOperationsRequireExplicitV2Confirmation(t *testing.T) {
+	controller := NewController(DefaultConfig(), func(context.Context) (CycleResult, error) { return CycleResult{}, nil })
+	var calls atomic.Int32
+	controller.SetOperation("canary", func(context.Context) (any, error) {
+		calls.Add(1)
+		return map[string]string{"action": "canary"}, nil
+	})
+	server := httptest.NewServer(controller.Handler("internal-secret-value"))
+	defer server.Close()
+
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/operations/canary", nil)
+	request.Header.Set("X-Proxy-Pool-Secret", "internal-secret-value")
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusPreconditionFailed || calls.Load() != 0 {
+		t.Fatalf("unconfirmed operation status=%d calls=%d", response.StatusCode, calls.Load())
+	}
+
+	request, _ = http.NewRequest(http.MethodPost, server.URL+"/operations/canary", nil)
+	request.Header.Set("X-Proxy-Pool-Secret", "internal-secret-value")
+	request.Header.Set("X-Proxy-Pool-Confirm", "v2-only")
+	response, err = server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK || calls.Load() != 1 {
+		t.Fatalf("confirmed operation status=%d calls=%d", response.StatusCode, calls.Load())
+	}
+}
