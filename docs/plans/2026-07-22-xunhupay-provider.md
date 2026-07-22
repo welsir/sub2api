@@ -147,7 +147,7 @@ go test ./internal/payment/provider -run 'XunhuPayCreatePayment' -count=1
 
 **Step 3: Implement create-payment mapping**
 
-POST to `/payment/do.html`; require a usable QR code for desktop requests and return the upstream `openid` as metadata/trade identifier when present.
+POST to `/payment/do.html`; require a usable QR code for desktop requests and return `req.OrderID` as the unified `TradeNo`, because XunhuPay's query endpoint accepts the merchant order ID rather than the create response's historical `openid` field.
 
 **Step 4: Write failing query tests**
 

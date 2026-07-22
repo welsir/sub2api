@@ -38,7 +38,7 @@ Omni V2 当前通过支付服务商实例统一管理支付创建、订单查询
 
 - `ProviderKey()` 返回 `xunhupay`。
 - `SupportedTypes()` 只返回 `wxpay`。
-- `CreatePayment()` 调用虎皮椒支付创建接口，将 `url_qrcode` 映射到现有 `QRCode` 字段；移动端可保留 `url` 作为 `PayURL`。
+- `CreatePayment()` 调用虎皮椒支付创建接口，将 `url_qrcode` 映射到现有 `QRCode` 字段；移动端可保留 `url` 作为 `PayURL`。统一 `TradeNo` 保存商户订单号，因为虎皮椒主动查询接口按商户订单号查询。
 - `QueryOrder()` 使用商户订单号查询并映射为统一的 pending、paid、failed、refunded 状态。
 - `VerifyNotification()` 解析表单通知，按官方算法排除 `hash` 与空值后排序签名，使用常量时间比较验签，并校验回调 `appid` 与当前实例一致。只有 `OD` 映射为支付成功。
 - `Refund()` 明确返回不支持错误。
