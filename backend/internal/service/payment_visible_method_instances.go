@@ -44,6 +44,13 @@ func enabledVisibleMethodsForProvider(providerKey, supportedTypes string) []stri
 				break
 			}
 		}
+	case payment.TypeXunhuPay:
+		for _, supportedType := range splitTypes(supportedTypes) {
+			if NormalizeVisibleMethod(supportedType) == payment.TypeWxpay {
+				addMethod(payment.TypeWxpay)
+				break
+			}
+		}
 	case payment.TypeEasyPay:
 		for _, supportedType := range splitTypes(supportedTypes) {
 			addMethod(supportedType)
