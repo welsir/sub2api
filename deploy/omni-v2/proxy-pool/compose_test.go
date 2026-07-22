@@ -10,7 +10,7 @@ func TestProxyPoolComposeIsV2OnlyAndPrivate(t *testing.T) {
 	compose := readFile(t, "docker-compose.proxy-pool.yml")
 	for _, required := range []string{
 		"sub2api-v2-mihomo", "sub2api-v2-proxy-controller", "v1.19.28",
-		"mem_limit:", "max-size:", "v2-network", "WGETCLOUD_PROVIDER_FILE",
+		"mem_limit:", "max-size:", "v2-network", "WGETCLOUD_PROVIDER_FILE", `["CMD", "/mihomo", "-v"]`,
 	} {
 		if !strings.Contains(compose, required) {
 			t.Errorf("compose missing %q", required)

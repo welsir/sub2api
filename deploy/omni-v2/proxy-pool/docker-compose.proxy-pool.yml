@@ -9,7 +9,7 @@ services:
       - ${WGETCLOUD_PROVIDER_FILE:?WGETCLOUD_PROVIDER_FILE is required}:/root/.config/mihomo/providers/wgetcloud.yaml:ro
     command: ["-d", "/root/.config/mihomo"]
     healthcheck:
-      test: ["CMD", "mihomo", "-v"]
+      test: ["CMD", "/mihomo", "-v"]
       interval: 30s
       timeout: 5s
       retries: 3
