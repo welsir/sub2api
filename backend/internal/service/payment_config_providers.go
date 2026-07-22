@@ -116,6 +116,7 @@ var providerSensitiveConfigFields = map[string]map[string]struct{}{
 	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}},
 	payment.TypeAirwallex: {"apikey": {}, "webhooksecret": {}},
+	payment.TypeXunhuPay:  {"appsecret": {}},
 }
 
 // providerPendingOrderProtectedConfigFields lists config keys that cannot be
@@ -128,6 +129,7 @@ var providerPendingOrderProtectedConfigFields = map[string]map[string]struct{}{
 	payment.TypeWxpay:     {"privatekey": {}, "apiv3key": {}, "publickey": {}, "appid": {}, "mpappid": {}, "mchid": {}, "publickeyid": {}, "certserial": {}},
 	payment.TypeStripe:    {"secretkey": {}, "webhooksecret": {}, "currency": {}},
 	payment.TypeAirwallex: {"clientid": {}, "apikey": {}, "webhooksecret": {}, "apibase": {}, "accountid": {}, "currency": {}},
+	payment.TypeXunhuPay:  {"appid": {}, "appsecret": {}},
 }
 
 func isSensitiveProviderConfigField(providerKey, fieldName string) bool {
@@ -178,7 +180,14 @@ func (s *PaymentConfigService) countPendingOrdersByPlan(ctx context.Context, pla
 }
 
 var validProviderKeys = map[string]bool{
-	payment.TypeEasyPay: true, payment.TypeAlipay: true, payment.TypeWxpay: true, payment.TypeStripe: true, payment.TypeAirwallex: true,
+	payment.TypeEasyPay: true, payment.TypeAlipay: true, payment.TypeWxpay: true, payment.TypeStripe: true, payment.TypeAirwallex: true, payment.TypeXunhuPay: true,
+}
+
+func normalizeProviderRefundFlags(providerKey string, refundEnabled, allowUserRefund bool) (bool, bool) {
+	if providerKey == payment.TypeXunhuPay {
+		return false, false
+	}
+	return refundEnabled, allowUserRefund && refundEnabled
 }
 
 func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req CreateProviderInstanceRequest) (*dbent.PaymentProviderInstance, error) {
@@ -203,11 +212,11 @@ func (s *PaymentConfigService) CreateProviderInstance(ctx context.Context, req C
 	if err != nil {
 		return nil, err
 	}
-	allowUserRefund := req.AllowUserRefund && req.RefundEnabled
+	refundEnabled, allowUserRefund := normalizeProviderRefundFlags(req.ProviderKey, req.RefundEnabled, req.AllowUserRefund)
 	return s.entClient.PaymentProviderInstance.Create().
 		SetProviderKey(req.ProviderKey).SetName(req.Name).SetConfig(enc).
 		SetSupportedTypes(typesStr).SetEnabled(req.Enabled).SetPaymentMode(req.PaymentMode).
-		SetSortOrder(req.SortOrder).SetLimits(req.Limits).SetRefundEnabled(req.RefundEnabled).
+		SetSortOrder(req.SortOrder).SetLimits(req.Limits).SetRefundEnabled(refundEnabled).
 		SetAllowUserRefund(allowUserRefund).
 		Save(ctx)
 }
@@ -445,6 +454,9 @@ func (s *PaymentConfigService) UpdateProviderInstance(ctx context.Context, id in
 	}
 	if req.PaymentMode != nil {
 		u.SetPaymentMode(*req.PaymentMode)
+	}
+	if current.ProviderKey == payment.TypeXunhuPay {
+		u.SetRefundEnabled(false).SetAllowUserRefund(false)
 	}
 	return u.Save(ctx)
 }

@@ -52,6 +52,13 @@ func TestValidateProviderRequest(t *testing.T) {
 			wantErr:        false,
 		},
 		{
+			name:           "valid xunhupay provider",
+			providerKey:    payment.TypeXunhuPay,
+			providerName:   "XunhuPay WeChat",
+			supportedTypes: payment.TypeWxpay,
+			wantErr:        false,
+		},
+		{
 			name:           "valid alipay provider",
 			providerKey:    "alipay",
 			providerName:   "Alipay Direct",
@@ -243,6 +250,11 @@ func TestIsSensitiveProviderConfigField(t *testing.T) {
 		{payment.TypeAirwallex, "apiBase", false},
 		{payment.TypeAirwallex, "accountId", false},
 		{payment.TypeAirwallex, "currency", false},
+
+		// XunhuPay
+		{payment.TypeXunhuPay, "appSecret", true},
+		{payment.TypeXunhuPay, "appId", false},
+		{payment.TypeXunhuPay, "apiBase", false},
 
 		// Unknown provider: never sensitive
 		{"unknown", "secretKey", false},
