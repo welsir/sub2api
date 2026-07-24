@@ -865,6 +865,46 @@ func (_u *GroupUpdate) SetNillableModelsListConfig(v *domain.GroupModelsListConf
 	return _u
 }
 
+// SetProviderPricingEnabled sets the "provider_pricing_enabled" field.
+func (_u *GroupUpdate) SetProviderPricingEnabled(v bool) *GroupUpdate {
+	_u.mutation.SetProviderPricingEnabled(v)
+	return _u
+}
+
+// SetNillableProviderPricingEnabled sets the "provider_pricing_enabled" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableProviderPricingEnabled(v *bool) *GroupUpdate {
+	if v != nil {
+		_u.SetProviderPricingEnabled(*v)
+	}
+	return _u
+}
+
+// SetProviderPricingGroupName sets the "provider_pricing_group_name" field.
+func (_u *GroupUpdate) SetProviderPricingGroupName(v string) *GroupUpdate {
+	_u.mutation.SetProviderPricingGroupName(v)
+	return _u
+}
+
+// SetNillableProviderPricingGroupName sets the "provider_pricing_group_name" field if the given value is not nil.
+func (_u *GroupUpdate) SetNillableProviderPricingGroupName(v *string) *GroupUpdate {
+	if v != nil {
+		_u.SetProviderPricingGroupName(*v)
+	}
+	return _u
+}
+
+// SetProviderPricingModels sets the "provider_pricing_models" field.
+func (_u *GroupUpdate) SetProviderPricingModels(v []string) *GroupUpdate {
+	_u.mutation.SetProviderPricingModels(v)
+	return _u
+}
+
+// AppendProviderPricingModels appends value to the "provider_pricing_models" field.
+func (_u *GroupUpdate) AppendProviderPricingModels(v []string) *GroupUpdate {
+	_u.mutation.AppendProviderPricingModels(v)
+	return _u
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_u *GroupUpdate) SetRpmLimit(v int) *GroupUpdate {
 	_u.mutation.ResetRpmLimit()
@@ -1222,6 +1262,11 @@ func (_u *GroupUpdate) check() error {
 			return &ValidationError{Name: "default_mapped_model", err: fmt.Errorf(`ent: validator failed for field "Group.default_mapped_model": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ProviderPricingGroupName(); ok {
+		if err := group.ProviderPricingGroupNameValidator(v); err != nil {
+			return &ValidationError{Name: "provider_pricing_group_name", err: fmt.Errorf(`ent: validator failed for field "Group.provider_pricing_group_name": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -1475,6 +1520,20 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.ModelsListConfig(); ok {
 		_spec.SetField(group.FieldModelsListConfig, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.ProviderPricingEnabled(); ok {
+		_spec.SetField(group.FieldProviderPricingEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ProviderPricingGroupName(); ok {
+		_spec.SetField(group.FieldProviderPricingGroupName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ProviderPricingModels(); ok {
+		_spec.SetField(group.FieldProviderPricingModels, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedProviderPricingModels(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, group.FieldProviderPricingModels, value)
+		})
 	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(group.FieldRpmLimit, field.TypeInt, value)
@@ -2682,6 +2741,46 @@ func (_u *GroupUpdateOne) SetNillableModelsListConfig(v *domain.GroupModelsListC
 	return _u
 }
 
+// SetProviderPricingEnabled sets the "provider_pricing_enabled" field.
+func (_u *GroupUpdateOne) SetProviderPricingEnabled(v bool) *GroupUpdateOne {
+	_u.mutation.SetProviderPricingEnabled(v)
+	return _u
+}
+
+// SetNillableProviderPricingEnabled sets the "provider_pricing_enabled" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableProviderPricingEnabled(v *bool) *GroupUpdateOne {
+	if v != nil {
+		_u.SetProviderPricingEnabled(*v)
+	}
+	return _u
+}
+
+// SetProviderPricingGroupName sets the "provider_pricing_group_name" field.
+func (_u *GroupUpdateOne) SetProviderPricingGroupName(v string) *GroupUpdateOne {
+	_u.mutation.SetProviderPricingGroupName(v)
+	return _u
+}
+
+// SetNillableProviderPricingGroupName sets the "provider_pricing_group_name" field if the given value is not nil.
+func (_u *GroupUpdateOne) SetNillableProviderPricingGroupName(v *string) *GroupUpdateOne {
+	if v != nil {
+		_u.SetProviderPricingGroupName(*v)
+	}
+	return _u
+}
+
+// SetProviderPricingModels sets the "provider_pricing_models" field.
+func (_u *GroupUpdateOne) SetProviderPricingModels(v []string) *GroupUpdateOne {
+	_u.mutation.SetProviderPricingModels(v)
+	return _u
+}
+
+// AppendProviderPricingModels appends value to the "provider_pricing_models" field.
+func (_u *GroupUpdateOne) AppendProviderPricingModels(v []string) *GroupUpdateOne {
+	_u.mutation.AppendProviderPricingModels(v)
+	return _u
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_u *GroupUpdateOne) SetRpmLimit(v int) *GroupUpdateOne {
 	_u.mutation.ResetRpmLimit()
@@ -3052,6 +3151,11 @@ func (_u *GroupUpdateOne) check() error {
 			return &ValidationError{Name: "default_mapped_model", err: fmt.Errorf(`ent: validator failed for field "Group.default_mapped_model": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.ProviderPricingGroupName(); ok {
+		if err := group.ProviderPricingGroupNameValidator(v); err != nil {
+			return &ValidationError{Name: "provider_pricing_group_name", err: fmt.Errorf(`ent: validator failed for field "Group.provider_pricing_group_name": %w`, err)}
+		}
+	}
 	return nil
 }
 
@@ -3322,6 +3426,20 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.ModelsListConfig(); ok {
 		_spec.SetField(group.FieldModelsListConfig, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.ProviderPricingEnabled(); ok {
+		_spec.SetField(group.FieldProviderPricingEnabled, field.TypeBool, value)
+	}
+	if value, ok := _u.mutation.ProviderPricingGroupName(); ok {
+		_spec.SetField(group.FieldProviderPricingGroupName, field.TypeString, value)
+	}
+	if value, ok := _u.mutation.ProviderPricingModels(); ok {
+		_spec.SetField(group.FieldProviderPricingModels, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedProviderPricingModels(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, group.FieldProviderPricingModels, value)
+		})
 	}
 	if value, ok := _u.mutation.RpmLimit(); ok {
 		_spec.SetField(group.FieldRpmLimit, field.TypeInt, value)

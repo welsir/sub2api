@@ -111,6 +111,12 @@ type Group struct {
 	MessagesDispatchModelConfig domain.OpenAIMessagesDispatchModelConfig `json:"messages_dispatch_model_config,omitempty"`
 	// 自定义 /v1/models 展示列表配置；仅影响模型列表响应，不影响调度
 	ModelsListConfig domain.GroupModelsListConfig `json:"models_list_config,omitempty"`
+	// 是否通过 Hvoy Provider Pricing API 发布该分组
+	ProviderPricingEnabled bool `json:"provider_pricing_enabled,omitempty"`
+	// Hvoy 稳定外部分组标识，例如 gpt01；与内部名称解耦
+	ProviderPricingGroupName string `json:"provider_pricing_group_name,omitempty"`
+	// 通过 Hvoy Provider Pricing API 发布的显式模型列表
+	ProviderPricingModels []string `json:"provider_pricing_models,omitempty"`
 	// 分组 RPM 上限，0 表示不限制；设置后接管该分组用户的限流
 	RpmLimit int `json:"rpm_limit,omitempty"`
 	// Edges holds the relations/edges for other nodes in the graph.
@@ -241,15 +247,15 @@ func (*Group) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case group.FieldModelRouting, group.FieldSupportedModelScopes, group.FieldMessagesDispatchModelConfig, group.FieldModelsListConfig:
+		case group.FieldModelRouting, group.FieldSupportedModelScopes, group.FieldMessagesDispatchModelConfig, group.FieldModelsListConfig, group.FieldProviderPricingModels:
 			values[i] = new([]byte)
-		case group.FieldPeakRateEnabled, group.FieldIsExclusive, group.FieldAllowImageGeneration, group.FieldAllowBatchImageGeneration, group.FieldImageRateIndependent, group.FieldVideoRateIndependent, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet:
+		case group.FieldPeakRateEnabled, group.FieldIsExclusive, group.FieldAllowImageGeneration, group.FieldAllowBatchImageGeneration, group.FieldImageRateIndependent, group.FieldVideoRateIndependent, group.FieldClaudeCodeOnly, group.FieldModelRoutingEnabled, group.FieldMcpXMLInject, group.FieldAllowMessagesDispatch, group.FieldRequireOauthOnly, group.FieldRequirePrivacySet, group.FieldProviderPricingEnabled:
 			values[i] = new(sql.NullBool)
 		case group.FieldRateMultiplier, group.FieldPeakRateMultiplier, group.FieldDailyLimitUsd, group.FieldWeeklyLimitUsd, group.FieldMonthlyLimitUsd, group.FieldImageRateMultiplier, group.FieldImagePrice1k, group.FieldImagePrice2k, group.FieldImagePrice4k, group.FieldBatchImageDiscountMultiplier, group.FieldBatchImageHoldMultiplier, group.FieldVideoRateMultiplier, group.FieldVideoPrice480p, group.FieldVideoPrice720p, group.FieldVideoPrice1080p:
 			values[i] = new(sql.NullFloat64)
 		case group.FieldID, group.FieldDefaultValidityDays, group.FieldFallbackGroupID, group.FieldFallbackGroupIDOnInvalidRequest, group.FieldSortOrder, group.FieldRpmLimit:
 			values[i] = new(sql.NullInt64)
-		case group.FieldName, group.FieldDescription, group.FieldPeakStart, group.FieldPeakEnd, group.FieldStatus, group.FieldPlatform, group.FieldSubscriptionType, group.FieldDefaultMappedModel:
+		case group.FieldName, group.FieldDescription, group.FieldPeakStart, group.FieldPeakEnd, group.FieldStatus, group.FieldPlatform, group.FieldSubscriptionType, group.FieldDefaultMappedModel, group.FieldProviderPricingGroupName:
 			values[i] = new(sql.NullString)
 		case group.FieldCreatedAt, group.FieldUpdatedAt, group.FieldDeletedAt:
 			values[i] = new(sql.NullTime)
@@ -571,6 +577,26 @@ func (_m *Group) assignValues(columns []string, values []any) error {
 					return fmt.Errorf("unmarshal field models_list_config: %w", err)
 				}
 			}
+		case group.FieldProviderPricingEnabled:
+			if value, ok := values[i].(*sql.NullBool); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_pricing_enabled", values[i])
+			} else if value.Valid {
+				_m.ProviderPricingEnabled = value.Bool
+			}
+		case group.FieldProviderPricingGroupName:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_pricing_group_name", values[i])
+			} else if value.Valid {
+				_m.ProviderPricingGroupName = value.String
+			}
+		case group.FieldProviderPricingModels:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field provider_pricing_models", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.ProviderPricingModels); err != nil {
+					return fmt.Errorf("unmarshal field provider_pricing_models: %w", err)
+				}
+			}
 		case group.FieldRpmLimit:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
 				return fmt.Errorf("unexpected type %T for field rpm_limit", values[i])
@@ -826,6 +852,15 @@ func (_m *Group) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("models_list_config=")
 	builder.WriteString(fmt.Sprintf("%v", _m.ModelsListConfig))
+	builder.WriteString(", ")
+	builder.WriteString("provider_pricing_enabled=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ProviderPricingEnabled))
+	builder.WriteString(", ")
+	builder.WriteString("provider_pricing_group_name=")
+	builder.WriteString(_m.ProviderPricingGroupName)
+	builder.WriteString(", ")
+	builder.WriteString("provider_pricing_models=")
+	builder.WriteString(fmt.Sprintf("%v", _m.ProviderPricingModels))
 	builder.WriteString(", ")
 	builder.WriteString("rpm_limit=")
 	builder.WriteString(fmt.Sprintf("%v", _m.RpmLimit))

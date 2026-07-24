@@ -79,6 +79,7 @@ type Config struct {
 	Default                 DefaultConfig                 `mapstructure:"default"`
 	RateLimit               RateLimitConfig               `mapstructure:"rate_limit"`
 	Pricing                 PricingConfig                 `mapstructure:"pricing"`
+	ProviderPricing         ProviderPricingConfig         `mapstructure:"provider_pricing"`
 	Gateway                 GatewayConfig                 `mapstructure:"gateway"`
 	APIKeyAuth              APIKeyAuthCacheConfig         `mapstructure:"api_key_auth_cache"`
 	SubscriptionCache       SubscriptionCacheConfig       `mapstructure:"subscription_cache"`
@@ -595,6 +596,14 @@ type PricingConfig struct {
 	UpdateIntervalHours int `mapstructure:"update_interval_hours"`
 	// 哈希校验间隔（分钟）
 	HashCheckIntervalMinutes int `mapstructure:"hash_check_interval_minutes"`
+}
+
+type ProviderPricingConfig struct {
+	Enabled        bool   `mapstructure:"enabled"`
+	SiteName       string `mapstructure:"site_name"`
+	SiteDomain     string `mapstructure:"site_domain"`
+	HMACSecret     string `mapstructure:"hmac_secret"`
+	MaxSkewSeconds int    `mapstructure:"max_skew_seconds"`
 }
 
 type ServerConfig struct {
@@ -1524,6 +1533,9 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.OIDC.UsePKCEExplicit = hasExplicitConfigOrEnv("oidc_connect.use_pkce", "OIDC_CONNECT_USE_PKCE")
 	cfg.OIDC.ValidateIDTokenExplicit = hasExplicitConfigOrEnv("oidc_connect.validate_id_token", "OIDC_CONNECT_VALIDATE_ID_TOKEN")
 	cfg.Dashboard.KeyPrefix = strings.TrimSpace(cfg.Dashboard.KeyPrefix)
+	cfg.ProviderPricing.SiteName = strings.TrimSpace(cfg.ProviderPricing.SiteName)
+	cfg.ProviderPricing.SiteDomain = strings.TrimSpace(cfg.ProviderPricing.SiteDomain)
+	cfg.ProviderPricing.HMACSecret = strings.TrimSpace(cfg.ProviderPricing.HMACSecret)
 	cfg.CORS.AllowedOrigins = normalizeStringSlice(cfg.CORS.AllowedOrigins)
 	cfg.Security.ResponseHeaders.AdditionalAllowed = normalizeStringSlice(cfg.Security.ResponseHeaders.AdditionalAllowed)
 	cfg.Security.ResponseHeaders.ForceRemove = normalizeStringSlice(cfg.Security.ResponseHeaders.ForceRemove)
@@ -1881,6 +1893,13 @@ func setDefaults() {
 	viper.SetDefault("pricing.update_interval_hours", 24)
 	viper.SetDefault("pricing.hash_check_interval_minutes", 10)
 
+	// Hvoy Provider Pricing API (disabled until a production HMAC secret is configured).
+	viper.SetDefault("provider_pricing.enabled", false)
+	viper.SetDefault("provider_pricing.site_name", "Omni")
+	viper.SetDefault("provider_pricing.site_domain", "omni.welsir.com")
+	viper.SetDefault("provider_pricing.hmac_secret", "")
+	viper.SetDefault("provider_pricing.max_skew_seconds", 60)
+
 	// Timezone (default to Asia/Shanghai for Chinese users)
 	viper.SetDefault("timezone", "Asia/Shanghai")
 
@@ -2113,6 +2132,20 @@ func (c *Config) Validate() error {
 	// 选择 bytes 而不是 rune 计数，确保二进制/随机串的长度语义更接近“熵”而非“字符数”。
 	if len([]byte(jwtSecret)) < 32 {
 		return fmt.Errorf("jwt.secret must be at least 32 bytes")
+	}
+	if c.ProviderPricing.MaxSkewSeconds <= 0 || c.ProviderPricing.MaxSkewSeconds > 300 {
+		return fmt.Errorf("provider_pricing.max_skew_seconds must be between 1 and 300")
+	}
+	if c.ProviderPricing.Enabled {
+		if len([]byte(strings.TrimSpace(c.ProviderPricing.HMACSecret))) < 32 {
+			return fmt.Errorf("provider_pricing.hmac_secret must be at least 32 bytes when enabled")
+		}
+		if strings.TrimSpace(c.ProviderPricing.SiteName) == "" {
+			return fmt.Errorf("provider_pricing.site_name is required when enabled")
+		}
+		if strings.TrimSpace(c.ProviderPricing.SiteDomain) == "" {
+			return fmt.Errorf("provider_pricing.site_domain is required when enabled")
+		}
 	}
 	switch c.Log.Level {
 	case "debug", "info", "warn", "error":

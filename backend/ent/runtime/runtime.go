@@ -1096,8 +1096,22 @@ func init() {
 	groupDescModelsListConfig := groupFields[42].Descriptor()
 	// group.DefaultModelsListConfig holds the default value on creation for the models_list_config field.
 	group.DefaultModelsListConfig = groupDescModelsListConfig.Default.(domain.GroupModelsListConfig)
+	// groupDescProviderPricingEnabled is the schema descriptor for provider_pricing_enabled field.
+	groupDescProviderPricingEnabled := groupFields[43].Descriptor()
+	// group.DefaultProviderPricingEnabled holds the default value on creation for the provider_pricing_enabled field.
+	group.DefaultProviderPricingEnabled = groupDescProviderPricingEnabled.Default.(bool)
+	// groupDescProviderPricingGroupName is the schema descriptor for provider_pricing_group_name field.
+	groupDescProviderPricingGroupName := groupFields[44].Descriptor()
+	// group.DefaultProviderPricingGroupName holds the default value on creation for the provider_pricing_group_name field.
+	group.DefaultProviderPricingGroupName = groupDescProviderPricingGroupName.Default.(string)
+	// group.ProviderPricingGroupNameValidator is a validator for the "provider_pricing_group_name" field. It is called by the builders before save.
+	group.ProviderPricingGroupNameValidator = groupDescProviderPricingGroupName.Validators[0].(func(string) error)
+	// groupDescProviderPricingModels is the schema descriptor for provider_pricing_models field.
+	groupDescProviderPricingModels := groupFields[45].Descriptor()
+	// group.DefaultProviderPricingModels holds the default value on creation for the provider_pricing_models field.
+	group.DefaultProviderPricingModels = groupDescProviderPricingModels.Default.([]string)
 	// groupDescRpmLimit is the schema descriptor for rpm_limit field.
-	groupDescRpmLimit := groupFields[43].Descriptor()
+	groupDescRpmLimit := groupFields[46].Descriptor()
 	// group.DefaultRpmLimit holds the default value on creation for the rpm_limit field.
 	group.DefaultRpmLimit = groupDescRpmLimit.Default.(int)
 	idempotencyrecordMixin := schema.IdempotencyRecord{}.Mixin()

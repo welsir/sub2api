@@ -265,6 +265,16 @@ func DefaultMappedModel(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldDefaultMappedModel, v))
 }
 
+// ProviderPricingEnabled applies equality check predicate on the "provider_pricing_enabled" field. It's identical to ProviderPricingEnabledEQ.
+func ProviderPricingEnabled(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldProviderPricingEnabled, v))
+}
+
+// ProviderPricingGroupName applies equality check predicate on the "provider_pricing_group_name" field. It's identical to ProviderPricingGroupNameEQ.
+func ProviderPricingGroupName(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldProviderPricingGroupName, v))
+}
+
 // RpmLimit applies equality check predicate on the "rpm_limit" field. It's identical to RpmLimitEQ.
 func RpmLimit(v int) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldRpmLimit, v))
@@ -1928,6 +1938,81 @@ func DefaultMappedModelEqualFold(v string) predicate.Group {
 // DefaultMappedModelContainsFold applies the ContainsFold predicate on the "default_mapped_model" field.
 func DefaultMappedModelContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldDefaultMappedModel, v))
+}
+
+// ProviderPricingEnabledEQ applies the EQ predicate on the "provider_pricing_enabled" field.
+func ProviderPricingEnabledEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldProviderPricingEnabled, v))
+}
+
+// ProviderPricingEnabledNEQ applies the NEQ predicate on the "provider_pricing_enabled" field.
+func ProviderPricingEnabledNEQ(v bool) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldProviderPricingEnabled, v))
+}
+
+// ProviderPricingGroupNameEQ applies the EQ predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldProviderPricingGroupName, v))
+}
+
+// ProviderPricingGroupNameNEQ applies the NEQ predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldProviderPricingGroupName, v))
+}
+
+// ProviderPricingGroupNameIn applies the In predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldProviderPricingGroupName, vs...))
+}
+
+// ProviderPricingGroupNameNotIn applies the NotIn predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldProviderPricingGroupName, vs...))
+}
+
+// ProviderPricingGroupNameGT applies the GT predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldProviderPricingGroupName, v))
+}
+
+// ProviderPricingGroupNameGTE applies the GTE predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldProviderPricingGroupName, v))
+}
+
+// ProviderPricingGroupNameLT applies the LT predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldProviderPricingGroupName, v))
+}
+
+// ProviderPricingGroupNameLTE applies the LTE predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldProviderPricingGroupName, v))
+}
+
+// ProviderPricingGroupNameContains applies the Contains predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldProviderPricingGroupName, v))
+}
+
+// ProviderPricingGroupNameHasPrefix applies the HasPrefix predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldProviderPricingGroupName, v))
+}
+
+// ProviderPricingGroupNameHasSuffix applies the HasSuffix predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldProviderPricingGroupName, v))
+}
+
+// ProviderPricingGroupNameEqualFold applies the EqualFold predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldProviderPricingGroupName, v))
+}
+
+// ProviderPricingGroupNameContainsFold applies the ContainsFold predicate on the "provider_pricing_group_name" field.
+func ProviderPricingGroupNameContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldProviderPricingGroupName, v))
 }
 
 // RpmLimitEQ applies the EQ predicate on the "rpm_limit" field.

@@ -108,6 +108,12 @@ const (
 	FieldMessagesDispatchModelConfig = "messages_dispatch_model_config"
 	// FieldModelsListConfig holds the string denoting the models_list_config field in the database.
 	FieldModelsListConfig = "models_list_config"
+	// FieldProviderPricingEnabled holds the string denoting the provider_pricing_enabled field in the database.
+	FieldProviderPricingEnabled = "provider_pricing_enabled"
+	// FieldProviderPricingGroupName holds the string denoting the provider_pricing_group_name field in the database.
+	FieldProviderPricingGroupName = "provider_pricing_group_name"
+	// FieldProviderPricingModels holds the string denoting the provider_pricing_models field in the database.
+	FieldProviderPricingModels = "provider_pricing_models"
 	// FieldRpmLimit holds the string denoting the rpm_limit field in the database.
 	FieldRpmLimit = "rpm_limit"
 	// EdgeAPIKeys holds the string denoting the api_keys edge name in mutations.
@@ -247,6 +253,9 @@ var Columns = []string{
 	FieldDefaultMappedModel,
 	FieldMessagesDispatchModelConfig,
 	FieldModelsListConfig,
+	FieldProviderPricingEnabled,
+	FieldProviderPricingGroupName,
+	FieldProviderPricingModels,
 	FieldRpmLimit,
 }
 
@@ -358,6 +367,14 @@ var (
 	DefaultMessagesDispatchModelConfig domain.OpenAIMessagesDispatchModelConfig
 	// DefaultModelsListConfig holds the default value on creation for the "models_list_config" field.
 	DefaultModelsListConfig domain.GroupModelsListConfig
+	// DefaultProviderPricingEnabled holds the default value on creation for the "provider_pricing_enabled" field.
+	DefaultProviderPricingEnabled bool
+	// DefaultProviderPricingGroupName holds the default value on creation for the "provider_pricing_group_name" field.
+	DefaultProviderPricingGroupName string
+	// ProviderPricingGroupNameValidator is a validator for the "provider_pricing_group_name" field. It is called by the builders before save.
+	ProviderPricingGroupNameValidator func(string) error
+	// DefaultProviderPricingModels holds the default value on creation for the "provider_pricing_models" field.
+	DefaultProviderPricingModels []string
 	// DefaultRpmLimit holds the default value on creation for the "rpm_limit" field.
 	DefaultRpmLimit int
 )
@@ -578,6 +595,16 @@ func ByRequirePrivacySet(opts ...sql.OrderTermOption) OrderOption {
 // ByDefaultMappedModel orders the results by the default_mapped_model field.
 func ByDefaultMappedModel(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldDefaultMappedModel, opts...).ToFunc()
+}
+
+// ByProviderPricingEnabled orders the results by the provider_pricing_enabled field.
+func ByProviderPricingEnabled(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderPricingEnabled, opts...).ToFunc()
+}
+
+// ByProviderPricingGroupName orders the results by the provider_pricing_group_name field.
+func ByProviderPricingGroupName(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldProviderPricingGroupName, opts...).ToFunc()
 }
 
 // ByRpmLimit orders the results by the rpm_limit field.

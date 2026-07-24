@@ -21362,6 +21362,10 @@ type GroupMutation struct {
 	default_mapped_model                    *string
 	messages_dispatch_model_config          *domain.OpenAIMessagesDispatchModelConfig
 	models_list_config                      *domain.GroupModelsListConfig
+	provider_pricing_enabled                *bool
+	provider_pricing_group_name             *string
+	provider_pricing_models                 *[]string
+	appendprovider_pricing_models           []string
 	rpm_limit                               *int
 	addrpm_limit                            *int
 	clearedFields                           map[string]struct{}
@@ -23733,6 +23737,129 @@ func (m *GroupMutation) ResetModelsListConfig() {
 	m.models_list_config = nil
 }
 
+// SetProviderPricingEnabled sets the "provider_pricing_enabled" field.
+func (m *GroupMutation) SetProviderPricingEnabled(b bool) {
+	m.provider_pricing_enabled = &b
+}
+
+// ProviderPricingEnabled returns the value of the "provider_pricing_enabled" field in the mutation.
+func (m *GroupMutation) ProviderPricingEnabled() (r bool, exists bool) {
+	v := m.provider_pricing_enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderPricingEnabled returns the old "provider_pricing_enabled" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldProviderPricingEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderPricingEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderPricingEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderPricingEnabled: %w", err)
+	}
+	return oldValue.ProviderPricingEnabled, nil
+}
+
+// ResetProviderPricingEnabled resets all changes to the "provider_pricing_enabled" field.
+func (m *GroupMutation) ResetProviderPricingEnabled() {
+	m.provider_pricing_enabled = nil
+}
+
+// SetProviderPricingGroupName sets the "provider_pricing_group_name" field.
+func (m *GroupMutation) SetProviderPricingGroupName(s string) {
+	m.provider_pricing_group_name = &s
+}
+
+// ProviderPricingGroupName returns the value of the "provider_pricing_group_name" field in the mutation.
+func (m *GroupMutation) ProviderPricingGroupName() (r string, exists bool) {
+	v := m.provider_pricing_group_name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderPricingGroupName returns the old "provider_pricing_group_name" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldProviderPricingGroupName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderPricingGroupName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderPricingGroupName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderPricingGroupName: %w", err)
+	}
+	return oldValue.ProviderPricingGroupName, nil
+}
+
+// ResetProviderPricingGroupName resets all changes to the "provider_pricing_group_name" field.
+func (m *GroupMutation) ResetProviderPricingGroupName() {
+	m.provider_pricing_group_name = nil
+}
+
+// SetProviderPricingModels sets the "provider_pricing_models" field.
+func (m *GroupMutation) SetProviderPricingModels(s []string) {
+	m.provider_pricing_models = &s
+	m.appendprovider_pricing_models = nil
+}
+
+// ProviderPricingModels returns the value of the "provider_pricing_models" field in the mutation.
+func (m *GroupMutation) ProviderPricingModels() (r []string, exists bool) {
+	v := m.provider_pricing_models
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderPricingModels returns the old "provider_pricing_models" field's value of the Group entity.
+// If the Group object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *GroupMutation) OldProviderPricingModels(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderPricingModels is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderPricingModels requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderPricingModels: %w", err)
+	}
+	return oldValue.ProviderPricingModels, nil
+}
+
+// AppendProviderPricingModels adds s to the "provider_pricing_models" field.
+func (m *GroupMutation) AppendProviderPricingModels(s []string) {
+	m.appendprovider_pricing_models = append(m.appendprovider_pricing_models, s...)
+}
+
+// AppendedProviderPricingModels returns the list of values that were appended to the "provider_pricing_models" field in this mutation.
+func (m *GroupMutation) AppendedProviderPricingModels() ([]string, bool) {
+	if len(m.appendprovider_pricing_models) == 0 {
+		return nil, false
+	}
+	return m.appendprovider_pricing_models, true
+}
+
+// ResetProviderPricingModels resets all changes to the "provider_pricing_models" field.
+func (m *GroupMutation) ResetProviderPricingModels() {
+	m.provider_pricing_models = nil
+	m.appendprovider_pricing_models = nil
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (m *GroupMutation) SetRpmLimit(i int) {
 	m.rpm_limit = &i
@@ -24201,7 +24328,7 @@ func (m *GroupMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *GroupMutation) Fields() []string {
-	fields := make([]string, 0, 47)
+	fields := make([]string, 0, 50)
 	if m.created_at != nil {
 		fields = append(fields, group.FieldCreatedAt)
 	}
@@ -24340,6 +24467,15 @@ func (m *GroupMutation) Fields() []string {
 	if m.models_list_config != nil {
 		fields = append(fields, group.FieldModelsListConfig)
 	}
+	if m.provider_pricing_enabled != nil {
+		fields = append(fields, group.FieldProviderPricingEnabled)
+	}
+	if m.provider_pricing_group_name != nil {
+		fields = append(fields, group.FieldProviderPricingGroupName)
+	}
+	if m.provider_pricing_models != nil {
+		fields = append(fields, group.FieldProviderPricingModels)
+	}
 	if m.rpm_limit != nil {
 		fields = append(fields, group.FieldRpmLimit)
 	}
@@ -24443,6 +24579,12 @@ func (m *GroupMutation) Field(name string) (ent.Value, bool) {
 		return m.MessagesDispatchModelConfig()
 	case group.FieldModelsListConfig:
 		return m.ModelsListConfig()
+	case group.FieldProviderPricingEnabled:
+		return m.ProviderPricingEnabled()
+	case group.FieldProviderPricingGroupName:
+		return m.ProviderPricingGroupName()
+	case group.FieldProviderPricingModels:
+		return m.ProviderPricingModels()
 	case group.FieldRpmLimit:
 		return m.RpmLimit()
 	}
@@ -24546,6 +24688,12 @@ func (m *GroupMutation) OldField(ctx context.Context, name string) (ent.Value, e
 		return m.OldMessagesDispatchModelConfig(ctx)
 	case group.FieldModelsListConfig:
 		return m.OldModelsListConfig(ctx)
+	case group.FieldProviderPricingEnabled:
+		return m.OldProviderPricingEnabled(ctx)
+	case group.FieldProviderPricingGroupName:
+		return m.OldProviderPricingGroupName(ctx)
+	case group.FieldProviderPricingModels:
+		return m.OldProviderPricingModels(ctx)
 	case group.FieldRpmLimit:
 		return m.OldRpmLimit(ctx)
 	}
@@ -24878,6 +25026,27 @@ func (m *GroupMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetModelsListConfig(v)
+		return nil
+	case group.FieldProviderPricingEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderPricingEnabled(v)
+		return nil
+	case group.FieldProviderPricingGroupName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderPricingGroupName(v)
+		return nil
+	case group.FieldProviderPricingModels:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderPricingModels(v)
 		return nil
 	case group.FieldRpmLimit:
 		v, ok := value.(int)
@@ -25402,6 +25571,15 @@ func (m *GroupMutation) ResetField(name string) error {
 		return nil
 	case group.FieldModelsListConfig:
 		m.ResetModelsListConfig()
+		return nil
+	case group.FieldProviderPricingEnabled:
+		m.ResetProviderPricingEnabled()
+		return nil
+	case group.FieldProviderPricingGroupName:
+		m.ResetProviderPricingGroupName()
+		return nil
+	case group.FieldProviderPricingModels:
+		m.ResetProviderPricingModels()
 		return nil
 	case group.FieldRpmLimit:
 		m.ResetRpmLimit()

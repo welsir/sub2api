@@ -649,6 +649,40 @@ func (_c *GroupCreate) SetNillableModelsListConfig(v *domain.GroupModelsListConf
 	return _c
 }
 
+// SetProviderPricingEnabled sets the "provider_pricing_enabled" field.
+func (_c *GroupCreate) SetProviderPricingEnabled(v bool) *GroupCreate {
+	_c.mutation.SetProviderPricingEnabled(v)
+	return _c
+}
+
+// SetNillableProviderPricingEnabled sets the "provider_pricing_enabled" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableProviderPricingEnabled(v *bool) *GroupCreate {
+	if v != nil {
+		_c.SetProviderPricingEnabled(*v)
+	}
+	return _c
+}
+
+// SetProviderPricingGroupName sets the "provider_pricing_group_name" field.
+func (_c *GroupCreate) SetProviderPricingGroupName(v string) *GroupCreate {
+	_c.mutation.SetProviderPricingGroupName(v)
+	return _c
+}
+
+// SetNillableProviderPricingGroupName sets the "provider_pricing_group_name" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableProviderPricingGroupName(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetProviderPricingGroupName(*v)
+	}
+	return _c
+}
+
+// SetProviderPricingModels sets the "provider_pricing_models" field.
+func (_c *GroupCreate) SetProviderPricingModels(v []string) *GroupCreate {
+	_c.mutation.SetProviderPricingModels(v)
+	return _c
+}
+
 // SetRpmLimit sets the "rpm_limit" field.
 func (_c *GroupCreate) SetRpmLimit(v int) *GroupCreate {
 	_c.mutation.SetRpmLimit(v)
@@ -935,6 +969,18 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultModelsListConfig
 		_c.mutation.SetModelsListConfig(v)
 	}
+	if _, ok := _c.mutation.ProviderPricingEnabled(); !ok {
+		v := group.DefaultProviderPricingEnabled
+		_c.mutation.SetProviderPricingEnabled(v)
+	}
+	if _, ok := _c.mutation.ProviderPricingGroupName(); !ok {
+		v := group.DefaultProviderPricingGroupName
+		_c.mutation.SetProviderPricingGroupName(v)
+	}
+	if _, ok := _c.mutation.ProviderPricingModels(); !ok {
+		v := group.DefaultProviderPricingModels
+		_c.mutation.SetProviderPricingModels(v)
+	}
 	if _, ok := _c.mutation.RpmLimit(); !ok {
 		v := group.DefaultRpmLimit
 		_c.mutation.SetRpmLimit(v)
@@ -1074,6 +1120,20 @@ func (_c *GroupCreate) check() error {
 	}
 	if _, ok := _c.mutation.ModelsListConfig(); !ok {
 		return &ValidationError{Name: "models_list_config", err: errors.New(`ent: missing required field "Group.models_list_config"`)}
+	}
+	if _, ok := _c.mutation.ProviderPricingEnabled(); !ok {
+		return &ValidationError{Name: "provider_pricing_enabled", err: errors.New(`ent: missing required field "Group.provider_pricing_enabled"`)}
+	}
+	if _, ok := _c.mutation.ProviderPricingGroupName(); !ok {
+		return &ValidationError{Name: "provider_pricing_group_name", err: errors.New(`ent: missing required field "Group.provider_pricing_group_name"`)}
+	}
+	if v, ok := _c.mutation.ProviderPricingGroupName(); ok {
+		if err := group.ProviderPricingGroupNameValidator(v); err != nil {
+			return &ValidationError{Name: "provider_pricing_group_name", err: fmt.Errorf(`ent: validator failed for field "Group.provider_pricing_group_name": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.ProviderPricingModels(); !ok {
+		return &ValidationError{Name: "provider_pricing_models", err: errors.New(`ent: missing required field "Group.provider_pricing_models"`)}
 	}
 	if _, ok := _c.mutation.RpmLimit(); !ok {
 		return &ValidationError{Name: "rpm_limit", err: errors.New(`ent: missing required field "Group.rpm_limit"`)}
@@ -1288,6 +1348,18 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ModelsListConfig(); ok {
 		_spec.SetField(group.FieldModelsListConfig, field.TypeJSON, value)
 		_node.ModelsListConfig = value
+	}
+	if value, ok := _c.mutation.ProviderPricingEnabled(); ok {
+		_spec.SetField(group.FieldProviderPricingEnabled, field.TypeBool, value)
+		_node.ProviderPricingEnabled = value
+	}
+	if value, ok := _c.mutation.ProviderPricingGroupName(); ok {
+		_spec.SetField(group.FieldProviderPricingGroupName, field.TypeString, value)
+		_node.ProviderPricingGroupName = value
+	}
+	if value, ok := _c.mutation.ProviderPricingModels(); ok {
+		_spec.SetField(group.FieldProviderPricingModels, field.TypeJSON, value)
+		_node.ProviderPricingModels = value
 	}
 	if value, ok := _c.mutation.RpmLimit(); ok {
 		_spec.SetField(group.FieldRpmLimit, field.TypeInt, value)
@@ -2204,6 +2276,42 @@ func (u *GroupUpsert) SetModelsListConfig(v domain.GroupModelsListConfig) *Group
 // UpdateModelsListConfig sets the "models_list_config" field to the value that was provided on create.
 func (u *GroupUpsert) UpdateModelsListConfig() *GroupUpsert {
 	u.SetExcluded(group.FieldModelsListConfig)
+	return u
+}
+
+// SetProviderPricingEnabled sets the "provider_pricing_enabled" field.
+func (u *GroupUpsert) SetProviderPricingEnabled(v bool) *GroupUpsert {
+	u.Set(group.FieldProviderPricingEnabled, v)
+	return u
+}
+
+// UpdateProviderPricingEnabled sets the "provider_pricing_enabled" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateProviderPricingEnabled() *GroupUpsert {
+	u.SetExcluded(group.FieldProviderPricingEnabled)
+	return u
+}
+
+// SetProviderPricingGroupName sets the "provider_pricing_group_name" field.
+func (u *GroupUpsert) SetProviderPricingGroupName(v string) *GroupUpsert {
+	u.Set(group.FieldProviderPricingGroupName, v)
+	return u
+}
+
+// UpdateProviderPricingGroupName sets the "provider_pricing_group_name" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateProviderPricingGroupName() *GroupUpsert {
+	u.SetExcluded(group.FieldProviderPricingGroupName)
+	return u
+}
+
+// SetProviderPricingModels sets the "provider_pricing_models" field.
+func (u *GroupUpsert) SetProviderPricingModels(v []string) *GroupUpsert {
+	u.Set(group.FieldProviderPricingModels, v)
+	return u
+}
+
+// UpdateProviderPricingModels sets the "provider_pricing_models" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateProviderPricingModels() *GroupUpsert {
+	u.SetExcluded(group.FieldProviderPricingModels)
 	return u
 }
 
@@ -3128,6 +3236,48 @@ func (u *GroupUpsertOne) SetModelsListConfig(v domain.GroupModelsListConfig) *Gr
 func (u *GroupUpsertOne) UpdateModelsListConfig() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateModelsListConfig()
+	})
+}
+
+// SetProviderPricingEnabled sets the "provider_pricing_enabled" field.
+func (u *GroupUpsertOne) SetProviderPricingEnabled(v bool) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetProviderPricingEnabled(v)
+	})
+}
+
+// UpdateProviderPricingEnabled sets the "provider_pricing_enabled" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateProviderPricingEnabled() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateProviderPricingEnabled()
+	})
+}
+
+// SetProviderPricingGroupName sets the "provider_pricing_group_name" field.
+func (u *GroupUpsertOne) SetProviderPricingGroupName(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetProviderPricingGroupName(v)
+	})
+}
+
+// UpdateProviderPricingGroupName sets the "provider_pricing_group_name" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateProviderPricingGroupName() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateProviderPricingGroupName()
+	})
+}
+
+// SetProviderPricingModels sets the "provider_pricing_models" field.
+func (u *GroupUpsertOne) SetProviderPricingModels(v []string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetProviderPricingModels(v)
+	})
+}
+
+// UpdateProviderPricingModels sets the "provider_pricing_models" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateProviderPricingModels() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateProviderPricingModels()
 	})
 }
 
@@ -4221,6 +4371,48 @@ func (u *GroupUpsertBulk) SetModelsListConfig(v domain.GroupModelsListConfig) *G
 func (u *GroupUpsertBulk) UpdateModelsListConfig() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdateModelsListConfig()
+	})
+}
+
+// SetProviderPricingEnabled sets the "provider_pricing_enabled" field.
+func (u *GroupUpsertBulk) SetProviderPricingEnabled(v bool) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetProviderPricingEnabled(v)
+	})
+}
+
+// UpdateProviderPricingEnabled sets the "provider_pricing_enabled" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateProviderPricingEnabled() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateProviderPricingEnabled()
+	})
+}
+
+// SetProviderPricingGroupName sets the "provider_pricing_group_name" field.
+func (u *GroupUpsertBulk) SetProviderPricingGroupName(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetProviderPricingGroupName(v)
+	})
+}
+
+// UpdateProviderPricingGroupName sets the "provider_pricing_group_name" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateProviderPricingGroupName() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateProviderPricingGroupName()
+	})
+}
+
+// SetProviderPricingModels sets the "provider_pricing_models" field.
+func (u *GroupUpsertBulk) SetProviderPricingModels(v []string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetProviderPricingModels(v)
+	})
+}
+
+// UpdateProviderPricingModels sets the "provider_pricing_models" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateProviderPricingModels() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateProviderPricingModels()
 	})
 }
 

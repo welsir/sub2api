@@ -30,6 +30,19 @@ func ProvidePricingService(cfg *config.Config, remoteClient PricingRemoteClient)
 	return svc, nil
 }
 
+func ProvideProviderPricingService(
+	groupRepo ProviderPricingGroupRepository,
+	billingService *BillingService,
+	cfg *config.Config,
+) *ProviderPricingService {
+	return NewProviderPricingService(
+		groupRepo,
+		billingService,
+		cfg.ProviderPricing.SiteName,
+		cfg.ProviderPricing.SiteDomain,
+	)
+}
+
 // ProvideUpdateService creates UpdateService with BuildInfo
 func ProvideUpdateService(cache UpdateCache, githubClient GitHubReleaseClient, buildInfo BuildInfo) *UpdateService {
 	return NewUpdateService(cache, githubClient, buildInfo.Version, buildInfo.BuildType)
@@ -571,6 +584,7 @@ var ProviderSet = wire.NewSet(
 	NewDashboardService,
 	ProvidePricingService,
 	NewBillingService,
+	ProvideProviderPricingService,
 	ProvideBillingCacheService,
 	NewAnnouncementService,
 	NewAdminService,

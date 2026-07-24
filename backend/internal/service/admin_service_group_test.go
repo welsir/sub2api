@@ -174,6 +174,50 @@ func TestAdminService_CreateGroup_WithImagePricing(t *testing.T) {
 	require.InDelta(t, 0.30, *repo.created.ImagePrice4K, 0.0001)
 }
 
+func TestAdminService_CreateGroup_WithProviderPricing(t *testing.T) {
+	repo := &groupRepoStubForAdmin{}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+		Name:                     "pro pool",
+		Platform:                 PlatformOpenAI,
+		RateMultiplier:           0.2,
+		ProviderPricingEnabled:   true,
+		ProviderPricingGroupName: " gpt01 ",
+		ProviderPricingModels:    []string{" gpt-5.6 ", "gpt-5.4", "gpt-5.6"},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.True(t, repo.created.ProviderPricingEnabled)
+	require.Equal(t, "gpt01", repo.created.ProviderPricingGroupName)
+	require.Equal(t, []string{"gpt-5.6", "gpt-5.4"}, repo.created.ProviderPricingModels)
+}
+
+func TestAdminService_UpdateGroup_ProviderPricingKeepsExternalNameIndependent(t *testing.T) {
+	repo := &groupRepoStubForAdmin{getByID: &Group{
+		ID:                       10,
+		Name:                     "old internal name",
+		Platform:                 PlatformOpenAI,
+		Status:                   StatusActive,
+		RateMultiplier:           0.2,
+		ProviderPricingEnabled:   true,
+		ProviderPricingGroupName: "gpt01",
+		ProviderPricingModels:    []string{"gpt-5.6"},
+	}}
+	svc := &adminServiceImpl{groupRepo: repo}
+	newRate := 0.3
+
+	group, err := svc.UpdateGroup(context.Background(), 10, &UpdateGroupInput{
+		Name:           "new internal name",
+		RateMultiplier: &newRate,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "new internal name", group.Name)
+	require.Equal(t, 0.3, group.RateMultiplier)
+	require.Equal(t, "gpt01", group.ProviderPricingGroupName)
+	require.Equal(t, []string{"gpt-5.6"}, group.ProviderPricingModels)
+}
+
 func TestAdminService_CreateGroup_WithVideoPricing(t *testing.T) {
 	repo := &groupRepoStubForAdmin{}
 	svc := &adminServiceImpl{groupRepo: repo}

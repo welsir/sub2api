@@ -32,6 +32,10 @@ func NewGroupRepository(client *dbent.Client, sqlDB *sql.DB) service.GroupReposi
 	return newGroupRepositoryWithSQL(client, sqlDB)
 }
 
+func NewProviderPricingGroupRepository(client *dbent.Client) service.ProviderPricingGroupRepository {
+	return newGroupRepositoryWithSQL(client, nil)
+}
+
 func newGroupRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *groupRepository {
 	return &groupRepository{client: client, sql: sqlq}
 }
@@ -75,6 +79,9 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetDefaultMappedModel(groupIn.DefaultMappedModel).
 		SetMessagesDispatchModelConfig(groupIn.MessagesDispatchModelConfig).
 		SetModelsListConfig(groupIn.ModelsListConfig).
+		SetProviderPricingEnabled(groupIn.ProviderPricingEnabled).
+		SetProviderPricingGroupName(groupIn.ProviderPricingGroupName).
+		SetProviderPricingModels(groupIn.ProviderPricingModels).
 		SetRpmLimit(groupIn.RPMLimit).
 		SetPeakRateEnabled(groupIn.PeakRateEnabled).
 		SetPeakStart(groupIn.PeakStart).
@@ -163,6 +170,9 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetDefaultMappedModel(groupIn.DefaultMappedModel).
 		SetMessagesDispatchModelConfig(groupIn.MessagesDispatchModelConfig).
 		SetModelsListConfig(groupIn.ModelsListConfig).
+		SetProviderPricingEnabled(groupIn.ProviderPricingEnabled).
+		SetProviderPricingGroupName(groupIn.ProviderPricingGroupName).
+		SetProviderPricingModels(groupIn.ProviderPricingModels).
 		SetRpmLimit(groupIn.RPMLimit).
 		SetPeakRateEnabled(groupIn.PeakRateEnabled).
 		SetPeakStart(groupIn.PeakStart).
@@ -495,6 +505,22 @@ func (r *groupRepository) ListActive(ctx context.Context) ([]service.Group, erro
 	}
 
 	return outGroups, nil
+}
+
+func (r *groupRepository) ListProviderPricingGroups(ctx context.Context) ([]service.Group, error) {
+	groups, err := r.client.Group.Query().
+		Where(group.ProviderPricingEnabledEQ(true)).
+		Order(dbent.Asc(group.FieldProviderPricingGroupName), dbent.Asc(group.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]service.Group, 0, len(groups))
+	for i := range groups {
+		out = append(out, *groupEntityToService(groups[i]))
+	}
+	return out, nil
 }
 
 func (r *groupRepository) ListActiveIDs(ctx context.Context) ([]int64, error) {

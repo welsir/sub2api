@@ -225,6 +225,11 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 
 	allowImageGeneration := input.AllowImageGeneration || defaultAllowImageGenerationForPlatform(platform)
 	allowBatchImageGeneration := input.AllowBatchImageGeneration && allowImageGeneration && platform == PlatformGemini
+	providerPricingGroupName := strings.TrimSpace(input.ProviderPricingGroupName)
+	providerPricingModels := NormalizeProviderPricingModels(input.ProviderPricingModels)
+	if err := ValidateProviderPricingConfig(platform, input.ProviderPricingEnabled, providerPricingGroupName, providerPricingModels); err != nil {
+		return nil, err
+	}
 
 	// 如果指定了复制账号的源分组，先获取账号 ID 列表
 	var accountIDsToCopy []int64
@@ -299,6 +304,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		DefaultMappedModel:              input.DefaultMappedModel,
 		MessagesDispatchModelConfig:     normalizeOpenAIMessagesDispatchModelConfig(input.MessagesDispatchModelConfig),
 		ModelsListConfig:                normalizeGroupModelsListConfig(input.ModelsListConfig),
+		ProviderPricingEnabled:          input.ProviderPricingEnabled,
+		ProviderPricingGroupName:        providerPricingGroupName,
+		ProviderPricingModels:           providerPricingModels,
 		RPMLimit:                        input.RPMLimit,
 	}
 	sanitizeGroupMessagesDispatchFields(group)
@@ -609,6 +617,18 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.ModelsListConfig != nil {
 		group.ModelsListConfig = normalizeGroupModelsListConfig(*input.ModelsListConfig)
+	}
+	if input.ProviderPricingEnabled != nil {
+		group.ProviderPricingEnabled = *input.ProviderPricingEnabled
+	}
+	if input.ProviderPricingGroupName != nil {
+		group.ProviderPricingGroupName = strings.TrimSpace(*input.ProviderPricingGroupName)
+	}
+	if input.ProviderPricingModels != nil {
+		group.ProviderPricingModels = NormalizeProviderPricingModels(*input.ProviderPricingModels)
+	}
+	if err := ValidateProviderPricingConfig(group.Platform, group.ProviderPricingEnabled, group.ProviderPricingGroupName, group.ProviderPricingModels); err != nil {
+		return nil, err
 	}
 	if input.RPMLimit != nil {
 		group.RPMLimit = *input.RPMLimit

@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -80,6 +81,9 @@ type Group struct {
 	DefaultMappedModel          string
 	MessagesDispatchModelConfig OpenAIMessagesDispatchModelConfig
 	ModelsListConfig            GroupModelsListConfig
+	ProviderPricingEnabled      bool
+	ProviderPricingGroupName    string
+	ProviderPricingModels       []string
 
 	// RPMLimit 分组级每分钟请求数上限（0 = 不限制）。
 	// 一旦设置即接管该分组用户的限流（覆盖用户级 rpm_limit），可被 user-group rpm_override 进一步覆盖。
@@ -92,6 +96,50 @@ type Group struct {
 	AccountCount            int64
 	ActiveAccountCount      int64
 	RateLimitedAccountCount int64
+}
+
+var providerPricingGroupNamePattern = regexp.MustCompile(`^gpt[0-9]{2,}$`)
+
+// NormalizeProviderPricingModels trims, removes empty values, and de-duplicates
+// model identifiers while preserving the administrator-provided order.
+func NormalizeProviderPricingModels(models []string) []string {
+	out := make([]string, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			continue
+		}
+		if _, ok := seen[model]; ok {
+			continue
+		}
+		seen[model] = struct{}{}
+		out = append(out, model)
+	}
+	return out
+}
+
+// ValidateProviderPricingConfig protects the stable external Hvoy contract.
+// Disabled groups may retain their mapping so they can be re-enabled without
+// changing the previously published group identity.
+func ValidateProviderPricingConfig(platform string, enabled bool, groupName string, models []string) error {
+	groupName = strings.TrimSpace(groupName)
+	if groupName != "" && !providerPricingGroupNamePattern.MatchString(groupName) {
+		return errors.New("provider_pricing_group_name must match gptNN (for example gpt01)")
+	}
+	if !enabled {
+		return nil
+	}
+	if platform != PlatformOpenAI {
+		return errors.New("provider pricing is only supported for openai groups")
+	}
+	if groupName == "" {
+		return errors.New("provider_pricing_group_name must match gptNN (for example gpt01)")
+	}
+	if len(NormalizeProviderPricingModels(models)) == 0 {
+		return errors.New("provider_pricing_models must contain at least one model")
+	}
+	return nil
 }
 
 func (g *Group) IsActive() bool {

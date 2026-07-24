@@ -205,6 +205,17 @@ func (Group) Fields() []ent.Field {
 			Default(domain.GroupModelsListConfig{}).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
 			Comment("自定义 /v1/models 展示列表配置；仅影响模型列表响应，不影响调度"),
+		field.Bool("provider_pricing_enabled").
+			Default(false).
+			Comment("是否通过 Hvoy Provider Pricing API 发布该分组"),
+		field.String("provider_pricing_group_name").
+			MaxLen(100).
+			Default("").
+			Comment("Hvoy 稳定外部分组标识，例如 gpt01；与内部名称解耦"),
+		field.JSON("provider_pricing_models", []string{}).
+			Default([]string{}).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
+			Comment("通过 Hvoy Provider Pricing API 发布的显式模型列表"),
 
 		// 分组级每分钟请求数上限（0 = 不限制）。设置后优先于用户级兜底生效。
 		field.Int("rpm_limit").

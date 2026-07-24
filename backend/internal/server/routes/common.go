@@ -3,6 +3,7 @@ package routes
 import (
 	"net/http"
 
+	"github.com/Wei-Shaw/sub2api/internal/handler"
 	"github.com/gin-gonic/gin"
 )
 
@@ -29,4 +30,11 @@ func RegisterCommonRoutes(r *gin.Engine) {
 			},
 		})
 	})
+}
+
+func RegisterProviderPricingRoutes(r *gin.Engine, h *handler.ProviderPricingHandler) {
+	if h == nil {
+		return
+	}
+	r.GET("/api/provider/pricing", h.Get)
 }

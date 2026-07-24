@@ -17,6 +17,38 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
 }
 
+func TestLoadProviderPricingDefaultsDisabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.False(t, cfg.ProviderPricing.Enabled)
+	require.Equal(t, 60, cfg.ProviderPricing.MaxSkewSeconds)
+}
+
+func TestLoadProviderPricingRequiresStrongSecretWhenEnabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("PROVIDER_PRICING_ENABLED", "true")
+	t.Setenv("PROVIDER_PRICING_HMAC_SECRET", "short")
+
+	_, err := Load()
+	require.ErrorContains(t, err, "provider_pricing.hmac_secret must be at least 32 bytes")
+}
+
+func TestLoadProviderPricingEnabledConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("PROVIDER_PRICING_ENABLED", "true")
+	t.Setenv("PROVIDER_PRICING_HMAC_SECRET", strings.Repeat("s", 32))
+	t.Setenv("PROVIDER_PRICING_SITE_NAME", " Omni ")
+	t.Setenv("PROVIDER_PRICING_SITE_DOMAIN", " omni.welsir.com ")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.ProviderPricing.Enabled)
+	require.Equal(t, "Omni", cfg.ProviderPricing.SiteName)
+	require.Equal(t, "omni.welsir.com", cfg.ProviderPricing.SiteDomain)
+}
+
 func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
 	viper.Reset()
 	t.Setenv("JWT_SECRET", "")
