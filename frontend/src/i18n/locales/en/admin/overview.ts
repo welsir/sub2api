@@ -955,6 +955,16 @@ export default {
         selectAll: 'Select all',
         invertSelection: 'Invert'
       },
+      providerPricing: {
+        title: 'Hvoy Price Publishing',
+        hint: 'Publishes final prices using the current group multiplier while keeping the external ID independent from the internal name.',
+        groupName: 'Stable Hvoy Group ID',
+        groupNameHint: 'Use gpt01, gpt02, and so on. Keep it stable after publishing; the internal display name may still change.',
+        models: 'Published Models',
+        modelsHint: 'Enter one model per line, or separate models with commas or spaces.',
+        invalidGroupName: 'The Hvoy group ID must use a stable format such as gpt01 or gpt02',
+        modelsRequired: 'Select at least one model when Hvoy price publishing is enabled'
+      },
       claudeCode: {
         title: 'Claude Code Client Restriction',
         tooltip: 'When enabled, this group only allows official Claude Code clients. Non-Claude Code requests will be rejected or fallback to the specified group.',

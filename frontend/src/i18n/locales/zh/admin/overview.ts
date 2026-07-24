@@ -946,6 +946,16 @@ export default {
         selectAll: '全选',
         invertSelection: '反选'
       },
+      providerPricing: {
+        title: 'Hvoy 价格发布',
+        hint: '按当前分组倍率动态发布最终价格；外部代号与内部名称解耦。',
+        groupName: 'Hvoy 稳定分组代号',
+        groupNameHint: '使用 gpt01、gpt02…；发布后不要更改，内部中文名称可正常调整。',
+        models: '发布模型',
+        modelsHint: '每行一个模型，也支持用逗号或空格分隔。',
+        invalidGroupName: 'Hvoy 分组代号必须为 gpt01、gpt02 这类稳定格式',
+        modelsRequired: '开启 Hvoy 价格发布时至少选择一个模型'
+      },
       claudeCode: {
         title: 'Claude Code 客户端限制',
         tooltip:

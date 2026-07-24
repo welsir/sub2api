@@ -817,6 +817,46 @@
           </div>
         </div>
 
+        <div v-if="createForm.platform === 'openai'" class="border-t pt-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t("admin.groups.providerPricing.title") }}
+              </label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.providerPricing.hint") }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="createForm.provider_pricing_enabled = !createForm.provider_pricing_enabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                createForm.provider_pricing_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600',
+              ]"
+            >
+              <span
+                :class="[
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  createForm.provider_pricing_enabled ? 'translate-x-6' : 'translate-x-1',
+                ]"
+              />
+            </button>
+          </div>
+          <div v-if="createForm.provider_pricing_enabled" class="space-y-3 rounded-lg border border-gray-200 bg-gray-50/50 p-3 dark:border-dark-600 dark:bg-dark-800/40">
+            <div>
+              <label class="input-label">{{ t("admin.groups.providerPricing.groupName") }}</label>
+              <input v-model="createForm.provider_pricing_group_name" type="text" class="input" placeholder="gpt01" />
+              <p class="input-hint">{{ t("admin.groups.providerPricing.groupNameHint") }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.providerPricing.models") }}</label>
+              <textarea v-model="createForm.provider_pricing_models_text" rows="5" class="input font-mono text-sm" placeholder="gpt-5.6&#10;gpt-5.4"></textarea>
+              <p class="input-hint">{{ t("admin.groups.providerPricing.modelsHint") }}</p>
+            </div>
+          </div>
+        </div>
+
         <!-- 图片生成计费配置 -->
         <div
           v-if="supportsImagePricingPlatform(createForm.platform)"
@@ -2296,6 +2336,46 @@
           </div>
         </div>
 
+        <div v-if="editForm.platform === 'openai'" class="border-t pt-4">
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t("admin.groups.providerPricing.title") }}
+              </label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t("admin.groups.providerPricing.hint") }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="editForm.provider_pricing_enabled = !editForm.provider_pricing_enabled"
+              :class="[
+                'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors',
+                editForm.provider_pricing_enabled ? 'bg-primary-500' : 'bg-gray-300 dark:bg-dark-600',
+              ]"
+            >
+              <span
+                :class="[
+                  'inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform',
+                  editForm.provider_pricing_enabled ? 'translate-x-6' : 'translate-x-1',
+                ]"
+              />
+            </button>
+          </div>
+          <div v-if="editForm.provider_pricing_enabled" class="space-y-3 rounded-lg border border-gray-200 bg-gray-50/50 p-3 dark:border-dark-600 dark:bg-dark-800/40">
+            <div>
+              <label class="input-label">{{ t("admin.groups.providerPricing.groupName") }}</label>
+              <input v-model="editForm.provider_pricing_group_name" type="text" class="input" placeholder="gpt01" />
+              <p class="input-hint">{{ t("admin.groups.providerPricing.groupNameHint") }}</p>
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.providerPricing.models") }}</label>
+              <textarea v-model="editForm.provider_pricing_models_text" rows="5" class="input font-mono text-sm" placeholder="gpt-5.6&#10;gpt-5.4"></textarea>
+              <p class="input-hint">{{ t("admin.groups.providerPricing.modelsHint") }}</p>
+            </div>
+          </div>
+        </div>
+
         <!-- 图片生成计费配置 -->
         <div
           v-if="supportsImagePricingPlatform(editForm.platform)"
@@ -3527,6 +3607,11 @@ import {
 import { createModelsListCandidatesTracker } from "./groupsModelsListCandidates";
 import { normalizeSupportedModelScopesForPlatform } from "./groupsSupportedModelScopes";
 import {
+  buildProviderPricingPayload,
+  isValidProviderPricingGroupName,
+  normalizeProviderPricingModels,
+} from "./groupsProviderPricing";
+import {
   getDefaultImagePreviewPrice,
   getDefaultVideoPreviewPrice,
   getImagePricePlaceholder,
@@ -3916,6 +4001,9 @@ const createForm = reactive({
   copy_accounts_from_group_ids: [] as number[],
   // 分组级 RPM 限制（每用户每分钟最大请求数；0 = 不限制）
   rpm_limit: 0 as number,
+  provider_pricing_enabled: false,
+  provider_pricing_group_name: "",
+  provider_pricing_models_text: "",
 });
 
 // 简单账号类型（用于模型路由选择）
@@ -4262,6 +4350,9 @@ const editForm = reactive({
   copy_accounts_from_group_ids: [] as number[],
   // 分组级 RPM 限制（每用户每分钟最大请求数；0 = 不限制）
   rpm_limit: 0 as number,
+  provider_pricing_enabled: false,
+  provider_pricing_group_name: "",
+  provider_pricing_models_text: "",
 });
 
 type ImagePricingFormState = {
@@ -4629,6 +4720,9 @@ const closeCreateModal = () => {
   createForm.mcp_xml_inject = true;
   createForm.copy_accounts_from_group_ids = [];
   createForm.rpm_limit = 0;
+  createForm.provider_pricing_enabled = false;
+  createForm.provider_pricing_group_name = "";
+  createForm.provider_pricing_models_text = "";
   resetModelsListState(createModelsListState);
   createModelRoutingRules.value = [];
 };
@@ -4667,6 +4761,16 @@ const handleCreateGroup = async () => {
     appStore.showError(t("admin.groups.nameRequired"));
     return;
   }
+  if (createForm.provider_pricing_enabled) {
+    if (!isValidProviderPricingGroupName(createForm.provider_pricing_group_name)) {
+      appStore.showError(t("admin.groups.providerPricing.invalidGroupName"));
+      return;
+    }
+    if (normalizeProviderPricingModels(createForm.provider_pricing_models_text).length === 0) {
+      appStore.showError(t("admin.groups.providerPricing.modelsRequired"));
+      return;
+    }
+  }
   submitting.value = true;
   try {
     // 构建请求数据，包含模型路由配置
@@ -4685,6 +4789,11 @@ const handleCreateGroup = async () => {
         createModelRoutingRules.value,
       ),
       models_list_config: buildModelsListConfig(createModelsListState),
+      ...buildProviderPricingPayload({
+        enabled: createForm.provider_pricing_enabled,
+        groupName: createForm.provider_pricing_group_name,
+        modelsText: createForm.provider_pricing_models_text,
+      }),
       supported_model_scopes: normalizeSupportedModelScopesForPlatform(
         createForm.platform,
         createForm.supported_model_scopes,
@@ -4809,6 +4918,9 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.mcp_xml_inject = group.mcp_xml_inject ?? true;
   editForm.copy_accounts_from_group_ids = []; // 复制账号字段每次编辑时重置为空
   editForm.rpm_limit = group.rpm_limit ?? 0;
+  editForm.provider_pricing_enabled = group.provider_pricing_enabled ?? false;
+  editForm.provider_pricing_group_name = group.provider_pricing_group_name ?? "";
+  editForm.provider_pricing_models_text = (group.provider_pricing_models ?? []).join("\n");
   resetModelsListState(editModelsListState, group.models_list_config);
   // 加载模型路由规则（异步加载账号名称）
   editModelRoutingRules.value = await convertApiFormatToRoutingRules(
@@ -4836,6 +4948,9 @@ const closeEditModal = () => {
   editForm.video_price_480p = null;
   editForm.video_price_720p = null;
   editForm.video_price_1080p = null;
+  editForm.provider_pricing_enabled = false;
+  editForm.provider_pricing_group_name = "";
+  editForm.provider_pricing_models_text = "";
   resetMessagesDispatchFormState(editForm);
   resetModelsListState(editModelsListState);
 };
@@ -4845,6 +4960,16 @@ const handleUpdateGroup = async () => {
   if (!editForm.name.trim()) {
     appStore.showError(t("admin.groups.nameRequired"));
     return;
+  }
+  if (editForm.provider_pricing_enabled) {
+    if (!isValidProviderPricingGroupName(editForm.provider_pricing_group_name)) {
+      appStore.showError(t("admin.groups.providerPricing.invalidGroupName"));
+      return;
+    }
+    if (normalizeProviderPricingModels(editForm.provider_pricing_models_text).length === 0) {
+      appStore.showError(t("admin.groups.providerPricing.modelsRequired"));
+      return;
+    }
   }
 
   submitting.value = true;
@@ -4871,6 +4996,11 @@ const handleUpdateGroup = async () => {
         editModelRoutingRules.value,
       ),
       models_list_config: buildModelsListConfig(editModelsListState),
+      ...buildProviderPricingPayload({
+        enabled: editForm.provider_pricing_enabled,
+        groupName: editForm.provider_pricing_group_name,
+        modelsText: editForm.provider_pricing_models_text,
+      }),
       supported_model_scopes: normalizeSupportedModelScopesForPlatform(
         editForm.platform,
         editForm.supported_model_scopes,
@@ -5027,6 +5157,7 @@ watch(
     }
     if (newVal !== "openai") {
       resetMessagesDispatchFormState(createForm);
+      createForm.provider_pricing_enabled = false;
     }
     if (!["openai", "antigravity", "anthropic", "gemini"].includes(newVal)) {
       createForm.require_oauth_only = false;
@@ -5060,6 +5191,7 @@ watch(
     }
     if (newVal !== "openai") {
       resetMessagesDispatchFormState(editForm);
+      editForm.provider_pricing_enabled = false;
     }
     if (!["openai", "antigravity", "anthropic", "gemini"].includes(newVal)) {
       editForm.require_oauth_only = false;
