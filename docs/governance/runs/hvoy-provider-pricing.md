@@ -6,7 +6,7 @@
 - Isolated delivery branch: `codex/hvoy-provider-pricing`
 - Runtime target: 43 server, V2 stack only
 - External group contract: current internal group id 10 -> `gpt01`; later groups use `gpt02`, `gpt03`, ...
-- Security: mandatory timestamped HMAC-SHA256; 60-second skew; public Hvoy test secret excluded from production
+- Security history: initial deployment required timestamped HMAC-SHA256; on 2026-07-25 the provider requested permanent unsigned public access to this read-only route
 
 ## Implemented
 
@@ -15,6 +15,7 @@
 - Added provider-pricing projection through the existing billing source of truth and current group multiplier.
 - Added schema 1.1 `GET /api/provider/pricing` with constant-time HMAC validation.
 - Added disabled-by-default configuration and startup validation for a strong production secret.
+- Added a secure-by-default `provider_pricing.require_hmac` switch so only explicitly configured environments can expose the feed without authentication.
 
 ## Verification before deployment
 
@@ -30,6 +31,17 @@
 - `git diff --check`: passed.
 
 The optional `go test -tags unit ./internal/service ...` gate is blocked on the branch baseline by `effectiveSubRepoStub` missing `ExistsActiveByUserIDAndGroupID` in `api_key_effective_group_test.go`. The default full test suite is green, and this feature does not modify that stub or interface.
+
+## Public access change verification (2026-07-25)
+
+- Accepted design: `docs/plans/2026-07-25-hvoy-public-pricing-design.md`.
+- Implementation plan: `docs/plans/2026-07-25-hvoy-public-pricing.md`.
+- `go test ./internal/config -run TestLoadProviderPricing -count=1`: passed after observing the expected RED compile failure for the missing `RequireHMAC` field.
+- `go test ./internal/handler -run TestProviderPricingHandler -count=1`: passed after observing the expected RED `401` for unsigned public mode.
+- `env -u OPENAI_API_KEY go test ./...`: passed.
+- `go build -tags embed -o /tmp/sub2api-hvoy-public-check ./cmd/server`: passed.
+- Behavior: HMAC enforcement defaults to `true`; an environment must explicitly set `PROVIDER_PRICING_REQUIRE_HMAC=false` to allow unsigned access.
+- Planned V2 runtime change: remove the active HMAC secret, deploy the public-mode image, and verify unsigned `200` without changing the pricing projection or group configuration.
 
 ## Deployment evidence
 
