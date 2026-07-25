@@ -39,6 +39,7 @@ func TestProviderPricingHandlerRequiresValidHMAC(t *testing.T) {
 	reader := &providerPricingReaderStub{response: &service.ProviderPricingResponse{SchemaVersion: "1.1", Success: true}}
 	h := NewProviderPricingHandler(reader, config.ProviderPricingConfig{
 		Enabled:        true,
+		RequireHMAC:    true,
 		HMACSecret:     secret,
 		MaxSkewSeconds: 60,
 	})
@@ -77,6 +78,24 @@ func TestProviderPricingHandlerRequiresValidHMAC(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestProviderPricingHandlerAllowsUnsignedPublicFeed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	reader := &providerPricingReaderStub{response: &service.ProviderPricingResponse{
+		SchemaVersion: "1.1",
+		Success:       true,
+	}}
+	h := NewProviderPricingHandler(reader, config.ProviderPricingConfig{
+		Enabled:     true,
+		RequireHMAC: false,
+	})
+	r := gin.New()
+	r.GET("/api/provider/pricing", h.Get)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/provider/pricing", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "private, no-store", w.Header().Get("Cache-Control"))
 }
 
 func TestProviderPricingHandlerDisabledReturnsNotFound(t *testing.T) {

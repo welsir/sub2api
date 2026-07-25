@@ -37,7 +37,7 @@ func (h *ProviderPricingHandler) Get(c *gin.Context) {
 		c.Status(http.StatusNotFound)
 		return
 	}
-	if !h.validSignature(c.GetHeader("X-Hvoy-Ts"), c.GetHeader("X-Hvoy-Sign")) {
+	if h.cfg.RequireHMAC && !h.validSignature(c.GetHeader("X-Hvoy-Ts"), c.GetHeader("X-Hvoy-Sign")) {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"schema_version": "1.1",
 			"success":        false,
