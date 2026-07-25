@@ -602,6 +602,7 @@ type ProviderPricingConfig struct {
 	Enabled        bool   `mapstructure:"enabled"`
 	SiteName       string `mapstructure:"site_name"`
 	SiteDomain     string `mapstructure:"site_domain"`
+	RequireHMAC    bool   `mapstructure:"require_hmac"`
 	HMACSecret     string `mapstructure:"hmac_secret"`
 	MaxSkewSeconds int    `mapstructure:"max_skew_seconds"`
 }
@@ -1893,10 +1894,11 @@ func setDefaults() {
 	viper.SetDefault("pricing.update_interval_hours", 24)
 	viper.SetDefault("pricing.hash_check_interval_minutes", 10)
 
-	// Hvoy Provider Pricing API (disabled until a production HMAC secret is configured).
+	// Hvoy Provider Pricing API (disabled by default; HMAC enforcement is secure by default).
 	viper.SetDefault("provider_pricing.enabled", false)
 	viper.SetDefault("provider_pricing.site_name", "Omni")
 	viper.SetDefault("provider_pricing.site_domain", "omni.welsir.com")
+	viper.SetDefault("provider_pricing.require_hmac", true)
 	viper.SetDefault("provider_pricing.hmac_secret", "")
 	viper.SetDefault("provider_pricing.max_skew_seconds", 60)
 
@@ -2136,10 +2138,12 @@ func (c *Config) Validate() error {
 	if c.ProviderPricing.MaxSkewSeconds <= 0 || c.ProviderPricing.MaxSkewSeconds > 300 {
 		return fmt.Errorf("provider_pricing.max_skew_seconds must be between 1 and 300")
 	}
-	if c.ProviderPricing.Enabled {
+	if c.ProviderPricing.Enabled && c.ProviderPricing.RequireHMAC {
 		if len([]byte(strings.TrimSpace(c.ProviderPricing.HMACSecret))) < 32 {
-			return fmt.Errorf("provider_pricing.hmac_secret must be at least 32 bytes when enabled")
+			return fmt.Errorf("provider_pricing.hmac_secret must be at least 32 bytes when HMAC is required")
 		}
+	}
+	if c.ProviderPricing.Enabled {
 		if strings.TrimSpace(c.ProviderPricing.SiteName) == "" {
 			return fmt.Errorf("provider_pricing.site_name is required when enabled")
 		}

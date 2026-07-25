@@ -23,21 +23,24 @@ func TestLoadProviderPricingDefaultsDisabled(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.False(t, cfg.ProviderPricing.Enabled)
+	require.True(t, cfg.ProviderPricing.RequireHMAC)
 	require.Equal(t, 60, cfg.ProviderPricing.MaxSkewSeconds)
 }
 
 func TestLoadProviderPricingRequiresStrongSecretWhenEnabled(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("PROVIDER_PRICING_ENABLED", "true")
+	t.Setenv("PROVIDER_PRICING_REQUIRE_HMAC", "true")
 	t.Setenv("PROVIDER_PRICING_HMAC_SECRET", "short")
 
 	_, err := Load()
-	require.ErrorContains(t, err, "provider_pricing.hmac_secret must be at least 32 bytes")
+	require.ErrorContains(t, err, "provider_pricing.hmac_secret must be at least 32 bytes when HMAC is required")
 }
 
 func TestLoadProviderPricingEnabledConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("PROVIDER_PRICING_ENABLED", "true")
+	t.Setenv("PROVIDER_PRICING_REQUIRE_HMAC", "true")
 	t.Setenv("PROVIDER_PRICING_HMAC_SECRET", strings.Repeat("s", 32))
 	t.Setenv("PROVIDER_PRICING_SITE_NAME", " Omni ")
 	t.Setenv("PROVIDER_PRICING_SITE_DOMAIN", " omni.welsir.com ")
@@ -45,8 +48,21 @@ func TestLoadProviderPricingEnabledConfig(t *testing.T) {
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.True(t, cfg.ProviderPricing.Enabled)
+	require.True(t, cfg.ProviderPricing.RequireHMAC)
 	require.Equal(t, "Omni", cfg.ProviderPricing.SiteName)
 	require.Equal(t, "omni.welsir.com", cfg.ProviderPricing.SiteDomain)
+}
+
+func TestLoadProviderPricingAllowsPublicFeedWithoutSecret(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("PROVIDER_PRICING_ENABLED", "true")
+	t.Setenv("PROVIDER_PRICING_REQUIRE_HMAC", "false")
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.ProviderPricing.Enabled)
+	require.False(t, cfg.ProviderPricing.RequireHMAC)
+	require.Empty(t, cfg.ProviderPricing.HMACSecret)
 }
 
 func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {
