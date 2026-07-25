@@ -41,7 +41,15 @@ The optional `go test -tags unit ./internal/service ...` gate is blocked on the 
 - `env -u OPENAI_API_KEY go test ./...`: passed.
 - `go build -tags embed -o /tmp/sub2api-hvoy-public-check ./cmd/server`: passed.
 - Behavior: HMAC enforcement defaults to `true`; an environment must explicitly set `PROVIDER_PRICING_REQUIRE_HMAC=false` to allow unsigned access.
-- Planned V2 runtime change: remove the active HMAC secret, deploy the public-mode image, and verify unsigned `200` without changing the pricing projection or group configuration.
+- Deployed image: `tml/sub2api:v0.1.153-omni-hvoy-public-20260725` (`sha256:e3bec25fb535329773f511cb60b4bfd00440ae635674a1d8377b784f4f73744c`).
+- Backups created before the public cutover:
+  - `/data/sub2api-v2/docker-compose.yml.pre-hvoy-public-04e322bb-20260725`
+  - `/data/sub2api-v2/.env.pre-hvoy-public-04e322bb-20260725`
+- Active V2 configuration sets `PROVIDER_PRICING_REQUIRE_HMAC=false`; the `PROVIDER_PRICING_HMAC_SECRET` key is absent from the active compose, `.env`, and app-container environment.
+- Live public probes against `https://omni.welsir.com/api/provider/pricing` returned `200` for an unsigned request, Hvoy's documented default test signature, and deliberately malformed signature headers. All three response bodies were identical.
+- Public response validation passed for schema `1.1`, `CNY`, `per_1m_tokens`, ten rows, and only external group `gpt01`.
+- `sub2api-v2-app` is healthy on the public-mode image. Preview, V2 PostgreSQL, V2 Redis, the V1 proxy, and Omni Gateway remained running on their prior images.
+- Final free space was approximately `522 MB` on `/mnt` and `606 MB` on `/data`; no image or container was deleted.
 
 ## Deployment evidence
 
