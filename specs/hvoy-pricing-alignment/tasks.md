@@ -7,6 +7,6 @@
 - [x] Write and observe failing cache-floor billing tests.
 - [x] Implement the smallest provider mapping and billing policy changes.
 - [x] Run targeted tests, full tests, build, and diff checks.
-- [ ] Back up and deploy only the new 43 Omni application.
-- [ ] Validate public JSON, actual charge, health, logs, and restarts.
-- [ ] Complete the run log and rollback instructions.
+- [x] Back up and deploy only the new 43 Omni application.
+- [x] Validate public JSON, actual charge, health, logs, and restarts.
+- [x] Complete the run log and rollback instructions.
