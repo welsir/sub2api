@@ -25,6 +25,8 @@ func TestLoadProviderPricingDefaultsDisabled(t *testing.T) {
 	require.False(t, cfg.ProviderPricing.Enabled)
 	require.True(t, cfg.ProviderPricing.RequireHMAC)
 	require.Equal(t, 60, cfg.ProviderPricing.MaxSkewSeconds)
+	require.Equal(t, "ai.welsir.com", cfg.ProviderPricing.SiteDomain)
+	require.Equal(t, map[string]string{"gpt01": "pro专属"}, cfg.ProviderPricing.GroupNameMappings)
 }
 
 func TestLoadProviderPricingRequiresStrongSecretWhenEnabled(t *testing.T) {
@@ -63,6 +65,26 @@ func TestLoadProviderPricingAllowsPublicFeedWithoutSecret(t *testing.T) {
 	require.True(t, cfg.ProviderPricing.Enabled)
 	require.False(t, cfg.ProviderPricing.RequireHMAC)
 	require.Empty(t, cfg.ProviderPricing.HMACSecret)
+}
+
+func TestLoadProviderPricingParsesExternalGroupNameMappings(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("PROVIDER_PRICING_GROUP_NAME_MAPPINGS", `{"gpt01":"pro专属","gpt02":"企业专属"}`)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{
+		"gpt01": "pro专属",
+		"gpt02": "企业专属",
+	}, cfg.ProviderPricing.GroupNameMappings)
+}
+
+func TestLoadProviderPricingRejectsInvalidExternalGroupNameMappings(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	t.Setenv("PROVIDER_PRICING_GROUP_NAME_MAPPINGS", `{"gpt01":`)
+
+	_, err := Load()
+	require.ErrorContains(t, err, "parse provider_pricing.group_name_mappings")
 }
 
 func TestLoadForBootstrapAllowsMissingJWTSecret(t *testing.T) {

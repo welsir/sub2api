@@ -40,6 +40,7 @@ func ProvideProviderPricingService(
 		billingService,
 		cfg.ProviderPricing.SiteName,
 		cfg.ProviderPricing.SiteDomain,
+		cfg.ProviderPricing.GroupNameMappings,
 	)
 }
 

@@ -4,6 +4,7 @@ package config
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -599,12 +600,36 @@ type PricingConfig struct {
 }
 
 type ProviderPricingConfig struct {
-	Enabled        bool   `mapstructure:"enabled"`
-	SiteName       string `mapstructure:"site_name"`
-	SiteDomain     string `mapstructure:"site_domain"`
-	RequireHMAC    bool   `mapstructure:"require_hmac"`
-	HMACSecret     string `mapstructure:"hmac_secret"`
-	MaxSkewSeconds int    `mapstructure:"max_skew_seconds"`
+	Enabled           bool              `mapstructure:"enabled"`
+	SiteName          string            `mapstructure:"site_name"`
+	SiteDomain        string            `mapstructure:"site_domain"`
+	RequireHMAC       bool              `mapstructure:"require_hmac"`
+	HMACSecret        string            `mapstructure:"hmac_secret"`
+	MaxSkewSeconds    int               `mapstructure:"max_skew_seconds"`
+	GroupNameMappings map[string]string `mapstructure:"-"`
+}
+
+func parseProviderPricingGroupNameMappings(raw string) (map[string]string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return map[string]string{}, nil
+	}
+
+	var decoded map[string]string
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return nil, fmt.Errorf("parse provider_pricing.group_name_mappings: %w", err)
+	}
+
+	normalized := make(map[string]string, len(decoded))
+	for internalName, publicName := range decoded {
+		internalName = strings.TrimSpace(internalName)
+		publicName = strings.TrimSpace(publicName)
+		if internalName == "" || publicName == "" {
+			return nil, fmt.Errorf("provider_pricing.group_name_mappings cannot contain empty names")
+		}
+		normalized[internalName] = publicName
+	}
+	return normalized, nil
 }
 
 type ServerConfig struct {
@@ -1537,6 +1562,11 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.ProviderPricing.SiteName = strings.TrimSpace(cfg.ProviderPricing.SiteName)
 	cfg.ProviderPricing.SiteDomain = strings.TrimSpace(cfg.ProviderPricing.SiteDomain)
 	cfg.ProviderPricing.HMACSecret = strings.TrimSpace(cfg.ProviderPricing.HMACSecret)
+	providerPricingGroupNameMappings, err := parseProviderPricingGroupNameMappings(viper.GetString("provider_pricing.group_name_mappings"))
+	if err != nil {
+		return nil, err
+	}
+	cfg.ProviderPricing.GroupNameMappings = providerPricingGroupNameMappings
 	cfg.CORS.AllowedOrigins = normalizeStringSlice(cfg.CORS.AllowedOrigins)
 	cfg.Security.ResponseHeaders.AdditionalAllowed = normalizeStringSlice(cfg.Security.ResponseHeaders.AdditionalAllowed)
 	cfg.Security.ResponseHeaders.ForceRemove = normalizeStringSlice(cfg.Security.ResponseHeaders.ForceRemove)
@@ -1897,10 +1927,11 @@ func setDefaults() {
 	// Hvoy Provider Pricing API (disabled by default; HMAC enforcement is secure by default).
 	viper.SetDefault("provider_pricing.enabled", false)
 	viper.SetDefault("provider_pricing.site_name", "Omni")
-	viper.SetDefault("provider_pricing.site_domain", "omni.welsir.com")
+	viper.SetDefault("provider_pricing.site_domain", "ai.welsir.com")
 	viper.SetDefault("provider_pricing.require_hmac", true)
 	viper.SetDefault("provider_pricing.hmac_secret", "")
 	viper.SetDefault("provider_pricing.max_skew_seconds", 60)
+	viper.SetDefault("provider_pricing.group_name_mappings", `{"gpt01":"pro专属"}`)
 
 	// Timezone (default to Asia/Shanghai for Chinese users)
 	viper.SetDefault("timezone", "Asia/Shanghai")

@@ -48,11 +48,12 @@ type ProviderPricingModel struct {
 }
 
 type ProviderPricingService struct {
-	groupRepo  ProviderPricingGroupRepository
-	calculator ProviderPricingCalculator
-	siteName   string
-	siteDomain string
-	now        func() time.Time
+	groupRepo         ProviderPricingGroupRepository
+	calculator        ProviderPricingCalculator
+	siteName          string
+	siteDomain        string
+	groupNameMappings map[string]string
+	now               func() time.Time
 }
 
 func NewProviderPricingService(
@@ -60,13 +61,15 @@ func NewProviderPricingService(
 	calculator ProviderPricingCalculator,
 	siteName string,
 	siteDomain string,
+	groupNameMappings map[string]string,
 ) *ProviderPricingService {
 	return &ProviderPricingService{
-		groupRepo:  groupRepo,
-		calculator: calculator,
-		siteName:   siteName,
-		siteDomain: siteDomain,
-		now:        time.Now,
+		groupRepo:         groupRepo,
+		calculator:        calculator,
+		siteName:          siteName,
+		siteDomain:        siteDomain,
+		groupNameMappings: groupNameMappings,
+		now:               time.Now,
 	}
 }
 
@@ -119,7 +122,7 @@ func (s *ProviderPricingService) projectModel(group *Group, model string) (Provi
 
 	return ProviderPricingModel{
 		ModelName:          model,
-		GroupName:          group.ProviderPricingGroupName,
+		GroupName:          s.publicGroupName(group.ProviderPricingGroupName),
 		InputPrice:         inputPrice,
 		OutputPrice:        s.optionalPerMillion(model, UsageTokens{OutputTokens: 1}, group.RateMultiplier),
 		CacheInputPrice:    s.optionalPerMillion(model, UsageTokens{CacheReadTokens: 1}, group.RateMultiplier),
@@ -128,6 +131,13 @@ func (s *ProviderPricingService) projectModel(group *Group, model string) (Provi
 		Enabled:            group.Status == StatusActive,
 		Note:               "长上下文等条件价格按站内实时计费规则执行",
 	}, true
+}
+
+func (s *ProviderPricingService) publicGroupName(internalName string) string {
+	if publicName, ok := s.groupNameMappings[internalName]; ok {
+		return publicName
+	}
+	return internalName
 }
 
 func (s *ProviderPricingService) optionalPerMillion(model string, tokens UsageTokens, multiplier float64) *float64 {

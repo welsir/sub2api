@@ -114,6 +114,8 @@ const (
 	openAIGPT54LongContextInputThreshold   = 272000
 	openAIGPT54LongContextInputMultiplier  = 2.0
 	openAIGPT54LongContextOutputMultiplier = 1.5
+	omniStandardTokenRateMultiplier        = 0.2
+	omniCacheReadFloorPerToken             = 0.12e-6
 )
 
 func normalizeBillingServiceTier(serviceTier string) string {
@@ -1023,7 +1025,15 @@ func (s *BillingService) computeTokenBreakdown(
 
 	bd.TotalCost = bd.InputCost + bd.OutputCost + bd.ImageOutputCost +
 		bd.CacheCreationCost + bd.CacheReadCost
-	bd.ActualCost = bd.TotalCost * rateMultiplier
+
+	actualCacheReadCost := bd.CacheReadCost * rateMultiplier
+	if rateMultiplier == omniStandardTokenRateMultiplier && tokens.CacheReadTokens > 0 {
+		minimumCacheReadCost := float64(tokens.CacheReadTokens) * omniCacheReadFloorPerToken
+		if actualCacheReadCost < minimumCacheReadCost {
+			actualCacheReadCost = minimumCacheReadCost
+		}
+	}
+	bd.ActualCost = (bd.TotalCost-bd.CacheReadCost)*rateMultiplier + actualCacheReadCost
 
 	return bd
 }

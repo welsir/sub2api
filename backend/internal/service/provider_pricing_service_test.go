@@ -28,13 +28,14 @@ func TestProviderPricingServiceUsesBillingSourceOfTruthAtGroupMultiplier(t *test
 		NewBillingService(&config.Config{}, nil),
 		"Omni",
 		"omni.welsir.com",
+		nil,
 	).Get(context.Background())
 	require.NoError(t, err)
 	require.Len(t, result.Data.Models, 1)
 	row := result.Data.Models[0]
 	require.Equal(t, 1.0, row.InputPrice)
 	require.Equal(t, 6.0, *row.OutputPrice)
-	require.Equal(t, 0.1, *row.CacheInputPrice)
+	require.Equal(t, 0.12, *row.CacheInputPrice)
 	require.Equal(t, 1.25, *row.CacheCreatePrice)
 }
 
@@ -90,7 +91,7 @@ func TestProviderPricingServiceBuildsStableFinalPriceRows(t *testing.T) {
 		},
 	}}
 
-	svc := NewProviderPricingService(repo, calc, "omni", "omni.welsir.com")
+	svc := NewProviderPricingService(repo, calc, "omni", "omni.welsir.com", nil)
 	result, err := svc.Get(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "1.1", result.SchemaVersion)
@@ -115,6 +116,32 @@ func TestProviderPricingServiceBuildsStableFinalPriceRows(t *testing.T) {
 	require.False(t, second.Enabled)
 }
 
+func TestProviderPricingServiceMapsInternalGroupNameForExternalMatching(t *testing.T) {
+	repo := &providerPricingGroupRepoStub{groups: []Group{{
+		ID:                       10,
+		Status:                   StatusActive,
+		RateMultiplier:           0.2,
+		ProviderPricingEnabled:   true,
+		ProviderPricingGroupName: "gpt01",
+		ProviderPricingModels:    []string{"gpt-5.6"},
+	}}}
+	calc := &providerPricingCalculatorStub{prices: map[string]map[UsageTokens]float64{
+		"gpt-5.6": {{InputTokens: 1}: 0.000001},
+	}}
+
+	result, err := NewProviderPricingService(
+		repo,
+		calc,
+		"Omni",
+		"ai.welsir.com",
+		map[string]string{"gpt01": "pro专属"},
+	).Get(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "ai.welsir.com", result.Data.SiteDomain)
+	require.Len(t, result.Data.Models, 1)
+	require.Equal(t, "pro专属", result.Data.Models[0].GroupName)
+}
+
 func TestProviderPricingServiceSkipsUnpricedModel(t *testing.T) {
 	repo := &providerPricingGroupRepoStub{groups: []Group{{
 		Status:                   StatusActive,
@@ -128,7 +155,7 @@ func TestProviderPricingServiceSkipsUnpricedModel(t *testing.T) {
 		errors: map[string]error{"unknown": errors.New("not priced")},
 	}
 
-	result, err := NewProviderPricingService(repo, calc, "omni", "omni.welsir.com").Get(context.Background())
+	result, err := NewProviderPricingService(repo, calc, "omni", "omni.welsir.com", nil).Get(context.Background())
 	require.NoError(t, err)
 	require.Len(t, result.Data.Models, 1)
 	require.Equal(t, "gpt-5.6", result.Data.Models[0].ModelName)
