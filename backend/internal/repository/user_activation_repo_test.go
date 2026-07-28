@@ -10,6 +10,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	dbjourney "github.com/Wei-Shaw/sub2api/ent/useractivationjourney"
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 
 	"entgo.io/ent/dialect"
@@ -100,6 +102,57 @@ func TestUserActivationJourneyCreateIfAbsentDoesNotSwallowNonUniqueErrors(t *tes
 	require.Error(t, err)
 	require.Nil(t, journey)
 	require.False(t, created)
+}
+
+func TestUserActivationJourneyCreateIfAbsentDoesNotTreatDuplicateTextAsJourneyConflict(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	duplicateTextError := errors.New("duplicate key value violates unique constraint unrelated_table_key")
+	mock.ExpectQuery(`INSERT INTO "user_activation_journeys"`).
+		WillReturnError(duplicateTextError)
+
+	repo := NewUserActivationJourneyRepository(client)
+	journey, created, err := repo.CreateIfAbsent(context.Background(), 73, "direct")
+	require.ErrorIs(t, err, duplicateTextError)
+	require.Nil(t, journey)
+	require.False(t, created)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestUserActivationJourneyUserIDUniqueViolationRequiresExactPostgresConstraint(t *testing.T) {
+	require.True(t, isUserActivationJourneyUserIDUniqueViolation(&pq.Error{
+		Code:       "23505",
+		Table:      "user_activation_journeys",
+		Constraint: "user_activation_journeys_user_id_key",
+	}))
+	require.False(t, isUserActivationJourneyUserIDUniqueViolation(&pq.Error{
+		Code:       "23505",
+		Table:      "user_activation_journeys",
+		Constraint: "user_activation_journeys_campaign_source_key",
+	}))
+	require.False(t, isUserActivationJourneyUserIDUniqueViolation(
+		errors.New("duplicate key value violates unique constraint user_activation_journeys_user_id_key"),
+	))
+}
+
+func TestUserActivationJourneyGetForUpdateRequiresTransactionWithoutQuerying(t *testing.T) {
+	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	client := dbent.NewClient(dbent.Driver(entsql.OpenDB(dialect.Postgres, db)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	repo := NewUserActivationJourneyRepository(client)
+	journey, err := repo.GetByUserIDForUpdate(context.Background(), 91)
+	require.ErrorIs(t, err, service.ErrUserActivationJourneyTransactionRequired)
+	require.Nil(t, journey)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestUserActivationJourneyGetForUpdateUsesTransactionClientAndRowLock(t *testing.T) {

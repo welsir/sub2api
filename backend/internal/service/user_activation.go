@@ -9,14 +9,20 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
-var ErrUserActivationJourneyNotFound = infraerrors.NotFound(
-	"USER_ACTIVATION_JOURNEY_NOT_FOUND",
-	"user activation journey not found",
+var (
+	ErrUserActivationJourneyNotFound = infraerrors.NotFound(
+		"USER_ACTIVATION_JOURNEY_NOT_FOUND",
+		"user activation journey not found",
+	)
+	ErrUserActivationJourneyTransactionRequired = errors.New(
+		"user activation journey row lock requires an existing transaction",
+	)
 )
 
 type UserActivationJourney struct {
