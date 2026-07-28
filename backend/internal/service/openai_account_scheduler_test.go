@@ -22,6 +22,7 @@ type openAISnapshotCacheStub struct {
 type schedulerTestOpenAIAccountRepo struct {
 	AccountRepository
 	accounts []Account
+	delay    time.Duration
 }
 
 func (r schedulerTestOpenAIAccountRepo) GetByID(ctx context.Context, id int64) (*Account, error) {
@@ -34,6 +35,9 @@ func (r schedulerTestOpenAIAccountRepo) GetByID(ctx context.Context, id int64) (
 }
 
 func (r schedulerTestOpenAIAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx context.Context, groupID int64, platform string) ([]Account, error) {
+	if r.delay > 0 {
+		time.Sleep(r.delay)
+	}
 	var result []Account
 	for _, acc := range r.accounts {
 		if acc.Platform == platform {
@@ -44,6 +48,9 @@ func (r schedulerTestOpenAIAccountRepo) ListSchedulableByGroupIDAndPlatform(ctx 
 }
 
 func (r schedulerTestOpenAIAccountRepo) ListSchedulableByPlatform(ctx context.Context, platform string) ([]Account, error) {
+	if r.delay > 0 {
+		time.Sleep(r.delay)
+	}
 	var result []Account
 	for _, acc := range r.accounts {
 		if acc.Platform == platform {
@@ -55,6 +62,39 @@ func (r schedulerTestOpenAIAccountRepo) ListSchedulableByPlatform(ctx context.Co
 
 func (r schedulerTestOpenAIAccountRepo) ListSchedulableUngroupedByPlatform(ctx context.Context, platform string) ([]Account, error) {
 	return r.ListSchedulableByPlatform(ctx, platform)
+}
+
+func TestDefaultOpenAIAccountScheduler_SelectReturnsMeasuredLatency(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.Gateway.Scheduling.LoadBatchEnabled = false
+	svc := &OpenAIGatewayService{
+		accountRepo: schedulerTestOpenAIAccountRepo{
+			delay: 5 * time.Millisecond,
+			accounts: []Account{{
+				ID:          40001,
+				Platform:    PlatformOpenAI,
+				Type:        AccountTypeAPIKey,
+				Status:      StatusActive,
+				Schedulable: true,
+				Concurrency: 1,
+			}},
+		},
+		cache:              &schedulerTestGatewayCache{},
+		cfg:                cfg,
+		concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{}),
+	}
+	scheduler := newDefaultOpenAIAccountScheduler(svc, nil)
+
+	selection, decision, err := scheduler.Select(context.Background(), OpenAIAccountScheduleRequest{
+		Platform:          PlatformOpenAI,
+		RequestedModel:    "gpt-5.5",
+		RequiredTransport: OpenAIUpstreamTransportHTTPSSE,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, selection)
+	require.GreaterOrEqual(t, decision.LatencyMs, int64(5))
+	require.Equal(t, decision.LatencyMs, scheduler.SnapshotMetrics().SchedulerLatencyMsTotal)
 }
 
 type schedulerGroupAwareOpenAIAccountRepo struct {

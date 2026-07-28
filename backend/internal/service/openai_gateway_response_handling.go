@@ -23,11 +23,12 @@ import (
 
 // openaiStreamingResult streaming response result
 type openaiStreamingResult struct {
-	usage            *OpenAIUsage
-	firstTokenMs     *int
-	responseID       string
-	imageCount       int
-	imageOutputSizes []string
+	usage              *OpenAIUsage
+	firstTokenMs       *int
+	responseID         string
+	clientDisconnected bool
+	imageCount         int
+	imageOutputSizes   []string
 }
 
 type openaiNonStreamingResult struct {
@@ -153,15 +154,19 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	streamSeenImages := make(map[string]struct{})
 	resultWithUsage := func() *openaiStreamingResult {
 		return &openaiStreamingResult{
-			usage:            usage,
-			firstTokenMs:     firstTokenMs,
-			responseID:       responseID,
-			imageCount:       imageCounter.Count(),
-			imageOutputSizes: imageCounter.Sizes(),
+			usage:              usage,
+			firstTokenMs:       firstTokenMs,
+			responseID:         responseID,
+			clientDisconnected: clientDisconnected,
+			imageCount:         imageCounter.Count(),
+			imageOutputSizes:   imageCounter.Sizes(),
 		}
 	}
 	finalizeStream := func() (*openaiStreamingResult, error) {
 		if !sawTerminalEvent {
+			if trace := OpenAIRequestPerformanceTraceFromGin(c); trace != nil {
+				trace.MarkMissingTerminal()
+			}
 			if !openAIStreamClientOutputStarted(c, clientOutputStarted) {
 				return resultWithUsage(), s.newOpenAIStreamFailoverError(
 					c,
@@ -192,6 +197,11 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 	handleScanErr := func(scanErr error) (*openaiStreamingResult, error, bool) {
 		if scanErr == nil {
 			return nil, nil, false
+		}
+		if !sawTerminalEvent {
+			if trace := OpenAIRequestPerformanceTraceFromGin(c); trace != nil {
+				trace.MarkMissingTerminal()
+			}
 		}
 		if sawTerminalEvent && !sawFailedEvent {
 			logger.LegacyPrintf("service.openai_gateway", "Upstream scan ended after terminal event: %v", scanErr)
@@ -350,6 +360,11 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				ms := int(time.Since(startTime).Milliseconds())
 				firstTokenMs = &ms
 			}
+			if startsClientOutput && clientOutputStarted && !clientDisconnected {
+				if trace := OpenAIRequestPerformanceTraceFromGin(c); trace != nil {
+					trace.MarkFirstOutput(time.Now())
+				}
+			}
 			s.parseSSEUsageBytes(dataBytes, usage)
 			return
 		}
@@ -441,6 +456,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				continue
 			}
 			if clientDisconnected {
+				if trace := OpenAIRequestPerformanceTraceFromGin(c); trace != nil {
+					trace.MarkMissingTerminal()
+				}
 				return resultWithUsage(), fmt.Errorf("stream usage incomplete after timeout")
 			}
 			logger.LegacyPrintf("service.openai_gateway", "Stream data interval timeout: account=%d model=%s interval=%s", account.ID, originalModel, streamInterval)
@@ -449,6 +467,9 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 				s.rateLimitService.HandleStreamTimeout(ctx, account, originalModel)
 			}
 			sendErrorEvent("stream_timeout")
+			if trace := OpenAIRequestPerformanceTraceFromGin(c); trace != nil {
+				trace.MarkMissingTerminal()
+			}
 			return resultWithUsage(), fmt.Errorf("stream data interval timeout")
 
 		case <-keepaliveCh:

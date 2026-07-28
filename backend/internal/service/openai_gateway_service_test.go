@@ -1741,6 +1741,9 @@ func TestOpenAIStreamingClientDisconnectDrainsUpstreamUsage(t *testing.T) {
 	if result == nil || result.usage == nil {
 		t.Fatalf("expected usage result")
 	}
+	if !result.clientDisconnected {
+		t.Fatalf("expected client disconnect to be preserved in streaming result")
+	}
 	if result.usage.InputTokens != 3 || result.usage.OutputTokens != 5 || result.usage.CacheReadInputTokens != 1 {
 		t.Fatalf("unexpected usage: %+v", *result.usage)
 	}
