@@ -264,6 +264,11 @@ func (s *UserActivationService) ClaimRecall(
 		journey.RecallSubscriptionID = int64Pointer(subscription.ID)
 		journey.RecallClaimedAt = timePointer(subscription.StartsAt)
 		journey.RecallExpiresAt = timePointer(subscription.ExpiresAt)
+		observationTime := now
+		if subscription.StartsAt.After(observationTime) {
+			observationTime = subscription.StartsAt
+		}
+		s.applyEvidenceState(lockedUser, journey, evidence, observationTime)
 		cacheGroupID = s.cfg.RecallGroupID
 		return nil
 	})
