@@ -16,8 +16,9 @@ const (
 )
 
 const (
-	AnnouncementNotifyModeSilent = domain.AnnouncementNotifyModeSilent
-	AnnouncementNotifyModePopup  = domain.AnnouncementNotifyModePopup
+	AnnouncementNotifyModeSilent          = domain.AnnouncementNotifyModeSilent
+	AnnouncementNotifyModePopup           = domain.AnnouncementNotifyModePopup
+	AnnouncementNotifyModePopupEveryVisit = domain.AnnouncementNotifyModePopupEveryVisit
 )
 
 const (

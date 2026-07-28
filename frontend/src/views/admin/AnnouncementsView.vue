@@ -80,12 +80,12 @@
             <span
               :class="[
                 'badge',
-                row.notify_mode === 'popup'
+                row.notify_mode !== 'silent'
                   ? 'badge-warning'
                   : 'badge-gray'
               ]"
             >
-              {{ row.notify_mode === 'popup' ? t('admin.announcements.notifyModeLabels.popup') : t('admin.announcements.notifyModeLabels.silent') }}
+              {{ t(`admin.announcements.notifyModeLabels.${row.notify_mode}`) }}
             </span>
           </template>
 
@@ -304,7 +304,8 @@ const statusOptions = computed(() => [
 
 const notifyModeOptions = computed(() => [
   { value: 'silent', label: t('admin.announcements.notifyModeLabels.silent') },
-  { value: 'popup', label: t('admin.announcements.notifyModeLabels.popup') }
+  { value: 'popup', label: t('admin.announcements.notifyModeLabels.popup') },
+  { value: 'popup_every_visit', label: t('admin.announcements.notifyModeLabels.popup_every_visit') }
 ])
 
 const columns = computed<Column[]>(() => [

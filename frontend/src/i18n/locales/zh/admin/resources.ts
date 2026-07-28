@@ -394,14 +394,15 @@ export default {
       },
       notifyModeLabels: {
         silent: '静默',
-        popup: '弹窗'
+        popup: '未读时弹窗',
+        popup_every_visit: '每次访问弹窗'
       },
       form: {
         title: '标题',
         content: '内容（支持 Markdown）',
         status: '状态',
         notifyMode: '通知方式',
-        notifyModeHint: '弹窗模式会自动弹出通知给用户',
+        notifyModeHint: '可选择仅在未读时弹出，或在用户每次重新访问时弹出',
         startsAt: '开始时间',
         endsAt: '结束时间',
         startsAtHint: '留空表示立即生效',

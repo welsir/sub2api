@@ -14,8 +14,9 @@ const (
 )
 
 const (
-	AnnouncementNotifyModeSilent = "silent"
-	AnnouncementNotifyModePopup  = "popup"
+	AnnouncementNotifyModeSilent          = "silent"
+	AnnouncementNotifyModePopup           = "popup"
+	AnnouncementNotifyModePopupEveryVisit = "popup_every_visit"
 )
 
 const (

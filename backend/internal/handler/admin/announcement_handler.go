@@ -30,7 +30,7 @@ type CreateAnnouncementRequest struct {
 	Title      string                        `json:"title" binding:"required"`
 	Content    string                        `json:"content" binding:"required"`
 	Status     string                        `json:"status" binding:"omitempty,oneof=draft active archived"`
-	NotifyMode string                        `json:"notify_mode" binding:"omitempty,oneof=silent popup"`
+	NotifyMode string                        `json:"notify_mode" binding:"omitempty,oneof=silent popup popup_every_visit"`
 	Targeting  service.AnnouncementTargeting `json:"targeting"`
 	StartsAt   *int64                        `json:"starts_at"` // Unix seconds, 0/empty = immediate
 	EndsAt     *int64                        `json:"ends_at"`   // Unix seconds, 0/empty = never
@@ -40,7 +40,7 @@ type UpdateAnnouncementRequest struct {
 	Title      *string                        `json:"title"`
 	Content    *string                        `json:"content"`
 	Status     *string                        `json:"status" binding:"omitempty,oneof=draft active archived"`
-	NotifyMode *string                        `json:"notify_mode" binding:"omitempty,oneof=silent popup"`
+	NotifyMode *string                        `json:"notify_mode" binding:"omitempty,oneof=silent popup popup_every_visit"`
 	Targeting  *service.AnnouncementTargeting `json:"targeting"`
 	StartsAt   *int64                         `json:"starts_at"` // Unix seconds, 0 = clear
 	EndsAt     *int64                         `json:"ends_at"`   // Unix seconds, 0 = clear

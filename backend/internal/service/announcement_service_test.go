@@ -58,6 +58,21 @@ func TestAnnouncementServiceCreateRejectsEqualStartEndTimes(t *testing.T) {
 	require.ErrorIs(t, err, ErrAnnouncementInvalidSchedule)
 }
 
+func TestAnnouncementServiceCreateAcceptsPopupEveryVisitNotifyMode(t *testing.T) {
+	repo := &announcementRepoStub{}
+	svc := NewAnnouncementService(repo, nil, nil, nil)
+
+	created, err := svc.Create(context.Background(), &CreateAnnouncementInput{
+		Title:      "网站迁移公告",
+		Content:    "公告内容",
+		Status:     AnnouncementStatusActive,
+		NotifyMode: "popup_every_visit",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "popup_every_visit", created.NotifyMode)
+}
+
 func TestAnnouncementServiceUpdateRejectsEqualStartEndTimes(t *testing.T) {
 	repo := &announcementRepoStub{
 		item: &Announcement{

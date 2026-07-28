@@ -397,14 +397,15 @@ export default {
       },
       notifyModeLabels: {
         silent: 'Silent',
-        popup: 'Popup'
+        popup: 'Popup when unread',
+        popup_every_visit: 'Popup on every visit'
       },
       form: {
         title: 'Title',
         content: 'Content (Markdown supported)',
         status: 'Status',
         notifyMode: 'Notify Mode',
-        notifyModeHint: 'Popup mode will show a popup notification to users',
+        notifyModeHint: 'Show the popup when unread or whenever the user visits again',
         startsAt: 'Starts At',
         endsAt: 'Ends At',
         startsAtHint: 'Leave empty to start immediately',

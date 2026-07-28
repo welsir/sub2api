@@ -47,7 +47,10 @@ export const useAnnouncementStore = defineStore('announcements', () => {
 
   function enqueueNewPopups() {
     const newPopups = announcements.value.filter(
-      (a) => a.notify_mode === 'popup' && !a.read_at && !shownPopupIds.has(a.id)
+      (a) =>
+        (a.notify_mode === 'popup_every_visit' ||
+          (a.notify_mode === 'popup' && !a.read_at)) &&
+        !shownPopupIds.has(a.id)
     )
     if (newPopups.length === 0) return
 
