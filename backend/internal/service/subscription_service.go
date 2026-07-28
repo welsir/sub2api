@@ -1,3 +1,10 @@
+// [INPUT]: Subscription/group repositories, billing caches, Ent, and assignment requests.
+// [OUTPUT]: Subscription lifecycle operations with transaction-aware cache invalidation.
+// [POS]: Service-layer owner for assigning, renewing, revoking, and restoring subscriptions.
+//
+// [PROTOCOL]:
+// 1. Update this header when subscription mutation or cache invalidation semantics change.
+// 2. Keep outer-transaction cache invalidation owned by the caller that commits that transaction.
 package service
 
 import (
@@ -198,7 +205,7 @@ type AssignSubscriptionInput struct {
 
 // AssignSubscription 分配订阅给用户（不允许重复分配）
 func (s *SubscriptionService) AssignSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, error) {
-	sub, _, err := s.assignSubscriptionWithReuse(ctx, input)
+	sub, _, err := s.assignSubscriptionWithReuse(ctx, input, false)
 	if err != nil {
 		return nil, err
 	}
@@ -284,9 +291,8 @@ func (s *SubscriptionService) assignOrExtendSubscription(ctx context.Context, in
 }
 
 func (s *SubscriptionService) maybeInvalidateAssignmentCaches(userID, groupID int64, deferred bool) {
-	// Payment fulfillment owns an outer transaction and performs a synchronous
-	// invalidation after commit. Invalidating inside that transaction can reload
-	// the pre-commit subscription into cache.
+	// Some callers own an outer transaction and perform a synchronous invalidation
+	// after commit. Invalidating inside that transaction can reload pre-commit data.
 	if deferred {
 		return
 	}
@@ -467,7 +473,7 @@ func (s *SubscriptionService) BulkAssignSubscription(ctx context.Context, input 
 			ValidityDays: input.ValidityDays,
 			AssignedBy:   input.AssignedBy,
 			Notes:        input.Notes,
-		})
+		}, false)
 		if err != nil {
 			result.FailedCount++
 			result.Errors = append(result.Errors, fmt.Sprintf("user %d: %v", userID, err))
@@ -488,7 +494,11 @@ func (s *SubscriptionService) BulkAssignSubscription(ctx context.Context, input 
 	return result, nil
 }
 
-func (s *SubscriptionService) assignSubscriptionWithReuse(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, bool, error) {
+func (s *SubscriptionService) assignSubscriptionWithReuse(
+	ctx context.Context,
+	input *AssignSubscriptionInput,
+	deferCacheInvalidation bool,
+) (*UserSubscription, bool, error) {
 	// 检查分组是否存在且为订阅类型
 	group, err := s.groupRepo.GetByID(ctx, input.GroupID)
 	if err != nil {
@@ -521,16 +531,12 @@ func (s *SubscriptionService) assignSubscriptionWithReuse(ctx context.Context, i
 		return nil, false, err
 	}
 
-	// 失效订阅缓存
-	s.InvalidateSubCache(input.UserID, input.GroupID)
-	if s.billingCacheService != nil {
-		userID, groupID := input.UserID, input.GroupID
-		go func() {
-			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = s.billingCacheService.InvalidateSubscription(cacheCtx, userID, groupID)
-		}()
-	}
+	// 失效订阅缓存；外层事务由其 owner 在成功提交后同步执行。
+	s.maybeInvalidateAssignmentCaches(
+		input.UserID,
+		input.GroupID,
+		deferCacheInvalidation,
+	)
 
 	return sub, false, nil
 }

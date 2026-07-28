@@ -1,3 +1,10 @@
+// [INPUT]: Service repositories, configuration, caches, clients, and runtime dependencies.
+// [OUTPUT]: Wire provider constructors and the complete service provider set.
+// [POS]: Dependency-injection assembly boundary for the service layer.
+//
+// [PROTOCOL]:
+// 1. Update this header when provider constructors or service dependencies change.
+// 2. Keep runtime startup side effects explicit in named provider functions.
 package service
 
 import (
@@ -537,6 +544,24 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	return svc
 }
 
+func ProvideUserActivationService(
+	cfg *config.Config,
+	journeys UserActivationJourneyRepository,
+	evidence UserActivationEvidenceRepository,
+	subscriptions *SubscriptionService,
+	settingService *SettingService,
+	entClient *dbent.Client,
+) *UserActivationService {
+	return NewUserActivationService(
+		cfg.UserActivation,
+		journeys,
+		evidence,
+		subscriptions,
+		settingService,
+		entClient,
+	)
+}
+
 // ProvideBillingCacheService wires BillingCacheService with its RPM dependencies.
 func ProvideBillingCacheService(
 	cache BillingCache,
@@ -619,6 +644,7 @@ var ProviderSet = wire.NewSet(
 	NewAccountUsageService,
 	NewAccountTestService,
 	ProvideSettingService,
+	ProvideUserActivationService,
 	NewDataManagementService,
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,
