@@ -1824,11 +1824,19 @@ var (
 				Name:    "useractivationjourney_campaign_source_created_at",
 				Unique:  false,
 				Columns: []*schema.Column{UserActivationJourneysColumns[3], UserActivationJourneysColumns[1]},
+				Annotation: &entsql.IndexAnnotation{
+					DescColumns: map[string]bool{
+						UserActivationJourneysColumns[1].Name: true,
+					},
+				},
 			},
 			{
 				Name:    "useractivationjourney_starter_expires_at",
 				Unique:  false,
 				Columns: []*schema.Column{UserActivationJourneysColumns[6]},
+				Annotation: &entsql.IndexAnnotation{
+					Where: "starter_state = 'granted' AND starter_expires_at IS NOT NULL",
+				},
 			},
 			{
 				Name:    "useractivationjourney_recall_state",

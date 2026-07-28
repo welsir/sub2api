@@ -128,8 +128,10 @@ func (UserActivationJourney) Edges() []ent.Edge {
 func (UserActivationJourney) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("user_id").Unique(),
-		index.Fields("campaign_source", "created_at"),
-		index.Fields("starter_expires_at"),
+		index.Fields("campaign_source", "created_at").
+			Annotations(entsql.DescColumns("created_at")),
+		index.Fields("starter_expires_at").
+			Annotations(entsql.IndexWhere("starter_state = 'granted' AND starter_expires_at IS NOT NULL")),
 		index.Fields("recall_state"),
 	}
 }
