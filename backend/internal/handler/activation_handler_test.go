@@ -66,6 +66,18 @@ func activationRequest(
 	return recorder
 }
 
+func replaceDefaultIdempotencyCoordinator(
+	t *testing.T,
+	coordinator *service.IdempotencyCoordinator,
+) {
+	t.Helper()
+	previous := service.DefaultIdempotencyCoordinator()
+	service.SetDefaultIdempotencyCoordinator(coordinator)
+	t.Cleanup(func() {
+		service.SetDefaultIdempotencyCoordinator(previous)
+	})
+}
+
 func TestActivationHandlerPublicOfferEnabledUsesFixedContract(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := NewActivationHandler(&activationServiceStub{}, config.UserActivationConfig{
@@ -180,7 +192,7 @@ func TestActivationHandlerStatusRequiresAuthenticatedSubject(t *testing.T) {
 }
 
 func TestActivationHandlerRecallClaimRequiresIdempotencyKey(t *testing.T) {
-	service.SetDefaultIdempotencyCoordinator(nil)
+	replaceDefaultIdempotencyCoordinator(t, nil)
 	var called atomic.Bool
 	h := NewActivationHandler(&activationServiceStub{
 		claim: func(context.Context, int64) (*service.UserActivationStatus, error) {
@@ -208,8 +220,10 @@ func TestActivationHandlerRecallClaimReplaysSameKey(t *testing.T) {
 	repo := newUserMemoryIdempotencyRepoStub()
 	cfg := service.DefaultIdempotencyConfig()
 	cfg.ObserveOnly = false
-	service.SetDefaultIdempotencyCoordinator(service.NewIdempotencyCoordinator(repo, cfg))
-	t.Cleanup(func() { service.SetDefaultIdempotencyCoordinator(nil) })
+	replaceDefaultIdempotencyCoordinator(
+		t,
+		service.NewIdempotencyCoordinator(repo, cfg),
+	)
 
 	var claims atomic.Int32
 	h := NewActivationHandler(&activationServiceStub{
@@ -246,22 +260,19 @@ func TestActivationHandlerRecallClaimReplaysSameKey(t *testing.T) {
 	require.Equal(t, int32(1), claims.Load())
 }
 
-func TestActivationHandlerRecallClaimDifferentKeysCannotGrantTwice(t *testing.T) {
+func TestActivationHandlerRecallClaimDifferentKeysReachServiceIndependently(t *testing.T) {
 	repo := newUserMemoryIdempotencyRepoStub()
 	cfg := service.DefaultIdempotencyConfig()
 	cfg.ObserveOnly = false
-	service.SetDefaultIdempotencyCoordinator(service.NewIdempotencyCoordinator(repo, cfg))
-	t.Cleanup(func() { service.SetDefaultIdempotencyCoordinator(nil) })
+	replaceDefaultIdempotencyCoordinator(
+		t,
+		service.NewIdempotencyCoordinator(repo, cfg),
+	)
 
-	var mu sync.Mutex
-	grants := 0
+	var calls atomic.Int32
 	h := NewActivationHandler(&activationServiceStub{
 		claim: func(context.Context, int64) (*service.UserActivationStatus, error) {
-			mu.Lock()
-			defer mu.Unlock()
-			if grants == 0 {
-				grants++
-			}
+			calls.Add(1)
 			return &service.UserActivationStatus{
 				Enabled: true,
 				Recall:  service.ActivationRecallStatus{State: "claimed"},
@@ -296,11 +307,13 @@ func TestActivationHandlerRecallClaimDifferentKeysCannotGrantTwice(t *testing.T)
 		require.Equal(t, http.StatusOK, result.Code)
 		require.Contains(t, result.Body.String(), `"state":"claimed"`)
 	}
-	require.Equal(t, 1, grants)
+	// The service/PostgreSQL concurrency tests own the single-subscription guarantee.
+	require.Equal(t, int32(2), calls.Load())
 }
 
 func TestActivationHandlerRecallClaimPaidUserReturnsBusinessConflict(t *testing.T) {
-	var grants atomic.Int32
+	// Subscription non-creation is covered by the activation service tests.
+	replaceDefaultIdempotencyCoordinator(t, nil)
 	h := NewActivationHandler(&activationServiceStub{
 		claim: func(context.Context, int64) (*service.UserActivationStatus, error) {
 			return &service.UserActivationStatus{
@@ -327,5 +340,4 @@ func TestActivationHandlerRecallClaimPaidUserReturnsBusinessConflict(t *testing.
 	require.Equal(t, http.StatusConflict, recorder.Code)
 	require.Contains(t, recorder.Body.String(), `"reason":"USER_ACTIVATION_RECALL_UNAVAILABLE"`)
 	require.Contains(t, recorder.Body.String(), `"recall_state":"blocked_paid"`)
-	require.Zero(t, grants.Load())
 }
