@@ -125,6 +125,7 @@ export interface RegisterRequest {
   promo_code?: string
   invitation_code?: string
   aff_code?: string
+  campaign_source?: string
 }
 
 export interface AffiliateInvitee {

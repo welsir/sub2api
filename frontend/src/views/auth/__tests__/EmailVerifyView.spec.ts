@@ -305,6 +305,8 @@ describe('EmailVerifyView', () => {
         email: 'fresh@example.com',
         password: 'secret-123',
         aff_code: 'AFF123',
+        campaign_source: 'hvoy_partner',
+        redirect: '/activation',
       })
     )
     apiClientPostMock.mockResolvedValue({
@@ -451,6 +453,110 @@ describe('EmailVerifyView', () => {
       invitation_code: 'INVITE',
     })
     expect(apiClientPostMock).not.toHaveBeenCalled()
+    expect(pushMock).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it('submits a safe HVOY campaign and redirects to activation after verification', async () => {
+    sessionStorage.setItem(
+      'register_data',
+      JSON.stringify({
+        email: 'partner@example.com',
+        password: 'secret-456',
+        campaign_source: 'hvoy_partner',
+        redirect: '/activation',
+      })
+    )
+    registerMock.mockResolvedValue({})
+
+    const wrapper = mount(EmailVerifyView, {
+      global: {
+        stubs: {
+          AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+          TurnstileWidget: true,
+          transition: false,
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('#code').setValue('654321')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(registerMock).toHaveBeenCalledWith(expect.objectContaining({
+      email: 'partner@example.com',
+      campaign_source: 'hvoy_partner',
+    }))
+    expect(pushMock).toHaveBeenCalledWith('/activation')
+  })
+
+  it('drops an unknown campaign and its redirect before verified registration', async () => {
+    sessionStorage.setItem(
+      'register_data',
+      JSON.stringify({
+        email: 'unknown@example.com',
+        password: 'secret-456',
+        campaign_source: 'unknown_partner',
+        redirect: '/activation',
+      })
+    )
+    registerMock.mockResolvedValue({})
+
+    const wrapper = mount(EmailVerifyView, {
+      global: {
+        stubs: {
+          AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+          TurnstileWidget: true,
+          transition: false,
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('#code').setValue('654321')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(registerMock.mock.calls[0]?.[0]).not.toHaveProperty('campaign_source')
+    expect(pushMock).toHaveBeenCalledWith('/dashboard')
+  })
+
+  it.each([
+    'https://evil.example/phish',
+    '//evil.example/phish',
+  ])('does not leave the site for unsafe redirect %s', async (redirect) => {
+    sessionStorage.setItem(
+      'register_data',
+      JSON.stringify({
+        email: 'partner@example.com',
+        password: 'secret-456',
+        campaign_source: 'hvoy_partner',
+        redirect,
+      })
+    )
+    registerMock.mockResolvedValue({})
+
+    const wrapper = mount(EmailVerifyView, {
+      global: {
+        stubs: {
+          AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+          TurnstileWidget: true,
+          transition: false,
+        },
+      },
+    })
+
+    await flushPromises()
+    await wrapper.get('#code').setValue('654321')
+    await wrapper.get('form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(registerMock).toHaveBeenCalledWith(expect.objectContaining({
+      campaign_source: 'hvoy_partner',
+    }))
     expect(pushMock).toHaveBeenCalledWith('/dashboard')
   })
 })

@@ -55,6 +55,7 @@ type RegisterRequest struct {
 	PromoCode      string `json:"promo_code"`      // 注册优惠码
 	InvitationCode string `json:"invitation_code"` // 邀请码
 	AffCode        string `json:"aff_code"`        // 邀请返利码
+	CampaignSource string `json:"campaign_source"`
 }
 
 // SendVerifyCodeRequest 发送验证码请求
@@ -171,7 +172,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	_, user, err := h.authService.RegisterWithVerification(
+	_, user, err := h.authService.RegisterWithVerificationContext(
 		c.Request.Context(),
 		req.Email,
 		req.Password,
@@ -179,6 +180,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		req.PromoCode,
 		req.InvitationCode,
 		req.AffCode,
+		service.RegistrationContext{CampaignSource: req.CampaignSource},
 	)
 	if err != nil {
 		response.ErrorFrom(c, err)

@@ -173,6 +173,7 @@ import {
   loadAffiliateReferralCode,
   oauthAffiliatePayload
 } from '@/utils/oauthAffiliate'
+import { sanitizeRegistrationContext } from '@/utils/registrationContext'
 
 const { t, locale } = useI18n()
 
@@ -220,6 +221,8 @@ const pendingAuthToken = ref<string>('')
 const pendingAuthTokenField = ref<PendingAuthTokenField>('pending_auth_token')
 const pendingProvider = ref<string>('')
 const pendingRedirect = ref<string>('')
+const campaignSource = ref<string>('')
+const registrationRedirect = ref<string>('')
 const pendingAdoptionDecision = ref<{
   adoptDisplayName?: boolean
   adoptAvatar?: boolean
@@ -272,6 +275,12 @@ onMounted(async () => {
       pendingAuthTokenField.value = registerData.pending_auth_token_field || activePendingSession?.token_field || 'pending_auth_token'
       pendingProvider.value = registerData.pending_provider || activePendingSession?.provider || ''
       pendingRedirect.value = registerData.pending_redirect || activePendingSession?.redirect || ''
+      const registrationContext = sanitizeRegistrationContext(
+        registerData.campaign_source,
+        registerData.redirect
+      )
+      campaignSource.value = registrationContext.campaign_source || ''
+      registrationRedirect.value = registrationContext.redirect || ''
       pendingAdoptionDecision.value = registerData.pending_adoption_decision
         ? {
             adoptDisplayName: registerData.pending_adoption_decision.adopt_display_name === true,
@@ -542,7 +551,8 @@ async function handleVerify(): Promise<void> {
         turnstile_token: initialTurnstileToken.value || undefined,
         promo_code: promoCode.value || undefined,
         invitation_code: invitationCode.value || undefined,
-        ...(affCode.value ? { aff_code: affCode.value } : {})
+        ...(affCode.value ? { aff_code: affCode.value } : {}),
+        ...(campaignSource.value ? { campaign_source: campaignSource.value } : {})
       })
     }
 
@@ -554,7 +564,11 @@ async function handleVerify(): Promise<void> {
     appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
 
     // Redirect to dashboard
-    await router.push(pendingRedirect.value || '/dashboard')
+    await router.push(
+      isPendingOAuthFlow()
+        ? pendingRedirect.value || '/dashboard'
+        : registrationRedirect.value || '/dashboard'
+    )
   } catch (error: unknown) {
     errorMessage.value = buildAuthErrorMessage(error, {
       fallback: t('auth.verifyFailed')

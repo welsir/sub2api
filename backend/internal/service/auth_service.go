@@ -62,23 +62,28 @@ type JWTClaims struct {
 
 // AuthService 认证服务
 type AuthService struct {
-	entClient             *dbent.Client
-	userRepo              UserRepository
-	redeemRepo            RedeemCodeRepository
-	refreshTokenCache     RefreshTokenCache
-	cfg                   *config.Config
-	settingService        *SettingService
-	emailService          *EmailService
-	turnstileService      *TurnstileService
-	emailQueueService     *EmailQueueService
-	promoService          *PromoService
-	affiliateService      *AffiliateService
-	defaultSubAssigner    DefaultSubscriptionAssigner
-	userPlatformQuotaRepo UserPlatformQuotaRepository
+	entClient              *dbent.Client
+	userRepo               UserRepository
+	redeemRepo             RedeemCodeRepository
+	refreshTokenCache      RefreshTokenCache
+	cfg                    *config.Config
+	settingService         *SettingService
+	emailService           *EmailService
+	turnstileService       *TurnstileService
+	emailQueueService      *EmailQueueService
+	promoService           *PromoService
+	affiliateService       *AffiliateService
+	defaultSubAssigner     DefaultSubscriptionAssigner
+	userPlatformQuotaRepo  UserPlatformQuotaRepository
+	activationBootstrapper UserActivationBootstrapper
 }
 
 type DefaultSubscriptionAssigner interface {
 	AssignOrExtendSubscription(ctx context.Context, input *AssignSubscriptionInput) (*UserSubscription, bool, error)
+}
+
+type RegistrationContext struct {
+	CampaignSource string
 }
 
 type signupGrantPlan struct {
@@ -121,6 +126,13 @@ func NewAuthService(
 	}
 }
 
+func (s *AuthService) SetUserActivationBootstrapper(bootstrapper UserActivationBootstrapper) {
+	if s == nil {
+		return
+	}
+	s.activationBootstrapper = bootstrapper
+}
+
 func (s *AuthService) EntClient() *dbent.Client {
 	if s == nil {
 		return nil
@@ -135,6 +147,24 @@ func (s *AuthService) Register(ctx context.Context, email, password string) (str
 
 // RegisterWithVerification 用户注册（支持邮件验证、优惠码、邀请码和邀请返利码），返回token和用户。
 func (s *AuthService) RegisterWithVerification(ctx context.Context, email, password, verifyCode, promoCode, invitationCode, affiliateCode string) (string, *User, error) {
+	return s.RegisterWithVerificationContext(
+		ctx,
+		email,
+		password,
+		verifyCode,
+		promoCode,
+		invitationCode,
+		affiliateCode,
+		RegistrationContext{},
+	)
+}
+
+// RegisterWithVerificationContext 用户注册，并携带非授权性质的注册归因上下文。
+func (s *AuthService) RegisterWithVerificationContext(
+	ctx context.Context,
+	email, password, verifyCode, promoCode, invitationCode, affiliateCode string,
+	registration RegistrationContext,
+) (string, *User, error) {
 	// 检查是否开放注册（默认关闭：settingService 未配置时不允许注册）
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
@@ -169,6 +199,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	}
 
 	// 检查是否需要邮件验证
+	emailVerified := false
 	if s.settingService != nil && s.settingService.IsEmailVerifyEnabled(ctx) {
 		// 如果邮件验证已开启但邮件服务未配置，拒绝注册
 		// 这是一个配置错误，不应该允许绕过验证
@@ -183,6 +214,7 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		if err := s.emailService.VerifyCode(ctx, email, verifyCode); err != nil {
 			return "", nil, fmt.Errorf("verify code: %w", err)
 		}
+		emailVerified = true
 	}
 
 	// 检查邮箱是否已存在
@@ -228,6 +260,18 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		logger.LegacyPrintf("service.auth", "[Auth] Database error creating user: %v", err)
 		return "", nil, ErrServiceUnavailable
 	}
+	if emailVerified && s.activationBootstrapper != nil {
+		campaignSource := normalizeRegistrationCampaignSource(registration.CampaignSource)
+		if err := s.activationBootstrapper.BootstrapVerifiedRegistration(ctx, user, campaignSource); err != nil {
+			logger.LegacyPrintf(
+				"service.auth",
+				"[Auth] Failed to bootstrap user activation: user_id=%d source=%s error=%v",
+				user.ID,
+				campaignSource,
+				err,
+			)
+		}
+	}
 	s.postAuthUserBootstrap(ctx, user, "email", true)
 	s.assignSubscriptions(ctx, user.ID, grantPlan.Subscriptions, "auto assigned by signup defaults")
 	// snapshot user × platform quota（fail-open）
@@ -271,6 +315,13 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	}
 
 	return token, user, nil
+}
+
+func normalizeRegistrationCampaignSource(source string) string {
+	if source == "hvoy_partner" {
+		return source
+	}
+	return "direct"
 }
 
 // SendVerifyCodeResult 发送验证码返回结果

@@ -562,6 +562,41 @@ func ProvideUserActivationService(
 	)
 }
 
+func ProvideAuthService(
+	entClient *dbent.Client,
+	userRepo UserRepository,
+	redeemRepo RedeemCodeRepository,
+	refreshTokenCache RefreshTokenCache,
+	cfg *config.Config,
+	settingService *SettingService,
+	emailService *EmailService,
+	turnstileService *TurnstileService,
+	emailQueueService *EmailQueueService,
+	promoService *PromoService,
+	defaultSubAssigner DefaultSubscriptionAssigner,
+	affiliateService *AffiliateService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	activationBootstrapper UserActivationBootstrapper,
+) *AuthService {
+	svc := NewAuthService(
+		entClient,
+		userRepo,
+		redeemRepo,
+		refreshTokenCache,
+		cfg,
+		settingService,
+		emailService,
+		turnstileService,
+		emailQueueService,
+		promoService,
+		defaultSubAssigner,
+		affiliateService,
+		userPlatformQuotaRepo,
+	)
+	svc.SetUserActivationBootstrapper(activationBootstrapper)
+	return svc
+}
+
 // ProvideBillingCacheService wires BillingCacheService with its RPM dependencies.
 func ProvideBillingCacheService(
 	cache BillingCache,
@@ -597,7 +632,7 @@ func ProvideAPIKeyService(
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
-	NewAuthService,
+	ProvideAuthService,
 	NewUserService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
@@ -645,6 +680,7 @@ var ProviderSet = wire.NewSet(
 	NewAccountTestService,
 	ProvideSettingService,
 	ProvideUserActivationService,
+	wire.Bind(new(UserActivationBootstrapper), new(*UserActivationService)),
 	NewDataManagementService,
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,
