@@ -894,10 +894,7 @@ async function handleRegister(): Promise<void> {
       turnstile_token: turnstileEnabled.value ? turnstileToken.value : undefined,
       promo_code: formData.promo_code || undefined,
       invitation_code: formData.invitation_code || undefined,
-      ...(affCode ? { aff_code: affCode } : {}),
-      ...(registrationContext.campaign_source
-        ? { campaign_source: registrationContext.campaign_source }
-        : {})
+      ...(affCode ? { aff_code: affCode } : {})
     })
     clearAffiliateReferralCode()
 
@@ -905,7 +902,7 @@ async function handleRegister(): Promise<void> {
     appStore.showSuccess(t('auth.accountCreatedSuccess', { siteName: siteName.value }))
 
     // Redirect to dashboard
-    await router.push(registrationContext.redirect || '/dashboard')
+    await router.push('/dashboard')
   } catch (error: unknown) {
     // Reset Turnstile on error
     if (turnstileRef.value) {

@@ -166,18 +166,15 @@ describe('RegisterView activation source', () => {
     expect(stored).not.toHaveProperty('redirect')
   })
 
-  it('passes a safe HVOY context through direct registration and redirects internally', async () => {
+  it('drops HVOY activation context when email verification is disabled', async () => {
     routeQuery.source = 'hvoy_partner'
     routeQuery.redirect = '/activation'
     getPublicSettingsMock.mockResolvedValue(publicSettings(false))
 
     await mountAndSubmitRegister()
 
-    expect(registerMock).toHaveBeenCalledWith(expect.objectContaining({
-      email: 'new-user@example.com',
-      campaign_source: 'hvoy_partner',
-    }))
-    expect(pushMock).toHaveBeenCalledWith('/activation')
+    expect(registerMock.mock.calls[0]?.[0]).not.toHaveProperty('campaign_source')
+    expect(pushMock).toHaveBeenCalledWith('/dashboard')
   })
 
   it.each([
