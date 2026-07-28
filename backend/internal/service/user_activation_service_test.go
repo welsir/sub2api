@@ -557,6 +557,82 @@ func TestUserActivationRecallEntitlementRequiresClaimedAtByEvaluationTime(t *tes
 	require.NoError(t, sqlMock.ExpectationsWereMet())
 }
 
+func TestUserActivationRecallEntitlementFieldAndTimeBoundaries(t *testing.T) {
+	evaluationNow := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	expiresAfterEvaluation := evaluationNow.Add(time.Minute)
+	recallSubscriptionID := int64(964)
+	tests := []struct {
+		name       string
+		mutate     func(*UserActivationJourney)
+		wantActive bool
+	}{
+		{
+			name:       "claimed at evaluation with later expiry is active",
+			wantActive: true,
+		},
+		{
+			name: "expiry equal to evaluation is inactive",
+			mutate: func(journey *UserActivationJourney) {
+				journey.RecallExpiresAt = &evaluationNow
+			},
+		},
+		{
+			name: "missing subscription id is inactive",
+			mutate: func(journey *UserActivationJourney) {
+				journey.RecallSubscriptionID = nil
+			},
+		},
+		{
+			name: "missing claimed at is inactive",
+			mutate: func(journey *UserActivationJourney) {
+				journey.RecallClaimedAt = nil
+			},
+		},
+		{
+			name: "missing expires at is inactive",
+			mutate: func(journey *UserActivationJourney) {
+				journey.RecallExpiresAt = nil
+			},
+		},
+		{
+			name: "missing last evaluated at is inactive",
+			mutate: func(journey *UserActivationJourney) {
+				journey.LastEvaluatedAt = nil
+			},
+		},
+	}
+	svc := &UserActivationService{
+		cfg: config.UserActivationConfig{RecallGroupID: 202},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			journey := &UserActivationJourney{
+				RecallState:          "claimed",
+				RecallSubscriptionID: &recallSubscriptionID,
+				RecallClaimedAt:      &evaluationNow,
+				RecallExpiresAt:      &expiresAfterEvaluation,
+				LastEvaluatedAt:      &evaluationNow,
+			}
+			if test.mutate != nil {
+				test.mutate(journey)
+			}
+
+			status := svc.statusFromJourney(journey, &UserActivationEvidence{})
+
+			if !test.wantActive {
+				require.Nil(t, status.ActiveGroup)
+				return
+			}
+			require.NotNil(t, status.ActiveGroup)
+			require.Equal(t, int64(202), status.ActiveGroup.GroupID)
+			require.Equal(t, recallSubscriptionID, status.ActiveGroup.SubscriptionID)
+			require.Equal(t, evaluationNow, status.ActiveGroup.StartsAt)
+			require.Equal(t, expiresAfterEvaluation, status.ActiveGroup.ExpiresAt)
+		})
+	}
+}
+
 func TestUserActivationEvaluateRecallStateTable(t *testing.T) {
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
 	evidenceAt := now.Add(-time.Hour)
