@@ -370,6 +370,9 @@ func (s *effectiveSubRepoStub) Create(context.Context, *UserSubscription) error 
 func (s *effectiveSubRepoStub) GetByID(context.Context, int64) (*UserSubscription, error) {
 	return nil, ErrSubscriptionNotFound
 }
+func (s *effectiveSubRepoStub) GetByIDIncludeDeleted(context.Context, int64) (*UserSubscription, error) {
+	return nil, ErrSubscriptionNotFound
+}
 func (s *effectiveSubRepoStub) GetByUserIDAndGroupID(context.Context, int64, int64) (*UserSubscription, error) {
 	return nil, ErrSubscriptionNotFound
 }
@@ -378,6 +381,9 @@ func (s *effectiveSubRepoStub) GetActiveByUserIDAndGroupID(context.Context, int6
 }
 func (s *effectiveSubRepoStub) Update(context.Context, *UserSubscription) error { return nil }
 func (s *effectiveSubRepoStub) Delete(context.Context, int64) error             { return nil }
+func (s *effectiveSubRepoStub) Restore(context.Context, int64, string) (*UserSubscription, error) {
+	return nil, ErrSubscriptionNotFound
+}
 func (s *effectiveSubRepoStub) ListByUserID(context.Context, int64) ([]UserSubscription, error) {
 	return nil, nil
 }
@@ -400,6 +406,9 @@ func (s *effectiveSubRepoStub) List(context.Context, pagination.PaginationParams
 func (s *effectiveSubRepoStub) ExistsByUserIDAndGroupID(context.Context, int64, int64) (bool, error) {
 	return false, nil
 }
+func (s *effectiveSubRepoStub) ExistsActiveByUserIDAndGroupID(context.Context, int64, int64) (bool, error) {
+	return false, nil
+}
 func (s *effectiveSubRepoStub) ExtendExpiry(context.Context, int64, time.Time) error {
 	return nil
 }
@@ -412,13 +421,16 @@ func (s *effectiveSubRepoStub) UpdateNotes(context.Context, int64, string) error
 func (s *effectiveSubRepoStub) ActivateWindows(context.Context, int64, time.Time) error {
 	return nil
 }
-func (s *effectiveSubRepoStub) ResetDailyUsage(context.Context, int64, time.Time) error {
+func (s *effectiveSubRepoStub) ResetUsageWindows(context.Context, int64, bool, bool, bool, time.Time) error {
 	return nil
 }
-func (s *effectiveSubRepoStub) ResetWeeklyUsage(context.Context, int64, time.Time) error {
+func (s *effectiveSubRepoStub) ResetDailyUsage(context.Context, int64, *time.Time, time.Time) error {
 	return nil
 }
-func (s *effectiveSubRepoStub) ResetMonthlyUsage(context.Context, int64, time.Time) error {
+func (s *effectiveSubRepoStub) ResetWeeklyUsage(context.Context, int64, *time.Time, time.Time) error {
+	return nil
+}
+func (s *effectiveSubRepoStub) ResetMonthlyUsage(context.Context, int64, *time.Time, time.Time) error {
 	return nil
 }
 func (s *effectiveSubRepoStub) IncrementUsage(context.Context, int64, float64) error {
