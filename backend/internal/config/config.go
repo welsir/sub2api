@@ -2226,6 +2226,9 @@ func (c *Config) Validate() error {
 		if c.UserActivation.StarterGroupID == c.UserActivation.RecallGroupID {
 			return fmt.Errorf("user_activation starter and recall group ids must be different")
 		}
+		if c.UserActivation.RecallWindowDays != 7 {
+			return fmt.Errorf("user_activation.recall_window_days must be 7 when enabled")
+		}
 		if c.UserActivation.EligibleAfter.IsZero() {
 			return fmt.Errorf("user_activation.eligible_after is required when enabled")
 		}

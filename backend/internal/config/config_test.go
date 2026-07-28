@@ -27,7 +27,7 @@ func setValidUserActivationEnv(t *testing.T) {
 	t.Setenv("USER_ACTIVATION_STARTER_GROUP_ID", "101")
 	t.Setenv("USER_ACTIVATION_RECALL_GROUP_ID", "202")
 	t.Setenv("USER_ACTIVATION_RECALL_WINDOW_DAYS", "7")
-	t.Setenv("USER_ACTIVATION_WORKER_INTERVAL_SECONDS", "120")
+	t.Setenv("USER_ACTIVATION_WORKER_INTERVAL_SECONDS", "60")
 	t.Setenv("USER_ACTIVATION_SUPPORT_WECHAT", " welsir02 ")
 }
 
@@ -88,6 +88,12 @@ func TestLoadUserActivationRejectsInvalidEnabledConfig(t *testing.T) {
 			envValue:   "59",
 			errMessage: "user_activation.worker_interval_seconds must be at least 60 when enabled",
 		},
+		{
+			name:       "mutable recall window",
+			envKey:     "USER_ACTIVATION_RECALL_WINDOW_DAYS",
+			envValue:   "99",
+			errMessage: "user_activation.recall_window_days must be 7 when enabled",
+		},
 	}
 
 	for _, tt := range tests {
@@ -102,6 +108,15 @@ func TestLoadUserActivationRejectsInvalidEnabledConfig(t *testing.T) {
 	}
 }
 
+func TestLoadUserActivationRejectsInvalidEligibleAfter(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	setValidUserActivationEnv(t)
+	t.Setenv("USER_ACTIVATION_ELIGIBLE_AFTER", "not-rfc3339")
+
+	_, err := Load()
+	require.ErrorContains(t, err, "parse user_activation.eligible_after as RFC3339")
+}
+
 func TestLoadUserActivationEnabledConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	setValidUserActivationEnv(t)
@@ -113,7 +128,7 @@ func TestLoadUserActivationEnabledConfig(t *testing.T) {
 	require.EqualValues(t, 101, cfg.UserActivation.StarterGroupID)
 	require.EqualValues(t, 202, cfg.UserActivation.RecallGroupID)
 	require.Equal(t, 7, cfg.UserActivation.RecallWindowDays)
-	require.Equal(t, 2*time.Minute, cfg.UserActivation.WorkerInterval)
+	require.Equal(t, time.Minute, cfg.UserActivation.WorkerInterval)
 	require.Equal(t, "welsir02", cfg.UserActivation.SupportWeChat)
 }
 
