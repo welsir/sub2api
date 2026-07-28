@@ -49,6 +49,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/useractivationjourney"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
@@ -131,6 +132,8 @@ type Client struct {
 	UsageLog *UsageLogClient
 	// User is the client for interacting with the User builders.
 	User *UserClient
+	// UserActivationJourney is the client for interacting with the UserActivationJourney builders.
+	UserActivationJourney *UserActivationJourneyClient
 	// UserAllowedGroup is the client for interacting with the UserAllowedGroup builders.
 	UserAllowedGroup *UserAllowedGroupClient
 	// UserAttributeDefinition is the client for interacting with the UserAttributeDefinition builders.
@@ -186,6 +189,7 @@ func (c *Client) init() {
 	c.UsageCleanupTask = NewUsageCleanupTaskClient(c.config)
 	c.UsageLog = NewUsageLogClient(c.config)
 	c.User = NewUserClient(c.config)
+	c.UserActivationJourney = NewUserActivationJourneyClient(c.config)
 	c.UserAllowedGroup = NewUserAllowedGroupClient(c.config)
 	c.UserAttributeDefinition = NewUserAttributeDefinitionClient(c.config)
 	c.UserAttributeValue = NewUserAttributeValueClient(c.config)
@@ -317,6 +321,7 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
 		User:                          NewUserClient(cfg),
+		UserActivationJourney:         NewUserActivationJourneyClient(cfg),
 		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
 		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
 		UserAttributeValue:            NewUserAttributeValueClient(cfg),
@@ -375,6 +380,7 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 		UsageCleanupTask:              NewUsageCleanupTaskClient(cfg),
 		UsageLog:                      NewUsageLogClient(cfg),
 		User:                          NewUserClient(cfg),
+		UserActivationJourney:         NewUserActivationJourneyClient(cfg),
 		UserAllowedGroup:              NewUserAllowedGroupClient(cfg),
 		UserAttributeDefinition:       NewUserAttributeDefinitionClient(cfg),
 		UserAttributeValue:            NewUserAttributeValueClient(cfg),
@@ -418,8 +424,8 @@ func (c *Client) Use(hooks ...Hook) {
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
 		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.User, c.UserActivationJourney, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Use(hooks...)
 	}
@@ -438,8 +444,8 @@ func (c *Client) Intercept(interceptors ...Interceptor) {
 		c.PaymentOrder, c.PaymentProviderInstance, c.PendingAuthSession, c.PromoCode,
 		c.PromoCodeUsage, c.Proxy, c.RedeemCode, c.SecuritySecret, c.Setting,
 		c.SubscriptionPlan, c.TLSFingerprintProfile, c.UsageCleanupTask, c.UsageLog,
-		c.User, c.UserAllowedGroup, c.UserAttributeDefinition, c.UserAttributeValue,
-		c.UserPlatformQuota, c.UserSubscription,
+		c.User, c.UserActivationJourney, c.UserAllowedGroup, c.UserAttributeDefinition,
+		c.UserAttributeValue, c.UserPlatformQuota, c.UserSubscription,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -516,6 +522,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.UsageLog.mutate(ctx, m)
 	case *UserMutation:
 		return c.User.mutate(ctx, m)
+	case *UserActivationJourneyMutation:
+		return c.UserActivationJourney.mutate(ctx, m)
 	case *UserAllowedGroupMutation:
 		return c.UserAllowedGroup.mutate(ctx, m)
 	case *UserAttributeDefinitionMutation:
@@ -6026,6 +6034,22 @@ func (c *UserClient) QueryPlatformQuotas(_m *User) *UserPlatformQuotaQuery {
 	return query
 }
 
+// QueryActivationJourney queries the activation_journey edge of a User.
+func (c *UserClient) QueryActivationJourney(_m *User) *UserActivationJourneyQuery {
+	query := (&UserActivationJourneyClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(user.Table, user.FieldID, id),
+			sqlgraph.To(useractivationjourney.Table, useractivationjourney.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, user.ActivationJourneyTable, user.ActivationJourneyColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
 // QueryUserAllowedGroups queries the user_allowed_groups edge of a User.
 func (c *UserClient) QueryUserAllowedGroups(_m *User) *UserAllowedGroupQuery {
 	query := (&UserAllowedGroupClient{config: c.config}).Query()
@@ -6066,6 +6090,187 @@ func (c *UserClient) mutate(ctx context.Context, m *UserMutation) (Value, error)
 		return (&UserDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown User mutation op: %q", m.Op())
+	}
+}
+
+// UserActivationJourneyClient is a client for the UserActivationJourney schema.
+type UserActivationJourneyClient struct {
+	config
+}
+
+// NewUserActivationJourneyClient returns a client for the UserActivationJourney from the given config.
+func NewUserActivationJourneyClient(c config) *UserActivationJourneyClient {
+	return &UserActivationJourneyClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `useractivationjourney.Hooks(f(g(h())))`.
+func (c *UserActivationJourneyClient) Use(hooks ...Hook) {
+	c.hooks.UserActivationJourney = append(c.hooks.UserActivationJourney, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `useractivationjourney.Intercept(f(g(h())))`.
+func (c *UserActivationJourneyClient) Intercept(interceptors ...Interceptor) {
+	c.inters.UserActivationJourney = append(c.inters.UserActivationJourney, interceptors...)
+}
+
+// Create returns a builder for creating a UserActivationJourney entity.
+func (c *UserActivationJourneyClient) Create() *UserActivationJourneyCreate {
+	mutation := newUserActivationJourneyMutation(c.config, OpCreate)
+	return &UserActivationJourneyCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of UserActivationJourney entities.
+func (c *UserActivationJourneyClient) CreateBulk(builders ...*UserActivationJourneyCreate) *UserActivationJourneyCreateBulk {
+	return &UserActivationJourneyCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *UserActivationJourneyClient) MapCreateBulk(slice any, setFunc func(*UserActivationJourneyCreate, int)) *UserActivationJourneyCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &UserActivationJourneyCreateBulk{err: fmt.Errorf("calling to UserActivationJourneyClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*UserActivationJourneyCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &UserActivationJourneyCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for UserActivationJourney.
+func (c *UserActivationJourneyClient) Update() *UserActivationJourneyUpdate {
+	mutation := newUserActivationJourneyMutation(c.config, OpUpdate)
+	return &UserActivationJourneyUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *UserActivationJourneyClient) UpdateOne(_m *UserActivationJourney) *UserActivationJourneyUpdateOne {
+	mutation := newUserActivationJourneyMutation(c.config, OpUpdateOne, withUserActivationJourney(_m))
+	return &UserActivationJourneyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *UserActivationJourneyClient) UpdateOneID(id int64) *UserActivationJourneyUpdateOne {
+	mutation := newUserActivationJourneyMutation(c.config, OpUpdateOne, withUserActivationJourneyID(id))
+	return &UserActivationJourneyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for UserActivationJourney.
+func (c *UserActivationJourneyClient) Delete() *UserActivationJourneyDelete {
+	mutation := newUserActivationJourneyMutation(c.config, OpDelete)
+	return &UserActivationJourneyDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *UserActivationJourneyClient) DeleteOne(_m *UserActivationJourney) *UserActivationJourneyDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *UserActivationJourneyClient) DeleteOneID(id int64) *UserActivationJourneyDeleteOne {
+	builder := c.Delete().Where(useractivationjourney.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &UserActivationJourneyDeleteOne{builder}
+}
+
+// Query returns a query builder for UserActivationJourney.
+func (c *UserActivationJourneyClient) Query() *UserActivationJourneyQuery {
+	return &UserActivationJourneyQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeUserActivationJourney},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a UserActivationJourney entity by its id.
+func (c *UserActivationJourneyClient) Get(ctx context.Context, id int64) (*UserActivationJourney, error) {
+	return c.Query().Where(useractivationjourney.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *UserActivationJourneyClient) GetX(ctx context.Context, id int64) *UserActivationJourney {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// QueryUser queries the user edge of a UserActivationJourney.
+func (c *UserActivationJourneyClient) QueryUser(_m *UserActivationJourney) *UserQuery {
+	query := (&UserClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(useractivationjourney.Table, useractivationjourney.FieldID, id),
+			sqlgraph.To(user.Table, user.FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, true, useractivationjourney.UserTable, useractivationjourney.UserColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryStarterSubscription queries the starter_subscription edge of a UserActivationJourney.
+func (c *UserActivationJourneyClient) QueryStarterSubscription(_m *UserActivationJourney) *UserSubscriptionQuery {
+	query := (&UserSubscriptionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(useractivationjourney.Table, useractivationjourney.FieldID, id),
+			sqlgraph.To(usersubscription.Table, usersubscription.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, useractivationjourney.StarterSubscriptionTable, useractivationjourney.StarterSubscriptionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// QueryRecallSubscription queries the recall_subscription edge of a UserActivationJourney.
+func (c *UserActivationJourneyClient) QueryRecallSubscription(_m *UserActivationJourney) *UserSubscriptionQuery {
+	query := (&UserSubscriptionClient{config: c.config}).Query()
+	query.path = func(context.Context) (fromV *sql.Selector, _ error) {
+		id := _m.ID
+		step := sqlgraph.NewStep(
+			sqlgraph.From(useractivationjourney.Table, useractivationjourney.FieldID, id),
+			sqlgraph.To(usersubscription.Table, usersubscription.FieldID),
+			sqlgraph.Edge(sqlgraph.M2O, false, useractivationjourney.RecallSubscriptionTable, useractivationjourney.RecallSubscriptionColumn),
+		)
+		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
+		return fromV, nil
+	}
+	return query
+}
+
+// Hooks returns the client hooks.
+func (c *UserActivationJourneyClient) Hooks() []Hook {
+	return c.hooks.UserActivationJourney
+}
+
+// Interceptors returns the client interceptors.
+func (c *UserActivationJourneyClient) Interceptors() []Interceptor {
+	return c.inters.UserActivationJourney
+}
+
+func (c *UserActivationJourneyClient) mutate(ctx context.Context, m *UserActivationJourneyMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&UserActivationJourneyCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&UserActivationJourneyUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&UserActivationJourneyUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&UserActivationJourneyDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown UserActivationJourney mutation op: %q", m.Op())
 	}
 }
 
@@ -6861,9 +7066,9 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Hook
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserActivationJourney,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Hook
 	}
 	inters struct {
 		APIKey, Account, AccountGroup, Announcement, AnnouncementRead, ApiKeyGroup,
@@ -6873,9 +7078,9 @@ type (
 		Group, IdempotencyRecord, IdentityAdoptionDecision, PaymentAuditLog,
 		PaymentOrder, PaymentProviderInstance, PendingAuthSession, PromoCode,
 		PromoCodeUsage, Proxy, RedeemCode, SecuritySecret, Setting, SubscriptionPlan,
-		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserAllowedGroup,
-		UserAttributeDefinition, UserAttributeValue, UserPlatformQuota,
-		UserSubscription []ent.Interceptor
+		TLSFingerprintProfile, UsageCleanupTask, UsageLog, User, UserActivationJourney,
+		UserAllowedGroup, UserAttributeDefinition, UserAttributeValue,
+		UserPlatformQuota, UserSubscription []ent.Interceptor
 	}
 )
 

@@ -47,6 +47,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/useractivationjourney"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
@@ -98,6 +99,7 @@ const (
 	TypeUsageCleanupTask              = "UsageCleanupTask"
 	TypeUsageLog                      = "UsageLog"
 	TypeUser                          = "User"
+	TypeUserActivationJourney         = "UserActivationJourney"
 	TypeUserAllowedGroup              = "UserAllowedGroup"
 	TypeUserAttributeDefinition       = "UserAttributeDefinition"
 	TypeUserAttributeValue            = "UserAttributeValue"
@@ -46462,6 +46464,8 @@ type UserMutation struct {
 	platform_quotas               map[int64]struct{}
 	removedplatform_quotas        map[int64]struct{}
 	clearedplatform_quotas        bool
+	activation_journey            *int64
+	clearedactivation_journey     bool
 	done                          bool
 	oldValue                      func(context.Context) (*User, error)
 	predicates                    []predicate.User
@@ -48330,6 +48334,45 @@ func (m *UserMutation) ResetPlatformQuotas() {
 	m.removedplatform_quotas = nil
 }
 
+// SetActivationJourneyID sets the "activation_journey" edge to the UserActivationJourney entity by id.
+func (m *UserMutation) SetActivationJourneyID(id int64) {
+	m.activation_journey = &id
+}
+
+// ClearActivationJourney clears the "activation_journey" edge to the UserActivationJourney entity.
+func (m *UserMutation) ClearActivationJourney() {
+	m.clearedactivation_journey = true
+}
+
+// ActivationJourneyCleared reports if the "activation_journey" edge to the UserActivationJourney entity was cleared.
+func (m *UserMutation) ActivationJourneyCleared() bool {
+	return m.clearedactivation_journey
+}
+
+// ActivationJourneyID returns the "activation_journey" edge ID in the mutation.
+func (m *UserMutation) ActivationJourneyID() (id int64, exists bool) {
+	if m.activation_journey != nil {
+		return *m.activation_journey, true
+	}
+	return
+}
+
+// ActivationJourneyIDs returns the "activation_journey" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// ActivationJourneyID instead. It exists only for internal usage by the builders.
+func (m *UserMutation) ActivationJourneyIDs() (ids []int64) {
+	if id := m.activation_journey; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetActivationJourney resets all changes to the "activation_journey" edge.
+func (m *UserMutation) ResetActivationJourney() {
+	m.activation_journey = nil
+	m.clearedactivation_journey = false
+}
+
 // Where appends a list predicates to the UserMutation builder.
 func (m *UserMutation) Where(ps ...predicate.User) {
 	m.predicates = append(m.predicates, ps...)
@@ -48968,7 +49011,7 @@ func (m *UserMutation) ResetField(name string) error {
 
 // AddedEdges returns all edge names that were set/added in this mutation.
 func (m *UserMutation) AddedEdges() []string {
-	edges := make([]string, 0, 13)
+	edges := make([]string, 0, 14)
 	if m.api_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -49007,6 +49050,9 @@ func (m *UserMutation) AddedEdges() []string {
 	}
 	if m.platform_quotas != nil {
 		edges = append(edges, user.EdgePlatformQuotas)
+	}
+	if m.activation_journey != nil {
+		edges = append(edges, user.EdgeActivationJourney)
 	}
 	return edges
 }
@@ -49093,13 +49139,17 @@ func (m *UserMutation) AddedIDs(name string) []ent.Value {
 			ids = append(ids, id)
 		}
 		return ids
+	case user.EdgeActivationJourney:
+		if id := m.activation_journey; id != nil {
+			return []ent.Value{*id}
+		}
 	}
 	return nil
 }
 
 // RemovedEdges returns all edge names that were removed in this mutation.
 func (m *UserMutation) RemovedEdges() []string {
-	edges := make([]string, 0, 13)
+	edges := make([]string, 0, 14)
 	if m.removedapi_keys != nil {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -49230,7 +49280,7 @@ func (m *UserMutation) RemovedIDs(name string) []ent.Value {
 
 // ClearedEdges returns all edge names that were cleared in this mutation.
 func (m *UserMutation) ClearedEdges() []string {
-	edges := make([]string, 0, 13)
+	edges := make([]string, 0, 14)
 	if m.clearedapi_keys {
 		edges = append(edges, user.EdgeAPIKeys)
 	}
@@ -49270,6 +49320,9 @@ func (m *UserMutation) ClearedEdges() []string {
 	if m.clearedplatform_quotas {
 		edges = append(edges, user.EdgePlatformQuotas)
 	}
+	if m.clearedactivation_journey {
+		edges = append(edges, user.EdgeActivationJourney)
+	}
 	return edges
 }
 
@@ -49303,6 +49356,8 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 		return m.clearedpending_auth_sessions
 	case user.EdgePlatformQuotas:
 		return m.clearedplatform_quotas
+	case user.EdgeActivationJourney:
+		return m.clearedactivation_journey
 	}
 	return false
 }
@@ -49311,6 +49366,9 @@ func (m *UserMutation) EdgeCleared(name string) bool {
 // if that edge is not defined in the schema.
 func (m *UserMutation) ClearEdge(name string) error {
 	switch name {
+	case user.EdgeActivationJourney:
+		m.ClearActivationJourney()
+		return nil
 	}
 	return fmt.Errorf("unknown User unique edge %s", name)
 }
@@ -49358,8 +49416,1781 @@ func (m *UserMutation) ResetEdge(name string) error {
 	case user.EdgePlatformQuotas:
 		m.ResetPlatformQuotas()
 		return nil
+	case user.EdgeActivationJourney:
+		m.ResetActivationJourney()
+		return nil
 	}
 	return fmt.Errorf("unknown User edge %s", name)
+}
+
+// UserActivationJourneyMutation represents an operation that mutates the UserActivationJourney nodes in the graph.
+type UserActivationJourneyMutation struct {
+	config
+	op                             Op
+	typ                            string
+	id                             *int64
+	created_at                     *time.Time
+	updated_at                     *time.Time
+	campaign_source                *string
+	starter_state                  *useractivationjourney.StarterState
+	starter_granted_at             *time.Time
+	starter_expires_at             *time.Time
+	recall_state                   *useractivationjourney.RecallState
+	recall_claimed_at              *time.Time
+	recall_expires_at              *time.Time
+	first_success_at               *time.Time
+	no_attempt_email_sent_at       *time.Time
+	attempted_email_sent_at        *time.Time
+	paid_support_email_sent_at     *time.Time
+	recall_available_email_sent_at *time.Time
+	recall_expired_email_sent_at   *time.Time
+	last_email_sent_at             *time.Time
+	last_evaluated_at              *time.Time
+	clearedFields                  map[string]struct{}
+	user                           *int64
+	cleareduser                    bool
+	starter_subscription           *int64
+	clearedstarter_subscription    bool
+	recall_subscription            *int64
+	clearedrecall_subscription     bool
+	done                           bool
+	oldValue                       func(context.Context) (*UserActivationJourney, error)
+	predicates                     []predicate.UserActivationJourney
+}
+
+var _ ent.Mutation = (*UserActivationJourneyMutation)(nil)
+
+// useractivationjourneyOption allows management of the mutation configuration using functional options.
+type useractivationjourneyOption func(*UserActivationJourneyMutation)
+
+// newUserActivationJourneyMutation creates new mutation for the UserActivationJourney entity.
+func newUserActivationJourneyMutation(c config, op Op, opts ...useractivationjourneyOption) *UserActivationJourneyMutation {
+	m := &UserActivationJourneyMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeUserActivationJourney,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withUserActivationJourneyID sets the ID field of the mutation.
+func withUserActivationJourneyID(id int64) useractivationjourneyOption {
+	return func(m *UserActivationJourneyMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *UserActivationJourney
+		)
+		m.oldValue = func(ctx context.Context) (*UserActivationJourney, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().UserActivationJourney.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withUserActivationJourney sets the old UserActivationJourney of the mutation.
+func withUserActivationJourney(node *UserActivationJourney) useractivationjourneyOption {
+	return func(m *UserActivationJourneyMutation) {
+		m.oldValue = func(context.Context) (*UserActivationJourney, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m UserActivationJourneyMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m UserActivationJourneyMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *UserActivationJourneyMutation) ID() (id int64, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *UserActivationJourneyMutation) IDs(ctx context.Context) ([]int64, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []int64{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().UserActivationJourney.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *UserActivationJourneyMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *UserActivationJourneyMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *UserActivationJourneyMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *UserActivationJourneyMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *UserActivationJourneyMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *UserActivationJourneyMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetUserID sets the "user_id" field.
+func (m *UserActivationJourneyMutation) SetUserID(i int64) {
+	m.user = &i
+}
+
+// UserID returns the value of the "user_id" field in the mutation.
+func (m *UserActivationJourneyMutation) UserID() (r int64, exists bool) {
+	v := m.user
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUserID returns the old "user_id" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldUserID(ctx context.Context) (v int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUserID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUserID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUserID: %w", err)
+	}
+	return oldValue.UserID, nil
+}
+
+// ResetUserID resets all changes to the "user_id" field.
+func (m *UserActivationJourneyMutation) ResetUserID() {
+	m.user = nil
+}
+
+// SetCampaignSource sets the "campaign_source" field.
+func (m *UserActivationJourneyMutation) SetCampaignSource(s string) {
+	m.campaign_source = &s
+}
+
+// CampaignSource returns the value of the "campaign_source" field in the mutation.
+func (m *UserActivationJourneyMutation) CampaignSource() (r string, exists bool) {
+	v := m.campaign_source
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCampaignSource returns the old "campaign_source" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldCampaignSource(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCampaignSource is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCampaignSource requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCampaignSource: %w", err)
+	}
+	return oldValue.CampaignSource, nil
+}
+
+// ResetCampaignSource resets all changes to the "campaign_source" field.
+func (m *UserActivationJourneyMutation) ResetCampaignSource() {
+	m.campaign_source = nil
+}
+
+// SetStarterState sets the "starter_state" field.
+func (m *UserActivationJourneyMutation) SetStarterState(us useractivationjourney.StarterState) {
+	m.starter_state = &us
+}
+
+// StarterState returns the value of the "starter_state" field in the mutation.
+func (m *UserActivationJourneyMutation) StarterState() (r useractivationjourney.StarterState, exists bool) {
+	v := m.starter_state
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStarterState returns the old "starter_state" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldStarterState(ctx context.Context) (v useractivationjourney.StarterState, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStarterState is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStarterState requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStarterState: %w", err)
+	}
+	return oldValue.StarterState, nil
+}
+
+// ResetStarterState resets all changes to the "starter_state" field.
+func (m *UserActivationJourneyMutation) ResetStarterState() {
+	m.starter_state = nil
+}
+
+// SetStarterSubscriptionID sets the "starter_subscription_id" field.
+func (m *UserActivationJourneyMutation) SetStarterSubscriptionID(i int64) {
+	m.starter_subscription = &i
+}
+
+// StarterSubscriptionID returns the value of the "starter_subscription_id" field in the mutation.
+func (m *UserActivationJourneyMutation) StarterSubscriptionID() (r int64, exists bool) {
+	v := m.starter_subscription
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStarterSubscriptionID returns the old "starter_subscription_id" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldStarterSubscriptionID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStarterSubscriptionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStarterSubscriptionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStarterSubscriptionID: %w", err)
+	}
+	return oldValue.StarterSubscriptionID, nil
+}
+
+// ClearStarterSubscriptionID clears the value of the "starter_subscription_id" field.
+func (m *UserActivationJourneyMutation) ClearStarterSubscriptionID() {
+	m.starter_subscription = nil
+	m.clearedFields[useractivationjourney.FieldStarterSubscriptionID] = struct{}{}
+}
+
+// StarterSubscriptionIDCleared returns if the "starter_subscription_id" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) StarterSubscriptionIDCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldStarterSubscriptionID]
+	return ok
+}
+
+// ResetStarterSubscriptionID resets all changes to the "starter_subscription_id" field.
+func (m *UserActivationJourneyMutation) ResetStarterSubscriptionID() {
+	m.starter_subscription = nil
+	delete(m.clearedFields, useractivationjourney.FieldStarterSubscriptionID)
+}
+
+// SetStarterGrantedAt sets the "starter_granted_at" field.
+func (m *UserActivationJourneyMutation) SetStarterGrantedAt(t time.Time) {
+	m.starter_granted_at = &t
+}
+
+// StarterGrantedAt returns the value of the "starter_granted_at" field in the mutation.
+func (m *UserActivationJourneyMutation) StarterGrantedAt() (r time.Time, exists bool) {
+	v := m.starter_granted_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStarterGrantedAt returns the old "starter_granted_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldStarterGrantedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStarterGrantedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStarterGrantedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStarterGrantedAt: %w", err)
+	}
+	return oldValue.StarterGrantedAt, nil
+}
+
+// ClearStarterGrantedAt clears the value of the "starter_granted_at" field.
+func (m *UserActivationJourneyMutation) ClearStarterGrantedAt() {
+	m.starter_granted_at = nil
+	m.clearedFields[useractivationjourney.FieldStarterGrantedAt] = struct{}{}
+}
+
+// StarterGrantedAtCleared returns if the "starter_granted_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) StarterGrantedAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldStarterGrantedAt]
+	return ok
+}
+
+// ResetStarterGrantedAt resets all changes to the "starter_granted_at" field.
+func (m *UserActivationJourneyMutation) ResetStarterGrantedAt() {
+	m.starter_granted_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldStarterGrantedAt)
+}
+
+// SetStarterExpiresAt sets the "starter_expires_at" field.
+func (m *UserActivationJourneyMutation) SetStarterExpiresAt(t time.Time) {
+	m.starter_expires_at = &t
+}
+
+// StarterExpiresAt returns the value of the "starter_expires_at" field in the mutation.
+func (m *UserActivationJourneyMutation) StarterExpiresAt() (r time.Time, exists bool) {
+	v := m.starter_expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldStarterExpiresAt returns the old "starter_expires_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldStarterExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldStarterExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldStarterExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldStarterExpiresAt: %w", err)
+	}
+	return oldValue.StarterExpiresAt, nil
+}
+
+// ClearStarterExpiresAt clears the value of the "starter_expires_at" field.
+func (m *UserActivationJourneyMutation) ClearStarterExpiresAt() {
+	m.starter_expires_at = nil
+	m.clearedFields[useractivationjourney.FieldStarterExpiresAt] = struct{}{}
+}
+
+// StarterExpiresAtCleared returns if the "starter_expires_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) StarterExpiresAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldStarterExpiresAt]
+	return ok
+}
+
+// ResetStarterExpiresAt resets all changes to the "starter_expires_at" field.
+func (m *UserActivationJourneyMutation) ResetStarterExpiresAt() {
+	m.starter_expires_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldStarterExpiresAt)
+}
+
+// SetRecallState sets the "recall_state" field.
+func (m *UserActivationJourneyMutation) SetRecallState(us useractivationjourney.RecallState) {
+	m.recall_state = &us
+}
+
+// RecallState returns the value of the "recall_state" field in the mutation.
+func (m *UserActivationJourneyMutation) RecallState() (r useractivationjourney.RecallState, exists bool) {
+	v := m.recall_state
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRecallState returns the old "recall_state" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldRecallState(ctx context.Context) (v useractivationjourney.RecallState, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRecallState is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRecallState requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRecallState: %w", err)
+	}
+	return oldValue.RecallState, nil
+}
+
+// ResetRecallState resets all changes to the "recall_state" field.
+func (m *UserActivationJourneyMutation) ResetRecallState() {
+	m.recall_state = nil
+}
+
+// SetRecallSubscriptionID sets the "recall_subscription_id" field.
+func (m *UserActivationJourneyMutation) SetRecallSubscriptionID(i int64) {
+	m.recall_subscription = &i
+}
+
+// RecallSubscriptionID returns the value of the "recall_subscription_id" field in the mutation.
+func (m *UserActivationJourneyMutation) RecallSubscriptionID() (r int64, exists bool) {
+	v := m.recall_subscription
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRecallSubscriptionID returns the old "recall_subscription_id" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldRecallSubscriptionID(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRecallSubscriptionID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRecallSubscriptionID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRecallSubscriptionID: %w", err)
+	}
+	return oldValue.RecallSubscriptionID, nil
+}
+
+// ClearRecallSubscriptionID clears the value of the "recall_subscription_id" field.
+func (m *UserActivationJourneyMutation) ClearRecallSubscriptionID() {
+	m.recall_subscription = nil
+	m.clearedFields[useractivationjourney.FieldRecallSubscriptionID] = struct{}{}
+}
+
+// RecallSubscriptionIDCleared returns if the "recall_subscription_id" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) RecallSubscriptionIDCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldRecallSubscriptionID]
+	return ok
+}
+
+// ResetRecallSubscriptionID resets all changes to the "recall_subscription_id" field.
+func (m *UserActivationJourneyMutation) ResetRecallSubscriptionID() {
+	m.recall_subscription = nil
+	delete(m.clearedFields, useractivationjourney.FieldRecallSubscriptionID)
+}
+
+// SetRecallClaimedAt sets the "recall_claimed_at" field.
+func (m *UserActivationJourneyMutation) SetRecallClaimedAt(t time.Time) {
+	m.recall_claimed_at = &t
+}
+
+// RecallClaimedAt returns the value of the "recall_claimed_at" field in the mutation.
+func (m *UserActivationJourneyMutation) RecallClaimedAt() (r time.Time, exists bool) {
+	v := m.recall_claimed_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRecallClaimedAt returns the old "recall_claimed_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldRecallClaimedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRecallClaimedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRecallClaimedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRecallClaimedAt: %w", err)
+	}
+	return oldValue.RecallClaimedAt, nil
+}
+
+// ClearRecallClaimedAt clears the value of the "recall_claimed_at" field.
+func (m *UserActivationJourneyMutation) ClearRecallClaimedAt() {
+	m.recall_claimed_at = nil
+	m.clearedFields[useractivationjourney.FieldRecallClaimedAt] = struct{}{}
+}
+
+// RecallClaimedAtCleared returns if the "recall_claimed_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) RecallClaimedAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldRecallClaimedAt]
+	return ok
+}
+
+// ResetRecallClaimedAt resets all changes to the "recall_claimed_at" field.
+func (m *UserActivationJourneyMutation) ResetRecallClaimedAt() {
+	m.recall_claimed_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldRecallClaimedAt)
+}
+
+// SetRecallExpiresAt sets the "recall_expires_at" field.
+func (m *UserActivationJourneyMutation) SetRecallExpiresAt(t time.Time) {
+	m.recall_expires_at = &t
+}
+
+// RecallExpiresAt returns the value of the "recall_expires_at" field in the mutation.
+func (m *UserActivationJourneyMutation) RecallExpiresAt() (r time.Time, exists bool) {
+	v := m.recall_expires_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRecallExpiresAt returns the old "recall_expires_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldRecallExpiresAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRecallExpiresAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRecallExpiresAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRecallExpiresAt: %w", err)
+	}
+	return oldValue.RecallExpiresAt, nil
+}
+
+// ClearRecallExpiresAt clears the value of the "recall_expires_at" field.
+func (m *UserActivationJourneyMutation) ClearRecallExpiresAt() {
+	m.recall_expires_at = nil
+	m.clearedFields[useractivationjourney.FieldRecallExpiresAt] = struct{}{}
+}
+
+// RecallExpiresAtCleared returns if the "recall_expires_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) RecallExpiresAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldRecallExpiresAt]
+	return ok
+}
+
+// ResetRecallExpiresAt resets all changes to the "recall_expires_at" field.
+func (m *UserActivationJourneyMutation) ResetRecallExpiresAt() {
+	m.recall_expires_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldRecallExpiresAt)
+}
+
+// SetFirstSuccessAt sets the "first_success_at" field.
+func (m *UserActivationJourneyMutation) SetFirstSuccessAt(t time.Time) {
+	m.first_success_at = &t
+}
+
+// FirstSuccessAt returns the value of the "first_success_at" field in the mutation.
+func (m *UserActivationJourneyMutation) FirstSuccessAt() (r time.Time, exists bool) {
+	v := m.first_success_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldFirstSuccessAt returns the old "first_success_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldFirstSuccessAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldFirstSuccessAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldFirstSuccessAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldFirstSuccessAt: %w", err)
+	}
+	return oldValue.FirstSuccessAt, nil
+}
+
+// ClearFirstSuccessAt clears the value of the "first_success_at" field.
+func (m *UserActivationJourneyMutation) ClearFirstSuccessAt() {
+	m.first_success_at = nil
+	m.clearedFields[useractivationjourney.FieldFirstSuccessAt] = struct{}{}
+}
+
+// FirstSuccessAtCleared returns if the "first_success_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) FirstSuccessAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldFirstSuccessAt]
+	return ok
+}
+
+// ResetFirstSuccessAt resets all changes to the "first_success_at" field.
+func (m *UserActivationJourneyMutation) ResetFirstSuccessAt() {
+	m.first_success_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldFirstSuccessAt)
+}
+
+// SetNoAttemptEmailSentAt sets the "no_attempt_email_sent_at" field.
+func (m *UserActivationJourneyMutation) SetNoAttemptEmailSentAt(t time.Time) {
+	m.no_attempt_email_sent_at = &t
+}
+
+// NoAttemptEmailSentAt returns the value of the "no_attempt_email_sent_at" field in the mutation.
+func (m *UserActivationJourneyMutation) NoAttemptEmailSentAt() (r time.Time, exists bool) {
+	v := m.no_attempt_email_sent_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldNoAttemptEmailSentAt returns the old "no_attempt_email_sent_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldNoAttemptEmailSentAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldNoAttemptEmailSentAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldNoAttemptEmailSentAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldNoAttemptEmailSentAt: %w", err)
+	}
+	return oldValue.NoAttemptEmailSentAt, nil
+}
+
+// ClearNoAttemptEmailSentAt clears the value of the "no_attempt_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ClearNoAttemptEmailSentAt() {
+	m.no_attempt_email_sent_at = nil
+	m.clearedFields[useractivationjourney.FieldNoAttemptEmailSentAt] = struct{}{}
+}
+
+// NoAttemptEmailSentAtCleared returns if the "no_attempt_email_sent_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) NoAttemptEmailSentAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldNoAttemptEmailSentAt]
+	return ok
+}
+
+// ResetNoAttemptEmailSentAt resets all changes to the "no_attempt_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ResetNoAttemptEmailSentAt() {
+	m.no_attempt_email_sent_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldNoAttemptEmailSentAt)
+}
+
+// SetAttemptedEmailSentAt sets the "attempted_email_sent_at" field.
+func (m *UserActivationJourneyMutation) SetAttemptedEmailSentAt(t time.Time) {
+	m.attempted_email_sent_at = &t
+}
+
+// AttemptedEmailSentAt returns the value of the "attempted_email_sent_at" field in the mutation.
+func (m *UserActivationJourneyMutation) AttemptedEmailSentAt() (r time.Time, exists bool) {
+	v := m.attempted_email_sent_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAttemptedEmailSentAt returns the old "attempted_email_sent_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldAttemptedEmailSentAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAttemptedEmailSentAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAttemptedEmailSentAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAttemptedEmailSentAt: %w", err)
+	}
+	return oldValue.AttemptedEmailSentAt, nil
+}
+
+// ClearAttemptedEmailSentAt clears the value of the "attempted_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ClearAttemptedEmailSentAt() {
+	m.attempted_email_sent_at = nil
+	m.clearedFields[useractivationjourney.FieldAttemptedEmailSentAt] = struct{}{}
+}
+
+// AttemptedEmailSentAtCleared returns if the "attempted_email_sent_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) AttemptedEmailSentAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldAttemptedEmailSentAt]
+	return ok
+}
+
+// ResetAttemptedEmailSentAt resets all changes to the "attempted_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ResetAttemptedEmailSentAt() {
+	m.attempted_email_sent_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldAttemptedEmailSentAt)
+}
+
+// SetPaidSupportEmailSentAt sets the "paid_support_email_sent_at" field.
+func (m *UserActivationJourneyMutation) SetPaidSupportEmailSentAt(t time.Time) {
+	m.paid_support_email_sent_at = &t
+}
+
+// PaidSupportEmailSentAt returns the value of the "paid_support_email_sent_at" field in the mutation.
+func (m *UserActivationJourneyMutation) PaidSupportEmailSentAt() (r time.Time, exists bool) {
+	v := m.paid_support_email_sent_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldPaidSupportEmailSentAt returns the old "paid_support_email_sent_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldPaidSupportEmailSentAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldPaidSupportEmailSentAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldPaidSupportEmailSentAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldPaidSupportEmailSentAt: %w", err)
+	}
+	return oldValue.PaidSupportEmailSentAt, nil
+}
+
+// ClearPaidSupportEmailSentAt clears the value of the "paid_support_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ClearPaidSupportEmailSentAt() {
+	m.paid_support_email_sent_at = nil
+	m.clearedFields[useractivationjourney.FieldPaidSupportEmailSentAt] = struct{}{}
+}
+
+// PaidSupportEmailSentAtCleared returns if the "paid_support_email_sent_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) PaidSupportEmailSentAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldPaidSupportEmailSentAt]
+	return ok
+}
+
+// ResetPaidSupportEmailSentAt resets all changes to the "paid_support_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ResetPaidSupportEmailSentAt() {
+	m.paid_support_email_sent_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldPaidSupportEmailSentAt)
+}
+
+// SetRecallAvailableEmailSentAt sets the "recall_available_email_sent_at" field.
+func (m *UserActivationJourneyMutation) SetRecallAvailableEmailSentAt(t time.Time) {
+	m.recall_available_email_sent_at = &t
+}
+
+// RecallAvailableEmailSentAt returns the value of the "recall_available_email_sent_at" field in the mutation.
+func (m *UserActivationJourneyMutation) RecallAvailableEmailSentAt() (r time.Time, exists bool) {
+	v := m.recall_available_email_sent_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRecallAvailableEmailSentAt returns the old "recall_available_email_sent_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldRecallAvailableEmailSentAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRecallAvailableEmailSentAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRecallAvailableEmailSentAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRecallAvailableEmailSentAt: %w", err)
+	}
+	return oldValue.RecallAvailableEmailSentAt, nil
+}
+
+// ClearRecallAvailableEmailSentAt clears the value of the "recall_available_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ClearRecallAvailableEmailSentAt() {
+	m.recall_available_email_sent_at = nil
+	m.clearedFields[useractivationjourney.FieldRecallAvailableEmailSentAt] = struct{}{}
+}
+
+// RecallAvailableEmailSentAtCleared returns if the "recall_available_email_sent_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) RecallAvailableEmailSentAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldRecallAvailableEmailSentAt]
+	return ok
+}
+
+// ResetRecallAvailableEmailSentAt resets all changes to the "recall_available_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ResetRecallAvailableEmailSentAt() {
+	m.recall_available_email_sent_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldRecallAvailableEmailSentAt)
+}
+
+// SetRecallExpiredEmailSentAt sets the "recall_expired_email_sent_at" field.
+func (m *UserActivationJourneyMutation) SetRecallExpiredEmailSentAt(t time.Time) {
+	m.recall_expired_email_sent_at = &t
+}
+
+// RecallExpiredEmailSentAt returns the value of the "recall_expired_email_sent_at" field in the mutation.
+func (m *UserActivationJourneyMutation) RecallExpiredEmailSentAt() (r time.Time, exists bool) {
+	v := m.recall_expired_email_sent_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRecallExpiredEmailSentAt returns the old "recall_expired_email_sent_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldRecallExpiredEmailSentAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRecallExpiredEmailSentAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRecallExpiredEmailSentAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRecallExpiredEmailSentAt: %w", err)
+	}
+	return oldValue.RecallExpiredEmailSentAt, nil
+}
+
+// ClearRecallExpiredEmailSentAt clears the value of the "recall_expired_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ClearRecallExpiredEmailSentAt() {
+	m.recall_expired_email_sent_at = nil
+	m.clearedFields[useractivationjourney.FieldRecallExpiredEmailSentAt] = struct{}{}
+}
+
+// RecallExpiredEmailSentAtCleared returns if the "recall_expired_email_sent_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) RecallExpiredEmailSentAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldRecallExpiredEmailSentAt]
+	return ok
+}
+
+// ResetRecallExpiredEmailSentAt resets all changes to the "recall_expired_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ResetRecallExpiredEmailSentAt() {
+	m.recall_expired_email_sent_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldRecallExpiredEmailSentAt)
+}
+
+// SetLastEmailSentAt sets the "last_email_sent_at" field.
+func (m *UserActivationJourneyMutation) SetLastEmailSentAt(t time.Time) {
+	m.last_email_sent_at = &t
+}
+
+// LastEmailSentAt returns the value of the "last_email_sent_at" field in the mutation.
+func (m *UserActivationJourneyMutation) LastEmailSentAt() (r time.Time, exists bool) {
+	v := m.last_email_sent_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastEmailSentAt returns the old "last_email_sent_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldLastEmailSentAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastEmailSentAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastEmailSentAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastEmailSentAt: %w", err)
+	}
+	return oldValue.LastEmailSentAt, nil
+}
+
+// ClearLastEmailSentAt clears the value of the "last_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ClearLastEmailSentAt() {
+	m.last_email_sent_at = nil
+	m.clearedFields[useractivationjourney.FieldLastEmailSentAt] = struct{}{}
+}
+
+// LastEmailSentAtCleared returns if the "last_email_sent_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) LastEmailSentAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldLastEmailSentAt]
+	return ok
+}
+
+// ResetLastEmailSentAt resets all changes to the "last_email_sent_at" field.
+func (m *UserActivationJourneyMutation) ResetLastEmailSentAt() {
+	m.last_email_sent_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldLastEmailSentAt)
+}
+
+// SetLastEvaluatedAt sets the "last_evaluated_at" field.
+func (m *UserActivationJourneyMutation) SetLastEvaluatedAt(t time.Time) {
+	m.last_evaluated_at = &t
+}
+
+// LastEvaluatedAt returns the value of the "last_evaluated_at" field in the mutation.
+func (m *UserActivationJourneyMutation) LastEvaluatedAt() (r time.Time, exists bool) {
+	v := m.last_evaluated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastEvaluatedAt returns the old "last_evaluated_at" field's value of the UserActivationJourney entity.
+// If the UserActivationJourney object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UserActivationJourneyMutation) OldLastEvaluatedAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastEvaluatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastEvaluatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastEvaluatedAt: %w", err)
+	}
+	return oldValue.LastEvaluatedAt, nil
+}
+
+// ClearLastEvaluatedAt clears the value of the "last_evaluated_at" field.
+func (m *UserActivationJourneyMutation) ClearLastEvaluatedAt() {
+	m.last_evaluated_at = nil
+	m.clearedFields[useractivationjourney.FieldLastEvaluatedAt] = struct{}{}
+}
+
+// LastEvaluatedAtCleared returns if the "last_evaluated_at" field was cleared in this mutation.
+func (m *UserActivationJourneyMutation) LastEvaluatedAtCleared() bool {
+	_, ok := m.clearedFields[useractivationjourney.FieldLastEvaluatedAt]
+	return ok
+}
+
+// ResetLastEvaluatedAt resets all changes to the "last_evaluated_at" field.
+func (m *UserActivationJourneyMutation) ResetLastEvaluatedAt() {
+	m.last_evaluated_at = nil
+	delete(m.clearedFields, useractivationjourney.FieldLastEvaluatedAt)
+}
+
+// ClearUser clears the "user" edge to the User entity.
+func (m *UserActivationJourneyMutation) ClearUser() {
+	m.cleareduser = true
+	m.clearedFields[useractivationjourney.FieldUserID] = struct{}{}
+}
+
+// UserCleared reports if the "user" edge to the User entity was cleared.
+func (m *UserActivationJourneyMutation) UserCleared() bool {
+	return m.cleareduser
+}
+
+// UserIDs returns the "user" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// UserID instead. It exists only for internal usage by the builders.
+func (m *UserActivationJourneyMutation) UserIDs() (ids []int64) {
+	if id := m.user; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetUser resets all changes to the "user" edge.
+func (m *UserActivationJourneyMutation) ResetUser() {
+	m.user = nil
+	m.cleareduser = false
+}
+
+// ClearStarterSubscription clears the "starter_subscription" edge to the UserSubscription entity.
+func (m *UserActivationJourneyMutation) ClearStarterSubscription() {
+	m.clearedstarter_subscription = true
+	m.clearedFields[useractivationjourney.FieldStarterSubscriptionID] = struct{}{}
+}
+
+// StarterSubscriptionCleared reports if the "starter_subscription" edge to the UserSubscription entity was cleared.
+func (m *UserActivationJourneyMutation) StarterSubscriptionCleared() bool {
+	return m.StarterSubscriptionIDCleared() || m.clearedstarter_subscription
+}
+
+// StarterSubscriptionIDs returns the "starter_subscription" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// StarterSubscriptionID instead. It exists only for internal usage by the builders.
+func (m *UserActivationJourneyMutation) StarterSubscriptionIDs() (ids []int64) {
+	if id := m.starter_subscription; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetStarterSubscription resets all changes to the "starter_subscription" edge.
+func (m *UserActivationJourneyMutation) ResetStarterSubscription() {
+	m.starter_subscription = nil
+	m.clearedstarter_subscription = false
+}
+
+// ClearRecallSubscription clears the "recall_subscription" edge to the UserSubscription entity.
+func (m *UserActivationJourneyMutation) ClearRecallSubscription() {
+	m.clearedrecall_subscription = true
+	m.clearedFields[useractivationjourney.FieldRecallSubscriptionID] = struct{}{}
+}
+
+// RecallSubscriptionCleared reports if the "recall_subscription" edge to the UserSubscription entity was cleared.
+func (m *UserActivationJourneyMutation) RecallSubscriptionCleared() bool {
+	return m.RecallSubscriptionIDCleared() || m.clearedrecall_subscription
+}
+
+// RecallSubscriptionIDs returns the "recall_subscription" edge IDs in the mutation.
+// Note that IDs always returns len(IDs) <= 1 for unique edges, and you should use
+// RecallSubscriptionID instead. It exists only for internal usage by the builders.
+func (m *UserActivationJourneyMutation) RecallSubscriptionIDs() (ids []int64) {
+	if id := m.recall_subscription; id != nil {
+		ids = append(ids, *id)
+	}
+	return
+}
+
+// ResetRecallSubscription resets all changes to the "recall_subscription" edge.
+func (m *UserActivationJourneyMutation) ResetRecallSubscription() {
+	m.recall_subscription = nil
+	m.clearedrecall_subscription = false
+}
+
+// Where appends a list predicates to the UserActivationJourneyMutation builder.
+func (m *UserActivationJourneyMutation) Where(ps ...predicate.UserActivationJourney) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the UserActivationJourneyMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *UserActivationJourneyMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.UserActivationJourney, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *UserActivationJourneyMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *UserActivationJourneyMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (UserActivationJourney).
+func (m *UserActivationJourneyMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *UserActivationJourneyMutation) Fields() []string {
+	fields := make([]string, 0, 20)
+	if m.created_at != nil {
+		fields = append(fields, useractivationjourney.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, useractivationjourney.FieldUpdatedAt)
+	}
+	if m.user != nil {
+		fields = append(fields, useractivationjourney.FieldUserID)
+	}
+	if m.campaign_source != nil {
+		fields = append(fields, useractivationjourney.FieldCampaignSource)
+	}
+	if m.starter_state != nil {
+		fields = append(fields, useractivationjourney.FieldStarterState)
+	}
+	if m.starter_subscription != nil {
+		fields = append(fields, useractivationjourney.FieldStarterSubscriptionID)
+	}
+	if m.starter_granted_at != nil {
+		fields = append(fields, useractivationjourney.FieldStarterGrantedAt)
+	}
+	if m.starter_expires_at != nil {
+		fields = append(fields, useractivationjourney.FieldStarterExpiresAt)
+	}
+	if m.recall_state != nil {
+		fields = append(fields, useractivationjourney.FieldRecallState)
+	}
+	if m.recall_subscription != nil {
+		fields = append(fields, useractivationjourney.FieldRecallSubscriptionID)
+	}
+	if m.recall_claimed_at != nil {
+		fields = append(fields, useractivationjourney.FieldRecallClaimedAt)
+	}
+	if m.recall_expires_at != nil {
+		fields = append(fields, useractivationjourney.FieldRecallExpiresAt)
+	}
+	if m.first_success_at != nil {
+		fields = append(fields, useractivationjourney.FieldFirstSuccessAt)
+	}
+	if m.no_attempt_email_sent_at != nil {
+		fields = append(fields, useractivationjourney.FieldNoAttemptEmailSentAt)
+	}
+	if m.attempted_email_sent_at != nil {
+		fields = append(fields, useractivationjourney.FieldAttemptedEmailSentAt)
+	}
+	if m.paid_support_email_sent_at != nil {
+		fields = append(fields, useractivationjourney.FieldPaidSupportEmailSentAt)
+	}
+	if m.recall_available_email_sent_at != nil {
+		fields = append(fields, useractivationjourney.FieldRecallAvailableEmailSentAt)
+	}
+	if m.recall_expired_email_sent_at != nil {
+		fields = append(fields, useractivationjourney.FieldRecallExpiredEmailSentAt)
+	}
+	if m.last_email_sent_at != nil {
+		fields = append(fields, useractivationjourney.FieldLastEmailSentAt)
+	}
+	if m.last_evaluated_at != nil {
+		fields = append(fields, useractivationjourney.FieldLastEvaluatedAt)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *UserActivationJourneyMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case useractivationjourney.FieldCreatedAt:
+		return m.CreatedAt()
+	case useractivationjourney.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case useractivationjourney.FieldUserID:
+		return m.UserID()
+	case useractivationjourney.FieldCampaignSource:
+		return m.CampaignSource()
+	case useractivationjourney.FieldStarterState:
+		return m.StarterState()
+	case useractivationjourney.FieldStarterSubscriptionID:
+		return m.StarterSubscriptionID()
+	case useractivationjourney.FieldStarterGrantedAt:
+		return m.StarterGrantedAt()
+	case useractivationjourney.FieldStarterExpiresAt:
+		return m.StarterExpiresAt()
+	case useractivationjourney.FieldRecallState:
+		return m.RecallState()
+	case useractivationjourney.FieldRecallSubscriptionID:
+		return m.RecallSubscriptionID()
+	case useractivationjourney.FieldRecallClaimedAt:
+		return m.RecallClaimedAt()
+	case useractivationjourney.FieldRecallExpiresAt:
+		return m.RecallExpiresAt()
+	case useractivationjourney.FieldFirstSuccessAt:
+		return m.FirstSuccessAt()
+	case useractivationjourney.FieldNoAttemptEmailSentAt:
+		return m.NoAttemptEmailSentAt()
+	case useractivationjourney.FieldAttemptedEmailSentAt:
+		return m.AttemptedEmailSentAt()
+	case useractivationjourney.FieldPaidSupportEmailSentAt:
+		return m.PaidSupportEmailSentAt()
+	case useractivationjourney.FieldRecallAvailableEmailSentAt:
+		return m.RecallAvailableEmailSentAt()
+	case useractivationjourney.FieldRecallExpiredEmailSentAt:
+		return m.RecallExpiredEmailSentAt()
+	case useractivationjourney.FieldLastEmailSentAt:
+		return m.LastEmailSentAt()
+	case useractivationjourney.FieldLastEvaluatedAt:
+		return m.LastEvaluatedAt()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *UserActivationJourneyMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case useractivationjourney.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case useractivationjourney.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case useractivationjourney.FieldUserID:
+		return m.OldUserID(ctx)
+	case useractivationjourney.FieldCampaignSource:
+		return m.OldCampaignSource(ctx)
+	case useractivationjourney.FieldStarterState:
+		return m.OldStarterState(ctx)
+	case useractivationjourney.FieldStarterSubscriptionID:
+		return m.OldStarterSubscriptionID(ctx)
+	case useractivationjourney.FieldStarterGrantedAt:
+		return m.OldStarterGrantedAt(ctx)
+	case useractivationjourney.FieldStarterExpiresAt:
+		return m.OldStarterExpiresAt(ctx)
+	case useractivationjourney.FieldRecallState:
+		return m.OldRecallState(ctx)
+	case useractivationjourney.FieldRecallSubscriptionID:
+		return m.OldRecallSubscriptionID(ctx)
+	case useractivationjourney.FieldRecallClaimedAt:
+		return m.OldRecallClaimedAt(ctx)
+	case useractivationjourney.FieldRecallExpiresAt:
+		return m.OldRecallExpiresAt(ctx)
+	case useractivationjourney.FieldFirstSuccessAt:
+		return m.OldFirstSuccessAt(ctx)
+	case useractivationjourney.FieldNoAttemptEmailSentAt:
+		return m.OldNoAttemptEmailSentAt(ctx)
+	case useractivationjourney.FieldAttemptedEmailSentAt:
+		return m.OldAttemptedEmailSentAt(ctx)
+	case useractivationjourney.FieldPaidSupportEmailSentAt:
+		return m.OldPaidSupportEmailSentAt(ctx)
+	case useractivationjourney.FieldRecallAvailableEmailSentAt:
+		return m.OldRecallAvailableEmailSentAt(ctx)
+	case useractivationjourney.FieldRecallExpiredEmailSentAt:
+		return m.OldRecallExpiredEmailSentAt(ctx)
+	case useractivationjourney.FieldLastEmailSentAt:
+		return m.OldLastEmailSentAt(ctx)
+	case useractivationjourney.FieldLastEvaluatedAt:
+		return m.OldLastEvaluatedAt(ctx)
+	}
+	return nil, fmt.Errorf("unknown UserActivationJourney field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UserActivationJourneyMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case useractivationjourney.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case useractivationjourney.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case useractivationjourney.FieldUserID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUserID(v)
+		return nil
+	case useractivationjourney.FieldCampaignSource:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCampaignSource(v)
+		return nil
+	case useractivationjourney.FieldStarterState:
+		v, ok := value.(useractivationjourney.StarterState)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStarterState(v)
+		return nil
+	case useractivationjourney.FieldStarterSubscriptionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStarterSubscriptionID(v)
+		return nil
+	case useractivationjourney.FieldStarterGrantedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStarterGrantedAt(v)
+		return nil
+	case useractivationjourney.FieldStarterExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetStarterExpiresAt(v)
+		return nil
+	case useractivationjourney.FieldRecallState:
+		v, ok := value.(useractivationjourney.RecallState)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRecallState(v)
+		return nil
+	case useractivationjourney.FieldRecallSubscriptionID:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRecallSubscriptionID(v)
+		return nil
+	case useractivationjourney.FieldRecallClaimedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRecallClaimedAt(v)
+		return nil
+	case useractivationjourney.FieldRecallExpiresAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRecallExpiresAt(v)
+		return nil
+	case useractivationjourney.FieldFirstSuccessAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetFirstSuccessAt(v)
+		return nil
+	case useractivationjourney.FieldNoAttemptEmailSentAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetNoAttemptEmailSentAt(v)
+		return nil
+	case useractivationjourney.FieldAttemptedEmailSentAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAttemptedEmailSentAt(v)
+		return nil
+	case useractivationjourney.FieldPaidSupportEmailSentAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetPaidSupportEmailSentAt(v)
+		return nil
+	case useractivationjourney.FieldRecallAvailableEmailSentAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRecallAvailableEmailSentAt(v)
+		return nil
+	case useractivationjourney.FieldRecallExpiredEmailSentAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRecallExpiredEmailSentAt(v)
+		return nil
+	case useractivationjourney.FieldLastEmailSentAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastEmailSentAt(v)
+		return nil
+	case useractivationjourney.FieldLastEvaluatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastEvaluatedAt(v)
+		return nil
+	}
+	return fmt.Errorf("unknown UserActivationJourney field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *UserActivationJourneyMutation) AddedFields() []string {
+	var fields []string
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *UserActivationJourneyMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *UserActivationJourneyMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	}
+	return fmt.Errorf("unknown UserActivationJourney numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *UserActivationJourneyMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(useractivationjourney.FieldStarterSubscriptionID) {
+		fields = append(fields, useractivationjourney.FieldStarterSubscriptionID)
+	}
+	if m.FieldCleared(useractivationjourney.FieldStarterGrantedAt) {
+		fields = append(fields, useractivationjourney.FieldStarterGrantedAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldStarterExpiresAt) {
+		fields = append(fields, useractivationjourney.FieldStarterExpiresAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldRecallSubscriptionID) {
+		fields = append(fields, useractivationjourney.FieldRecallSubscriptionID)
+	}
+	if m.FieldCleared(useractivationjourney.FieldRecallClaimedAt) {
+		fields = append(fields, useractivationjourney.FieldRecallClaimedAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldRecallExpiresAt) {
+		fields = append(fields, useractivationjourney.FieldRecallExpiresAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldFirstSuccessAt) {
+		fields = append(fields, useractivationjourney.FieldFirstSuccessAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldNoAttemptEmailSentAt) {
+		fields = append(fields, useractivationjourney.FieldNoAttemptEmailSentAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldAttemptedEmailSentAt) {
+		fields = append(fields, useractivationjourney.FieldAttemptedEmailSentAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldPaidSupportEmailSentAt) {
+		fields = append(fields, useractivationjourney.FieldPaidSupportEmailSentAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldRecallAvailableEmailSentAt) {
+		fields = append(fields, useractivationjourney.FieldRecallAvailableEmailSentAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldRecallExpiredEmailSentAt) {
+		fields = append(fields, useractivationjourney.FieldRecallExpiredEmailSentAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldLastEmailSentAt) {
+		fields = append(fields, useractivationjourney.FieldLastEmailSentAt)
+	}
+	if m.FieldCleared(useractivationjourney.FieldLastEvaluatedAt) {
+		fields = append(fields, useractivationjourney.FieldLastEvaluatedAt)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *UserActivationJourneyMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *UserActivationJourneyMutation) ClearField(name string) error {
+	switch name {
+	case useractivationjourney.FieldStarterSubscriptionID:
+		m.ClearStarterSubscriptionID()
+		return nil
+	case useractivationjourney.FieldStarterGrantedAt:
+		m.ClearStarterGrantedAt()
+		return nil
+	case useractivationjourney.FieldStarterExpiresAt:
+		m.ClearStarterExpiresAt()
+		return nil
+	case useractivationjourney.FieldRecallSubscriptionID:
+		m.ClearRecallSubscriptionID()
+		return nil
+	case useractivationjourney.FieldRecallClaimedAt:
+		m.ClearRecallClaimedAt()
+		return nil
+	case useractivationjourney.FieldRecallExpiresAt:
+		m.ClearRecallExpiresAt()
+		return nil
+	case useractivationjourney.FieldFirstSuccessAt:
+		m.ClearFirstSuccessAt()
+		return nil
+	case useractivationjourney.FieldNoAttemptEmailSentAt:
+		m.ClearNoAttemptEmailSentAt()
+		return nil
+	case useractivationjourney.FieldAttemptedEmailSentAt:
+		m.ClearAttemptedEmailSentAt()
+		return nil
+	case useractivationjourney.FieldPaidSupportEmailSentAt:
+		m.ClearPaidSupportEmailSentAt()
+		return nil
+	case useractivationjourney.FieldRecallAvailableEmailSentAt:
+		m.ClearRecallAvailableEmailSentAt()
+		return nil
+	case useractivationjourney.FieldRecallExpiredEmailSentAt:
+		m.ClearRecallExpiredEmailSentAt()
+		return nil
+	case useractivationjourney.FieldLastEmailSentAt:
+		m.ClearLastEmailSentAt()
+		return nil
+	case useractivationjourney.FieldLastEvaluatedAt:
+		m.ClearLastEvaluatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UserActivationJourney nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *UserActivationJourneyMutation) ResetField(name string) error {
+	switch name {
+	case useractivationjourney.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case useractivationjourney.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case useractivationjourney.FieldUserID:
+		m.ResetUserID()
+		return nil
+	case useractivationjourney.FieldCampaignSource:
+		m.ResetCampaignSource()
+		return nil
+	case useractivationjourney.FieldStarterState:
+		m.ResetStarterState()
+		return nil
+	case useractivationjourney.FieldStarterSubscriptionID:
+		m.ResetStarterSubscriptionID()
+		return nil
+	case useractivationjourney.FieldStarterGrantedAt:
+		m.ResetStarterGrantedAt()
+		return nil
+	case useractivationjourney.FieldStarterExpiresAt:
+		m.ResetStarterExpiresAt()
+		return nil
+	case useractivationjourney.FieldRecallState:
+		m.ResetRecallState()
+		return nil
+	case useractivationjourney.FieldRecallSubscriptionID:
+		m.ResetRecallSubscriptionID()
+		return nil
+	case useractivationjourney.FieldRecallClaimedAt:
+		m.ResetRecallClaimedAt()
+		return nil
+	case useractivationjourney.FieldRecallExpiresAt:
+		m.ResetRecallExpiresAt()
+		return nil
+	case useractivationjourney.FieldFirstSuccessAt:
+		m.ResetFirstSuccessAt()
+		return nil
+	case useractivationjourney.FieldNoAttemptEmailSentAt:
+		m.ResetNoAttemptEmailSentAt()
+		return nil
+	case useractivationjourney.FieldAttemptedEmailSentAt:
+		m.ResetAttemptedEmailSentAt()
+		return nil
+	case useractivationjourney.FieldPaidSupportEmailSentAt:
+		m.ResetPaidSupportEmailSentAt()
+		return nil
+	case useractivationjourney.FieldRecallAvailableEmailSentAt:
+		m.ResetRecallAvailableEmailSentAt()
+		return nil
+	case useractivationjourney.FieldRecallExpiredEmailSentAt:
+		m.ResetRecallExpiredEmailSentAt()
+		return nil
+	case useractivationjourney.FieldLastEmailSentAt:
+		m.ResetLastEmailSentAt()
+		return nil
+	case useractivationjourney.FieldLastEvaluatedAt:
+		m.ResetLastEvaluatedAt()
+		return nil
+	}
+	return fmt.Errorf("unknown UserActivationJourney field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *UserActivationJourneyMutation) AddedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.user != nil {
+		edges = append(edges, useractivationjourney.EdgeUser)
+	}
+	if m.starter_subscription != nil {
+		edges = append(edges, useractivationjourney.EdgeStarterSubscription)
+	}
+	if m.recall_subscription != nil {
+		edges = append(edges, useractivationjourney.EdgeRecallSubscription)
+	}
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *UserActivationJourneyMutation) AddedIDs(name string) []ent.Value {
+	switch name {
+	case useractivationjourney.EdgeUser:
+		if id := m.user; id != nil {
+			return []ent.Value{*id}
+		}
+	case useractivationjourney.EdgeStarterSubscription:
+		if id := m.starter_subscription; id != nil {
+			return []ent.Value{*id}
+		}
+	case useractivationjourney.EdgeRecallSubscription:
+		if id := m.recall_subscription; id != nil {
+			return []ent.Value{*id}
+		}
+	}
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *UserActivationJourneyMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 3)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *UserActivationJourneyMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *UserActivationJourneyMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 3)
+	if m.cleareduser {
+		edges = append(edges, useractivationjourney.EdgeUser)
+	}
+	if m.clearedstarter_subscription {
+		edges = append(edges, useractivationjourney.EdgeStarterSubscription)
+	}
+	if m.clearedrecall_subscription {
+		edges = append(edges, useractivationjourney.EdgeRecallSubscription)
+	}
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *UserActivationJourneyMutation) EdgeCleared(name string) bool {
+	switch name {
+	case useractivationjourney.EdgeUser:
+		return m.cleareduser
+	case useractivationjourney.EdgeStarterSubscription:
+		return m.clearedstarter_subscription
+	case useractivationjourney.EdgeRecallSubscription:
+		return m.clearedrecall_subscription
+	}
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *UserActivationJourneyMutation) ClearEdge(name string) error {
+	switch name {
+	case useractivationjourney.EdgeUser:
+		m.ClearUser()
+		return nil
+	case useractivationjourney.EdgeStarterSubscription:
+		m.ClearStarterSubscription()
+		return nil
+	case useractivationjourney.EdgeRecallSubscription:
+		m.ClearRecallSubscription()
+		return nil
+	}
+	return fmt.Errorf("unknown UserActivationJourney unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *UserActivationJourneyMutation) ResetEdge(name string) error {
+	switch name {
+	case useractivationjourney.EdgeUser:
+		m.ResetUser()
+		return nil
+	case useractivationjourney.EdgeStarterSubscription:
+		m.ResetStarterSubscription()
+		return nil
+	case useractivationjourney.EdgeRecallSubscription:
+		m.ResetRecallSubscription()
+		return nil
+	}
+	return fmt.Errorf("unknown UserActivationJourney edge %s", name)
 }
 
 // UserAllowedGroupMutation represents an operation that mutates the UserAllowedGroup nodes in the graph.

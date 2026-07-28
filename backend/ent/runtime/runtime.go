@@ -40,6 +40,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/usagecleanuptask"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/useractivationjourney"
 	"github.com/Wei-Shaw/sub2api/ent/userallowedgroup"
 	"github.com/Wei-Shaw/sub2api/ent/userattributedefinition"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
@@ -2132,6 +2133,27 @@ func init() {
 	userDescRpmLimit := userFields[20].Descriptor()
 	// user.DefaultRpmLimit holds the default value on creation for the rpm_limit field.
 	user.DefaultRpmLimit = userDescRpmLimit.Default.(int)
+	useractivationjourneyMixin := schema.UserActivationJourney{}.Mixin()
+	useractivationjourneyMixinFields0 := useractivationjourneyMixin[0].Fields()
+	_ = useractivationjourneyMixinFields0
+	useractivationjourneyFields := schema.UserActivationJourney{}.Fields()
+	_ = useractivationjourneyFields
+	// useractivationjourneyDescCreatedAt is the schema descriptor for created_at field.
+	useractivationjourneyDescCreatedAt := useractivationjourneyMixinFields0[0].Descriptor()
+	// useractivationjourney.DefaultCreatedAt holds the default value on creation for the created_at field.
+	useractivationjourney.DefaultCreatedAt = useractivationjourneyDescCreatedAt.Default.(func() time.Time)
+	// useractivationjourneyDescUpdatedAt is the schema descriptor for updated_at field.
+	useractivationjourneyDescUpdatedAt := useractivationjourneyMixinFields0[1].Descriptor()
+	// useractivationjourney.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	useractivationjourney.DefaultUpdatedAt = useractivationjourneyDescUpdatedAt.Default.(func() time.Time)
+	// useractivationjourney.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	useractivationjourney.UpdateDefaultUpdatedAt = useractivationjourneyDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// useractivationjourneyDescCampaignSource is the schema descriptor for campaign_source field.
+	useractivationjourneyDescCampaignSource := useractivationjourneyFields[1].Descriptor()
+	// useractivationjourney.DefaultCampaignSource holds the default value on creation for the campaign_source field.
+	useractivationjourney.DefaultCampaignSource = useractivationjourneyDescCampaignSource.Default.(string)
+	// useractivationjourney.CampaignSourceValidator is a validator for the "campaign_source" field. It is called by the builders before save.
+	useractivationjourney.CampaignSourceValidator = useractivationjourneyDescCampaignSource.Validators[0].(func(string) error)
 	userallowedgroupFields := schema.UserAllowedGroup{}.Fields()
 	_ = userallowedgroupFields
 	// userallowedgroupDescCreatedAt is the schema descriptor for created_at field.

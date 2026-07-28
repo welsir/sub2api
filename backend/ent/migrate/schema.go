@@ -1765,6 +1765,78 @@ var (
 			},
 		},
 	}
+	// UserActivationJourneysColumns holds the columns for the "user_activation_journeys" table.
+	UserActivationJourneysColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeInt64, Increment: true},
+		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "updated_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "campaign_source", Type: field.TypeString, Size: 64, Default: "direct"},
+		{Name: "starter_state", Type: field.TypeEnum, Enums: []string{"pending", "granted", "expired"}, Default: "pending"},
+		{Name: "starter_granted_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "starter_expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "recall_state", Type: field.TypeEnum, Enums: []string{"locked", "claimable", "claimed", "expired", "blocked_paid", "closed_success"}, Default: "locked"},
+		{Name: "recall_claimed_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "recall_expires_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "first_success_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "no_attempt_email_sent_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "attempted_email_sent_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "paid_support_email_sent_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "recall_available_email_sent_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "recall_expired_email_sent_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_email_sent_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "last_evaluated_at", Type: field.TypeTime, Nullable: true, SchemaType: map[string]string{"postgres": "timestamptz"}},
+		{Name: "user_id", Type: field.TypeInt64, Unique: true},
+		{Name: "starter_subscription_id", Type: field.TypeInt64, Nullable: true},
+		{Name: "recall_subscription_id", Type: field.TypeInt64, Nullable: true},
+	}
+	// UserActivationJourneysTable holds the schema information for the "user_activation_journeys" table.
+	UserActivationJourneysTable = &schema.Table{
+		Name:       "user_activation_journeys",
+		Columns:    UserActivationJourneysColumns,
+		PrimaryKey: []*schema.Column{UserActivationJourneysColumns[0]},
+		ForeignKeys: []*schema.ForeignKey{
+			{
+				Symbol:     "user_activation_journeys_users_activation_journey",
+				Columns:    []*schema.Column{UserActivationJourneysColumns[18]},
+				RefColumns: []*schema.Column{UsersColumns[0]},
+				OnDelete:   schema.Cascade,
+			},
+			{
+				Symbol:     "user_activation_journeys_user_subscriptions_starter_subscription",
+				Columns:    []*schema.Column{UserActivationJourneysColumns[19]},
+				RefColumns: []*schema.Column{UserSubscriptionsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+			{
+				Symbol:     "user_activation_journeys_user_subscriptions_recall_subscription",
+				Columns:    []*schema.Column{UserActivationJourneysColumns[20]},
+				RefColumns: []*schema.Column{UserSubscriptionsColumns[0]},
+				OnDelete:   schema.SetNull,
+			},
+		},
+		Indexes: []*schema.Index{
+			{
+				Name:    "useractivationjourney_user_id",
+				Unique:  true,
+				Columns: []*schema.Column{UserActivationJourneysColumns[18]},
+			},
+			{
+				Name:    "useractivationjourney_campaign_source_created_at",
+				Unique:  false,
+				Columns: []*schema.Column{UserActivationJourneysColumns[3], UserActivationJourneysColumns[1]},
+			},
+			{
+				Name:    "useractivationjourney_starter_expires_at",
+				Unique:  false,
+				Columns: []*schema.Column{UserActivationJourneysColumns[6]},
+			},
+			{
+				Name:    "useractivationjourney_recall_state",
+				Unique:  false,
+				Columns: []*schema.Column{UserActivationJourneysColumns[7]},
+			},
+		},
+	}
 	// UserAllowedGroupsColumns holds the columns for the "user_allowed_groups" table.
 	UserAllowedGroupsColumns = []*schema.Column{
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
@@ -2056,6 +2128,7 @@ var (
 		UsageCleanupTasksTable,
 		UsageLogsTable,
 		UsersTable,
+		UserActivationJourneysTable,
 		UserAllowedGroupsTable,
 		UserAttributeDefinitionsTable,
 		UserAttributeValuesTable,
@@ -2195,6 +2268,12 @@ func init() {
 	}
 	UsersTable.Annotation = &entsql.Annotation{
 		Table: "users",
+	}
+	UserActivationJourneysTable.ForeignKeys[0].RefTable = UsersTable
+	UserActivationJourneysTable.ForeignKeys[1].RefTable = UserSubscriptionsTable
+	UserActivationJourneysTable.ForeignKeys[2].RefTable = UserSubscriptionsTable
+	UserActivationJourneysTable.Annotation = &entsql.Annotation{
+		Table: "user_activation_journeys",
 	}
 	UserAllowedGroupsTable.ForeignKeys[0].RefTable = UsersTable
 	UserAllowedGroupsTable.ForeignKeys[1].RefTable = GroupsTable
