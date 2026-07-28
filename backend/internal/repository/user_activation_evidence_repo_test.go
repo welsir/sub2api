@@ -98,21 +98,25 @@ func TestUserActivationEvidenceSnapshotAppliesBusinessEvidenceSemantics(t *testi
 	userID := int64(55)
 	firstAttempt := time.Date(2026, 7, 28, 1, 0, 0, 0, time.UTC)
 	firstSuccess := firstAttempt.Add(2 * time.Hour)
-	lastAttempt := firstAttempt.Add(3 * time.Hour)
+	laterSuccess := firstSuccess.Add(30 * time.Minute)
+	lastAttempt := firstAttempt.Add(4 * time.Hour)
 	firstPayment := firstAttempt.Add(5 * time.Hour)
+	laterPayment := firstPayment.Add(time.Hour)
 
 	_, err = db.Exec(`
 		INSERT INTO usage_logs (user_id, actual_cost, created_at) VALUES
 			(55, 0, ?),
-			(55, 0, ?),
+			(55, 0.50, ?),
 			(55, 0.25, ?),
+			(55, 0, ?),
 			(55, 0, ?),
 			(56, 1, ?)
 	`,
 		firstAttempt,
-		firstAttempt.Add(time.Hour),
+		laterSuccess,
 		firstSuccess,
 		lastAttempt,
+		firstAttempt.Add(time.Hour),
 		firstAttempt,
 	)
 	require.NoError(t, err)
@@ -131,11 +135,13 @@ func TestUserActivationEvidenceSnapshotAppliesBusinessEvidenceSemantics(t *testi
 			(55, 'balance', ?, 0),
 			(55, 'subscription', ?, 10),
 			(55, 'balance', NULL, 10),
+			(55, 'balance', ?, 8),
 			(55, 'balance', ?, 5),
 			(56, 'balance', ?, 10)
 	`,
 		firstAttempt,
 		firstAttempt,
+		laterPayment,
 		firstPayment,
 		firstAttempt,
 	)
@@ -158,7 +164,7 @@ func TestUserActivationEvidenceSnapshotAppliesBusinessEvidenceSemantics(t *testi
 		&apiKeyCount,
 	)
 	require.NoError(t, err)
-	require.Equal(t, int64(4), usageCount)
+	require.Equal(t, int64(5), usageCount)
 	require.Equal(t, int64(2), apiKeyCount)
 	require.Equal(t, firstSuccess, parseSQLiteAggregateTime(t, firstSuccessRaw))
 	require.Equal(t, firstPayment, parseSQLiteAggregateTime(t, firstPaymentRaw))
@@ -212,6 +218,8 @@ func matchActivationEvidenceQuery(_ string, actual string) error {
 		"api_keys",
 		"payment_orders",
 		"actual_cost > 0",
+		"min(created_at)",
+		"min(completed_at)",
 		"max(created_at)",
 		"count(*)",
 		"deleted_at is null",

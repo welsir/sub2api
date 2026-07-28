@@ -9,15 +9,14 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"errors"
-	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	dbjourney "github.com/Wei-Shaw/sub2api/ent/useractivationjourney"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 
 	entsql "entgo.io/ent/dialect/sql"
 )
@@ -25,13 +24,6 @@ import (
 type userActivationJourneyRepository struct {
 	client *dbent.Client
 }
-
-const (
-	userActivationJourneyTable                    = "user_activation_journeys"
-	userActivationJourneyUserIDColumn             = "user_id"
-	userActivationJourneyUserIDPostgresConstraint = "user_activation_journeys_user_id_key"
-	userActivationJourneyUserIDSQLiteSignature    = "UNIQUE constraint failed: user_activation_journeys.user_id"
-)
 
 func NewUserActivationJourneyRepository(client *dbent.Client) service.UserActivationJourneyRepository {
 	return &userActivationJourneyRepository{client: client}
@@ -43,18 +35,29 @@ func (r *userActivationJourneyRepository) CreateIfAbsent(
 	source string,
 ) (*service.UserActivationJourney, bool, error) {
 	client := clientFromContext(ctx, r.client)
-	entity, err := client.UserActivationJourney.Create().
+	id, err := client.UserActivationJourney.Create().
 		SetUserID(userID).
 		SetCampaignSource(source).
-		Save(ctx)
+		OnConflictColumns(dbjourney.FieldUserID).
+		DoNothing().
+		ID(ctx)
 	if err == nil {
+		entity, err := client.UserActivationJourney.Query().
+			Where(
+				dbjourney.IDEQ(id),
+				dbjourney.UserIDEQ(userID),
+			).
+			Only(ctx)
+		if err != nil {
+			return nil, false, err
+		}
 		return activationJourneyEntityToService(entity), true, nil
 	}
-	if !isUserActivationJourneyUserIDUniqueViolation(err) {
+	if !errors.Is(err, sql.ErrNoRows) {
 		return nil, false, err
 	}
 
-	entity, err = client.UserActivationJourney.Query().
+	entity, err := client.UserActivationJourney.Query().
 		Where(dbjourney.UserIDEQ(userID)).
 		Only(ctx)
 	if err != nil {
@@ -106,8 +109,6 @@ func (r *userActivationJourneyRepository) Update(
 
 	client := clientFromContext(ctx, r.client)
 	update := client.UserActivationJourney.UpdateOneID(journey.ID).
-		SetUserID(journey.UserID).
-		SetCampaignSource(journey.CampaignSource).
 		SetStarterState(dbjourney.StarterState(journey.StarterState)).
 		SetRecallState(dbjourney.RecallState(journey.RecallState))
 
@@ -215,33 +216,6 @@ func (r *userActivationJourneyRepository) ListDue(
 		return nil, err
 	}
 	return activationJourneyEntitiesToService(entities), nil
-}
-
-func isUserActivationJourneyUserIDUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	var postgresError *pq.Error
-	if errors.As(err, &postgresError) {
-		if postgresError.Code != "23505" {
-			return false
-		}
-		return postgresError.Constraint == userActivationJourneyUserIDPostgresConstraint ||
-			(postgresError.Table == userActivationJourneyTable &&
-				postgresError.Column == userActivationJourneyUserIDColumn)
-	}
-
-	if !dbent.IsConstraintError(err) {
-		return false
-	}
-	message := err.Error()
-	signatureIndex := strings.Index(message, userActivationJourneyUserIDSQLiteSignature)
-	if signatureIndex < 0 {
-		return false
-	}
-	suffix := message[signatureIndex+len(userActivationJourneyUserIDSQLiteSignature):]
-	return suffix == "" || strings.HasPrefix(suffix, " (")
 }
 
 func (r *userActivationJourneyRepository) ListEligibleUsersWithoutJourney(

@@ -21,7 +21,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/enttest"
 	dbjourney "github.com/Wei-Shaw/sub2api/ent/useractivationjourney"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-	"github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 
 	"entgo.io/ent/dialect"
@@ -124,22 +123,6 @@ func TestUserActivationJourneyCreateIfAbsentDoesNotTreatDuplicateTextAsJourneyCo
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestUserActivationJourneyUserIDUniqueViolationRequiresExactPostgresConstraint(t *testing.T) {
-	require.True(t, isUserActivationJourneyUserIDUniqueViolation(&pq.Error{
-		Code:       "23505",
-		Table:      "user_activation_journeys",
-		Constraint: "user_activation_journeys_user_id_key",
-	}))
-	require.False(t, isUserActivationJourneyUserIDUniqueViolation(&pq.Error{
-		Code:       "23505",
-		Table:      "user_activation_journeys",
-		Constraint: "user_activation_journeys_campaign_source_key",
-	}))
-	require.False(t, isUserActivationJourneyUserIDUniqueViolation(
-		errors.New("duplicate key value violates unique constraint user_activation_journeys_user_id_key"),
-	))
-}
-
 func TestUserActivationJourneyGetForUpdateRequiresTransactionWithoutQuerying(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
@@ -187,6 +170,9 @@ func TestUserActivationJourneyUpdateSetsAndClearsNullableFields(t *testing.T) {
 	repo := NewUserActivationJourneyRepository(client)
 	journey, _, err := repo.CreateIfAbsent(context.Background(), user.ID, "direct")
 	require.NoError(t, err)
+	otherUser := createActivationTestUser(t, client, "update-other@example.com", "email", time.Now().UTC(), nil)
+	originalUserID := journey.UserID
+	originalCampaignSource := journey.CampaignSource
 
 	base := time.Date(2026, 7, 28, 1, 2, 3, 0, time.UTC)
 	group, err := client.Group.Create().SetName("activation-update-group").Save(context.Background())
@@ -206,7 +192,8 @@ func TestUserActivationJourneyUpdateSetsAndClearsNullableFields(t *testing.T) {
 		Save(context.Background())
 	require.NoError(t, err)
 
-	journey.CampaignSource = "hvoy_partner"
+	journey.UserID = otherUser.ID
+	journey.CampaignSource = "hacked_source"
 	journey.StarterState = "granted"
 	journey.StarterSubscriptionID = &starterSubscription.ID
 	journey.StarterGrantedAt = timePtr(base)
@@ -225,7 +212,10 @@ func TestUserActivationJourneyUpdateSetsAndClearsNullableFields(t *testing.T) {
 	journey.LastEvaluatedAt = timePtr(base.Add(9 * time.Hour))
 
 	require.NoError(t, repo.Update(context.Background(), journey))
-	stored, err := repo.GetByUserID(context.Background(), user.ID)
+	require.Equal(t, originalUserID, journey.UserID)
+	require.Equal(t, originalCampaignSource, journey.CampaignSource)
+
+	stored, err := repo.GetByUserID(context.Background(), originalUserID)
 	require.NoError(t, err)
 	requireActivationJourneysEqual(t, journey, stored)
 
