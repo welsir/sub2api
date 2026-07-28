@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 	"time"
 
@@ -701,8 +702,23 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		// Send request
 		upstreamStart := time.Now()
+		performanceTrace := OpenAIRequestPerformanceTraceFromGin(c)
+		if performanceTrace != nil {
+			performanceTrace.BeginUpstreamHeader(upstreamStart)
+			if clientTrace := performanceTrace.ClientTrace(); clientTrace != nil {
+				upstreamReq = upstreamReq.WithContext(httptrace.WithClientTrace(upstreamReq.Context(), clientTrace))
+			}
+		}
 		resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
-		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
+		upstreamHeaderEndedAt := time.Now()
+		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, upstreamHeaderEndedAt.Sub(upstreamStart).Milliseconds())
+		if performanceTrace != nil {
+			if err != nil {
+				performanceTrace.EndUpstreamHeaderWithoutBody(upstreamHeaderEndedAt)
+			} else {
+				performanceTrace.EndUpstreamHeader(upstreamHeaderEndedAt)
+			}
+		}
 		if err != nil {
 			// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
 			// a failover so the handler switches to a healthy account, and temporarily
@@ -780,8 +796,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		responseID := ""
 		imageCount := 0
 		var imageOutputSizes []string
+		var streamResult *openaiStreamingResult
 		if reqStream {
-			streamResult, err := s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
+			streamResult, err = s.handleStreamingResponse(ctx, resp, c, account, startTime, originalModel, upstreamModel)
 			if err != nil {
 				return nil, err
 			}
@@ -794,6 +811,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			nonStreamResult, err := s.handleNonStreamingResponse(ctx, resp, c, account, originalModel, upstreamModel)
 			if err != nil {
 				return nil, err
+			}
+			if performanceTrace != nil {
+				performanceTrace.MarkFirstOutput(time.Now())
 			}
 			usage = nonStreamResult.usage
 			responseID = strings.TrimSpace(nonStreamResult.responseID)
@@ -827,6 +847,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			OpenAIWSMode:    false,
 			Duration:        time.Since(startTime),
 			FirstTokenMs:    firstTokenMs,
+		}
+		if reqStream && streamResult != nil {
+			forwardResult.ClientDisconnect = streamResult.clientDisconnected
 		}
 		if imageCount > 0 {
 			forwardResult.ImageCount = imageCount

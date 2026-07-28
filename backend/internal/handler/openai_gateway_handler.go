@@ -161,7 +161,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	defer h.logOpenAIRemoteCompactOutcome(c, compactStartedAt)
 	setOpenAIClientTransportHTTP(c)
 
-	requestStart := time.Now()
+	handlerStartedAt := time.Now()
+	performanceTrace := beginOpenAIRequestPerformance(c, handlerStartedAt)
+	defer h.logOpenAIRequestPerformance(c, performanceTrace)
+	requestStart := handlerStartedAt
+	prepareStartedAt := handlerStartedAt
 
 	// Get apiKey and user from context (set by ApiKeyAuth middleware)
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
@@ -235,6 +239,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
+	performanceTrace.SetRequest(reqModel, reqStream)
 	previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
 	if previousResponseID != "" {
 		previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
@@ -303,7 +308,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	service.SetOpsLatencyMs(c, service.OpsAuthLatencyMsKey, time.Since(requestStart).Milliseconds())
 	routingStart := time.Now()
 
+	performanceTrace.AddPrepareDuration(time.Since(prepareStartedAt))
+	userQueueStartedAt := time.Now()
 	userReleaseFunc, acquired := h.acquireResponsesUserSlot(c, subject.UserID, subject.Concurrency, reqStream, &streamStarted, reqLog)
+	performanceTrace.AddUserQueueDuration(time.Since(userQueueStartedAt))
 	if !acquired {
 		return
 	}
@@ -313,7 +321,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 
 	// 2. Re-check billing eligibility after wait
+	billingStartedAt := time.Now()
 	if err := h.billingCacheService.CheckBillingEligibility(c.Request.Context(), apiKey.User, apiKey, apiKey.Group, subscription, service.QuotaPlatform(c.Request.Context(), apiKey)); err != nil {
+		performanceTrace.AddBillingDuration(time.Since(billingStartedAt))
 		reqLog.Info("openai.billing_eligibility_check_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
 		if retryAfter > 0 {
@@ -328,6 +338,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		reservationModel = channelMapping.MappedModel
 	}
 	preparedReservation, err := h.gatewayService.PrepareUsageReservation(c.Request.Context(), apiKey, subscription, reservationModel, body, service.UsageReservationEndpointResponses)
+	performanceTrace.AddBillingDuration(time.Since(billingStartedAt))
 	if err != nil {
 		reqLog.Info("openai.usage_reservation_failed", zap.Error(err))
 		status, code, message, retryAfter := billingErrorDetails(err)
@@ -350,6 +361,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		}
 	}()
 
+	prepareStartedAt = time.Now()
 	// Generate session hash (header first; fallback to prompt_cache_key)
 	sessionHash := h.gatewayService.GenerateSessionHash(c, sessionHashBody)
 	if h.rejectIfCyberSessionBlocked(c, apiKey, sessionHashBody, reqModel, cyberBlockFormatResponses) {
@@ -364,8 +376,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	var lastFailoverErr *service.UpstreamFailoverError
 
 	for {
+		if !prepareStartedAt.IsZero() {
+			performanceTrace.AddPrepareDuration(time.Since(prepareStartedAt))
+			prepareStartedAt = time.Time{}
+		}
 		// Select account supporting the requested model
 		reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
+		schedulerStartedAt := time.Now()
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
 			c.Request.Context(),
 			apiKey.GroupID,
@@ -379,6 +396,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			false,
 			requestPlatform,
 		)
+		performanceTrace.AddSchedulerDuration(time.Since(schedulerStartedAt))
 		if err != nil {
 			reqLog.Warn("openai.account_select_failed",
 				zap.Error(err),
@@ -425,11 +443,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			zap.Float64("load_skew", scheduleDecision.LoadSkew),
 		)
 		account := selection.Account
+		performanceTrace.SetAccount(account.ID)
 		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
 
+		accountQueueStartedAt := time.Now()
 		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
+		performanceTrace.AddAccountQueueDuration(time.Since(accountQueueStartedAt))
 		if !acquired {
 			return
 		}
@@ -437,6 +458,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// Forward request
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
 		forwardStart := time.Now()
+		performanceTrace.BeginAttempt(forwardStart)
 		// 用扣除 compact 心跳字节的口径快照：心跳注释不构成语义响应，
 		// 不能因心跳字节变化而放弃 failover 换号（#3887）。
 		writerSizeBeforeForward := service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
@@ -448,6 +470,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			}()
 			return h.gatewayService.Forward(c.Request.Context(), c, account, forwardBody)
 		}()
+		forwardEndedAt := time.Now()
+		performanceTrace.RecordForwardResult(forwardStart, forwardEndedAt, result, err)
 		cyberBlockKeyHTTP := ""
 		if service.GetOpsCyberPolicy(c) != nil {
 			cyberBlockKeyHTTP = service.CyberSessionBlockKey(apiKey.ID, c, sessionHashBody)
@@ -489,10 +513,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 								zap.Int("retry_limit", retryLimit),
 								zap.Int("retry_count", sameAccountRetryCount[account.ID]),
 							)
+							retryWaitStartedAt := time.Now()
 							select {
 							case <-c.Request.Context().Done():
+								performanceTrace.AddRetryWaitDuration(time.Since(retryWaitStartedAt))
 								return
 							case <-time.After(sameAccountRetryDelay):
+								performanceTrace.AddRetryWaitDuration(time.Since(retryWaitStartedAt))
 							}
 							continue
 						}

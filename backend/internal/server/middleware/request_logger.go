@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
@@ -21,6 +22,7 @@ func RequestLogger() gin.HandlerFunc {
 			return
 		}
 
+		startedAt := time.Now()
 		requestID := strings.TrimSpace(c.GetHeader(requestIDHeader))
 		if requestID == "" {
 			requestID = uuid.NewString()
@@ -28,6 +30,7 @@ func RequestLogger() gin.HandlerFunc {
 		c.Header(requestIDHeader, requestID)
 
 		ctx := context.WithValue(c.Request.Context(), ctxkey.RequestID, requestID)
+		ctx = context.WithValue(ctx, ctxkey.RequestStartedAt, startedAt)
 		clientRequestID, _ := ctx.Value(ctxkey.ClientRequestID).(string)
 
 		requestLogger := logger.With(
@@ -42,4 +45,12 @@ func RequestLogger() gin.HandlerFunc {
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	}
+}
+
+func RequestStartedAt(ctx context.Context) (time.Time, bool) {
+	if ctx == nil {
+		return time.Time{}, false
+	}
+	startedAt, ok := ctx.Value(ctxkey.RequestStartedAt).(time.Time)
+	return startedAt, ok && !startedAt.IsZero()
 }
