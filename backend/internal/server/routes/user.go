@@ -22,6 +22,8 @@ func RegisterUserRoutes(
 		// 用户接口
 		user := authenticated.Group("/user")
 		{
+			user.GET("/activation", h.Activation.GetStatus)
+			user.POST("/activation/recall/claim", h.Activation.ClaimRecall)
 			user.GET("/profile", h.User.GetProfile)
 			user.PUT("/password", h.User.ChangePassword)
 			user.PUT("", h.User.UpdateProfile)

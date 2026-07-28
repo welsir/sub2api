@@ -101,7 +101,7 @@ func registerRoutes(
 	redisClient *redis.Client,
 ) {
 	// 通用路由（健康检查、状态等）
-	routes.RegisterCommonRoutes(r)
+	routes.RegisterCommonRoutes(r, h.Activation)
 	routes.RegisterProviderPricingRoutes(r, h.ProviderPricing)
 
 	// API v1
