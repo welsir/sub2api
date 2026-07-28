@@ -54,6 +54,7 @@ func (h *OpenAIGatewayHandler) logOpenAIRequestPerformance(c *gin.Context, trace
 		zap.Int64("retry_wait_ms", snapshot.RetryWaitMs),
 		zap.Int64("unattributed_ms", snapshot.UnattributedMs),
 		zap.Int64("e2e_first_output_ms", snapshot.E2EFirstOutputMs),
+		zap.Int64("e2e_first_text_ms", snapshot.E2EFirstTextMs),
 		zap.Int64("total_ms", snapshot.TotalMs),
 		zap.Int64("connect_ms", snapshot.ConnectMs),
 	}

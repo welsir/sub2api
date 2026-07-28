@@ -102,6 +102,33 @@ func TestApplyCodexOAuthTransform_ToolContinuationPreservesNativeMessageAndReaso
 	require.Equal(t, "rs_123", second["id"])
 }
 
+func TestApplyCodexOAuthTransform_ToolContinuationStripsInvalidMessageID(t *testing.T) {
+	reqBody := map[string]any{
+		"model": "gpt-5.6-luna",
+		"input": []any{
+			map[string]any{
+				"type":    "message",
+				"id":      "resp_123_msg",
+				"role":    "assistant",
+				"content": []any{map[string]any{"type": "output_text", "text": "hello"}},
+			},
+			map[string]any{
+				"type":    "function_call_output",
+				"call_id": "fc_123",
+				"output":  "done",
+			},
+		},
+	}
+
+	applyCodexOAuthTransform(reqBody, false, false)
+
+	input := reqBody["input"].([]any)
+	message := input[0].(map[string]any)
+	require.NotContains(t, message, "id")
+	require.Equal(t, "assistant", message["role"])
+	require.NotNil(t, message["content"])
+}
+
 func TestApplyCodexOAuthTransform_ToolContinuationNormalizesToolReferenceIDsOnly(t *testing.T) {
 	reqBody := map[string]any{
 		"model": "gpt-5.2",

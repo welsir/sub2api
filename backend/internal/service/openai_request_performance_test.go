@@ -3,14 +3,32 @@ package service
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"net/http/httptrace"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+type firstTextFlushRecorder struct {
+	*httptest.ResponseRecorder
+	visibleText         string
+	firstVisibleFlushAt time.Time
+}
+
+func (r *firstTextFlushRecorder) Flush() {
+	r.ResponseRecorder.Flush()
+	if r.firstVisibleFlushAt.IsZero() && strings.Contains(r.Body.String(), r.visibleText) {
+		r.firstVisibleFlushAt = time.Now()
+	}
+}
 
 func TestOpenAIRequestPerformanceTrace_RecordsMutuallyExclusivePhases(t *testing.T) {
 	startedAt := time.Unix(1_000, 0)
@@ -28,6 +46,7 @@ func TestOpenAIRequestPerformanceTrace_RecordsMutuallyExclusivePhases(t *testing
 	trace.BeginUpstreamHeader(attemptStartedAt.Add(5 * time.Millisecond))
 	trace.EndUpstreamHeader(attemptStartedAt.Add(15 * time.Millisecond))
 	trace.MarkFirstOutput(startedAt.Add(100 * time.Millisecond))
+	trace.MarkFirstText(startedAt.Add(110 * time.Millisecond))
 	trace.EndAttempt(startedAt.Add(130 * time.Millisecond))
 	trace.MarkCompleted()
 
@@ -42,6 +61,7 @@ func TestOpenAIRequestPerformanceTrace_RecordsMutuallyExclusivePhases(t *testing
 	require.Equal(t, int64(20), snapshot.UpstreamBodyWaitMs)
 	require.Equal(t, int64(30), snapshot.StreamMs)
 	require.Equal(t, int64(100), snapshot.E2EFirstOutputMs)
+	require.Equal(t, int64(110), snapshot.E2EFirstTextMs)
 	require.Equal(t, int64(135), snapshot.TotalMs)
 	require.Equal(t, int64(5), snapshot.UnattributedMs)
 	require.Equal(t, 1, snapshot.AttemptCount)
@@ -109,4 +129,109 @@ func TestOpenAIRequestPerformanceTrace_BindsToGinContext(t *testing.T) {
 	BindOpenAIRequestPerformanceTrace(c, trace)
 
 	require.Same(t, trace, OpenAIRequestPerformanceTraceFromGin(c))
+}
+
+func TestHandleStreamingResponse_MarksFirstTextOnlyAfterFlush(t *testing.T) {
+	previousMaxProcs := runtime.GOMAXPROCS(1)
+	defer runtime.GOMAXPROCS(previousMaxProcs)
+
+	gin.SetMode(gin.TestMode)
+	recorder := &firstTextFlushRecorder{
+		ResponseRecorder: httptest.NewRecorder(),
+		visibleText:      `"delta":"hello"`,
+	}
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", nil)
+
+	startedAt := time.Now()
+	trace := NewOpenAIRequestPerformanceTrace(startedAt)
+	trace.BeginAttempt(startedAt)
+	BindOpenAIRequestPerformanceTrace(c, trace)
+
+	lines := []string{
+		`data: {"type":"response.output_item.added","item":{"type":"message"}}`,
+		`data: {"type":"response.output_text.delta","delta":"hello"}`,
+	}
+	for range 32 {
+		lines = append(lines, ": queued")
+	}
+	lines = append(lines,
+		`data: {"type":"response.completed","response":{"id":"resp_1","status":"completed"}}`,
+		"",
+	)
+
+	svc := &OpenAIGatewayService{
+		cfg: &config.Config{
+			Gateway: config.GatewayConfig{
+				StreamKeepaliveInterval: 1,
+				MaxLineSize:             defaultMaxLineSize,
+			},
+		},
+	}
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(strings.Join(lines, "\n"))),
+		Header:     http.Header{},
+	}
+
+	_, err := svc.handleStreamingResponse(
+		c.Request.Context(),
+		resp,
+		c,
+		&Account{ID: 1},
+		startedAt,
+		"gpt-5.6-luna",
+		"gpt-5.6-luna",
+	)
+
+	require.NoError(t, err)
+	require.False(t, recorder.firstVisibleFlushAt.IsZero())
+	require.False(t, trace.firstTextAt.IsZero())
+	require.False(t, trace.firstTextAt.Before(recorder.firstVisibleFlushAt))
+}
+
+func TestOpenAIStreamDataContainsVisibleText(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventType string
+		payload   string
+		want      bool
+	}{
+		{
+			name:      "output item is not visible text",
+			eventType: "response.output_item.added",
+			payload:   `{"type":"response.output_item.added","item":{"type":"message"}}`,
+			want:      false,
+		},
+		{
+			name:      "empty text delta is ignored",
+			eventType: "response.output_text.delta",
+			payload:   `{"type":"response.output_text.delta","delta":""}`,
+			want:      false,
+		},
+		{
+			name:      "output text delta is visible",
+			eventType: "response.output_text.delta",
+			payload:   `{"type":"response.output_text.delta","delta":"hello"}`,
+			want:      true,
+		},
+		{
+			name:      "reasoning summary delta is visible",
+			eventType: "response.reasoning_summary_text.delta",
+			payload:   `{"type":"response.reasoning_summary_text.delta","delta":"thinking"}`,
+			want:      true,
+		},
+		{
+			name:      "function arguments are not user text",
+			eventType: "response.function_call_arguments.delta",
+			payload:   `{"type":"response.function_call_arguments.delta","delta":"{\"path\":"}`,
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, openAIStreamDataContainsVisibleText([]byte(tt.payload), tt.eventType))
+		})
+	}
 }

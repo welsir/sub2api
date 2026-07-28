@@ -1413,6 +1413,13 @@ func filterCodexInputWithOptions(input []any, opts codexInputFilterOptions) []an
 				ensureCopy()
 				delete(newItem, "id")
 			}
+		} else if typ == "message" {
+			// message item 的 id 必须以 "msg" 开头。客户端回放产生的
+			// resp_*/item_* id 并非真实上游 message id，删除而不是伪造改写。
+			if id, ok := m["id"].(string); ok && id != "" && !strings.HasPrefix(id, "msg") {
+				ensureCopy()
+				delete(newItem, "id")
+			}
 		}
 
 		filtered = append(filtered, newItem)

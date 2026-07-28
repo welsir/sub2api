@@ -30,6 +30,7 @@ func TestLogOpenAIRequestPerformance_EmitsUserVisibleTimingFields(t *testing.T) 
 	trace.SetRequest("gpt-5.5", true)
 	trace.SetAccount(42)
 	trace.BeginAttempt(startedAt.Add(20 * time.Millisecond))
+	trace.MarkFirstText(startedAt.Add(60 * time.Millisecond))
 	firstTokenMs := 30
 	trace.RecordForwardResult(
 		startedAt.Add(20*time.Millisecond),
@@ -48,4 +49,5 @@ func TestLogOpenAIRequestPerformance_EmitsUserVisibleTimingFields(t *testing.T) 
 	require.True(t, logSink.ContainsFieldValue("upstream_request_id", "upstream-456"))
 	require.True(t, logSink.ContainsFieldValue("attempt_count", "1"))
 	require.True(t, logSink.ContainsFieldValue("e2e_first_output_ms", "50"))
+	require.True(t, logSink.ContainsFieldValue("e2e_first_text_ms", "60"))
 }

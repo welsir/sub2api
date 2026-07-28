@@ -362,6 +362,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 
 	clientDisconnected := false
+	performanceTrace := OpenAIRequestPerformanceTraceFromGin(c)
+	pendingFirstText := false
 	flushBatchSize := s.openAIWSEventFlushBatchSize()
 	flushInterval := s.openAIWSEventFlushInterval()
 	pendingFlushEvents := 0
@@ -376,8 +378,15 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			}
 		}
 		flusher.Flush()
+		flushedAt := time.Now()
 		pendingFlushEvents = 0
-		lastFlushAt = time.Now()
+		lastFlushAt = flushedAt
+		if pendingFirstText {
+			if performanceTrace != nil {
+				performanceTrace.MarkFirstText(flushedAt)
+			}
+			pendingFirstText = false
+		}
 	}
 	emitStreamMessage := func(message []byte, forceFlush bool) {
 		if clientDisconnected {
@@ -616,6 +625,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 				}
 			} else {
 				flushBufferedStreamEvents(eventType)
+				if openAIStreamDataContainsVisibleText(message, eventType) {
+					pendingFirstText = true
+				}
 				emitStreamMessage(message, isTerminalEvent)
 			}
 		} else {
