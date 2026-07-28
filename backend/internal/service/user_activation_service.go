@@ -381,7 +381,7 @@ func (s *UserActivationService) applyEvidenceState(
 	}
 
 	switch {
-	case evidence.FirstSuccessfulUsageAt != nil:
+	case journey.FirstSuccessAt != nil || evidence.FirstSuccessfulUsageAt != nil:
 		journey.RecallState = "closed_success"
 	case evidence.FirstCompletedPaymentAt != nil:
 		journey.RecallState = "blocked_paid"
@@ -409,7 +409,7 @@ func (s *UserActivationService) statusFromJourney(
 ) *UserActivationStatus {
 	status := &UserActivationStatus{
 		Enabled:        true,
-		Segment:        activationSegmentFromEvidence(evidence),
+		Segment:        activationSegmentFromState(journey, evidence),
 		FirstSuccessAt: journey.FirstSuccessAt,
 		Starter: ActivationGrantStatus{
 			State:          journey.StarterState,
@@ -451,9 +451,13 @@ func (s *UserActivationService) statusFromJourney(
 	return status
 }
 
-func activationSegmentFromEvidence(evidence *UserActivationEvidence) string {
+func activationSegmentFromState(
+	journey *UserActivationJourney,
+	evidence *UserActivationEvidence,
+) string {
 	switch {
-	case evidence != nil && evidence.FirstSuccessfulUsageAt != nil:
+	case (journey != nil && journey.FirstSuccessAt != nil) ||
+		(evidence != nil && evidence.FirstSuccessfulUsageAt != nil):
 		return UserActivationSegmentSuccess
 	case evidence != nil && evidence.FirstCompletedPaymentAt != nil:
 		return UserActivationSegmentPaidZeroSuccess

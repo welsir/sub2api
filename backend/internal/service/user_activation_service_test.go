@@ -1,5 +1,5 @@
 // [INPUT]: Activation configuration, verified users, and activation service dependencies.
-// [OUTPUT]: Unit proof for activation safety gates and starter subscription grants.
+// [OUTPUT]: Unit proof for activation safety gates, durable success, and subscription grants.
 // [POS]: Service-layer TDD contract for the HVOY new-user activation workflow.
 //
 // [PROTOCOL]:
@@ -20,6 +20,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"entgo.io/ent/dialect"
@@ -357,6 +358,67 @@ func TestUserActivationEvaluateWritesFirstSuccessOnlyOnce(t *testing.T) {
 
 	require.Equal(t, firstSuccess, *second.FirstSuccessAt)
 	require.Equal(t, firstSuccess, *journeys.journey(user.ID).FirstSuccessAt)
+	require.NoError(t, sqlMock.ExpectationsWereMet())
+}
+
+func TestUserActivationDurableSuccessSurvivesMissingSnapshotAndBlocksRecall(t *testing.T) {
+	now := time.Now().UTC()
+	firstSuccess := now.Add(-4 * time.Hour)
+	user := &User{
+		ID:           251,
+		Email:        "durable-success@example.com",
+		SignupSource: "email",
+		CreatedAt:    now.Add(-2 * 24 * time.Hour),
+	}
+	client, sqlMock := newActivationServiceSQLMockClient(t)
+	journeys := newActivationJourneyRepoStub()
+	seedActivationJourney(t, journeys, user.ID, func(journey *UserActivationJourney) {
+		expired := now.Add(-time.Hour)
+		starterID := int64(851)
+		journey.StarterState = "expired"
+		journey.StarterSubscriptionID = &starterID
+		journey.StarterExpiresAt = &expired
+	})
+	evidence := &activationEvidenceRepoStub{
+		byUser: map[int64]*UserActivationEvidence{
+			user.ID: {FirstSuccessfulUsageAt: &firstSuccess},
+		},
+	}
+	subscriptions, subs := newActivationSubscriptionService()
+	svc := NewUserActivationService(
+		testActivationConfig(now),
+		journeys,
+		evidence,
+		subscriptions,
+		activationSettingService(true),
+		client,
+	)
+
+	expectActivationTransaction(sqlMock, user, true)
+	first, err := svc.Evaluate(context.Background(), user.ID, now)
+	require.NoError(t, err)
+	require.Equal(t, UserActivationSegmentSuccess, first.Segment)
+	require.Equal(t, "closed_success", first.Recall.State)
+	require.Equal(t, firstSuccess, *first.FirstSuccessAt)
+
+	evidence.mu.Lock()
+	evidence.byUser[user.ID] = nil
+	evidence.mu.Unlock()
+	expectActivationTransaction(sqlMock, user, true)
+	second, err := svc.Evaluate(context.Background(), user.ID, now.Add(time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, UserActivationSegmentSuccess, second.Segment)
+	assert.Equal(t, "closed_success", second.Recall.State)
+	assert.Equal(t, firstSuccess, *second.FirstSuccessAt)
+
+	expectActivationTransaction(sqlMock, user, true)
+	status, err := svc.ClaimRecall(context.Background(), user.ID)
+	assert.ErrorIs(t, err, ErrUserActivationRecallUnavailable)
+	require.NotNil(t, status)
+	assert.Equal(t, UserActivationSegmentSuccess, status.Segment)
+	assert.Equal(t, "closed_success", status.Recall.State)
+	assert.Zero(t, subs.createCalls)
+	assert.Nil(t, subs.subscription(user.ID, 202))
 	require.NoError(t, sqlMock.ExpectationsWereMet())
 }
 

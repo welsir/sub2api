@@ -1,7 +1,7 @@
 //go:build integration
 
 // [INPUT]: PostgreSQL integration harness, activation repositories, and subscription service.
-// [OUTPUT]: Durable concurrency and rollback proof for activation grants and recall claims.
+// [OUTPUT]: Durable lock-order, concurrency, and rollback proof for activation grants and recall claims.
 // [POS]: Cross-repository transaction contract for the HVOY activation service.
 //
 // [PROTOCOL]:
@@ -11,6 +11,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -101,6 +102,58 @@ func TestUserActivationServiceEvaluateAndClaimDoNotOverwritePostgres(t *testing.
 	))
 }
 
+func TestUserActivationServiceBootstrapAndClaimShareLockOrderPostgres(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	now := time.Now().UTC()
+	fixture := newActivationServicePostgresFixture(t, now.Add(-2*24*time.Hour))
+
+	const bootstrapCallers = 2
+	const claimCallers = 2
+	const callers = bootstrapCallers + claimCallers
+	start := make(chan struct{})
+	results := make(chan error, callers)
+	for range bootstrapCallers {
+		go func() {
+			<-start
+			results <- fixture.service.BootstrapVerifiedRegistration(
+				ctx,
+				activationServiceUser(fixture.user),
+				"hvoy_partner",
+			)
+		}()
+	}
+	for range claimCallers {
+		go func() {
+			<-start
+			_, err := fixture.service.ClaimRecall(ctx, fixture.user.ID)
+			results <- err
+		}()
+	}
+	close(start)
+
+	for range callers {
+		select {
+		case err := <-results:
+			require.NoError(t, err)
+		case <-ctx.Done():
+			t.Fatalf("bootstrap and claim exceeded lock-order timeout: %v", ctx.Err())
+		}
+	}
+
+	require.Equal(t, 1, activationSubscriptionCount(
+		t,
+		fixture.user.ID,
+		fixture.recallGroup.ID,
+	))
+	journey, err := fixture.journeys.GetByUserID(ctx, fixture.user.ID)
+	require.NoError(t, err)
+	require.Equal(t, "claimed", journey.RecallState)
+	require.NotNil(t, journey.RecallSubscriptionID)
+	require.NotNil(t, journey.RecallClaimedAt)
+	require.NotNil(t, journey.RecallExpiresAt)
+}
+
 func TestUserActivationServiceAssignConflictRollsBackAndRetriesPostgres(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -147,12 +200,90 @@ func TestUserActivationServiceAssignConflictRollsBackAndRetriesPostgres(t *testi
 	))
 }
 
+func TestUserActivationServiceJourneyUpdateFailureRollsBackGrantPostgres(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	fixture := newActivationServicePostgresFixtureWithoutStarter(t, now)
+	sentinel := errors.New("fail activation journey update once")
+	journeys := &failOnceActivationJourneyRepository{
+		UserActivationJourneyRepository: fixture.journeys,
+		err:                             sentinel,
+		failNextUpdate:                  true,
+	}
+	activationService := service.NewUserActivationService(
+		fixture.cfg,
+		journeys,
+		fixture.evidence,
+		fixture.subscriptions,
+		fixture.settings,
+		integrationEntClient,
+	)
+
+	err := activationService.BootstrapVerifiedRegistration(
+		ctx,
+		activationServiceUser(fixture.user),
+		"hvoy_partner",
+	)
+	require.ErrorIs(t, err, sentinel)
+	require.Equal(t, 0, activationSubscriptionCount(
+		t,
+		fixture.user.ID,
+		fixture.starterGroup.ID,
+	))
+	journey, err := fixture.journeys.GetByUserID(ctx, fixture.user.ID)
+	require.NoError(t, err)
+	require.Equal(t, "pending", journey.StarterState)
+	require.Nil(t, journey.StarterSubscriptionID)
+
+	require.NoError(t, activationService.BootstrapVerifiedRegistration(
+		ctx,
+		activationServiceUser(fixture.user),
+		"hvoy_partner",
+	))
+	require.Equal(t, 1, activationSubscriptionCount(
+		t,
+		fixture.user.ID,
+		fixture.starterGroup.ID,
+	))
+	journey, err = fixture.journeys.GetByUserID(ctx, fixture.user.ID)
+	require.NoError(t, err)
+	require.Equal(t, "granted", journey.StarterState)
+	require.NotNil(t, journey.StarterSubscriptionID)
+}
+
 type activationServicePostgresFixture struct {
-	service      *service.UserActivationService
-	journeys     service.UserActivationJourneyRepository
-	user         *dbent.User
-	starterGroup *dbent.Group
-	recallGroup  *dbent.Group
+	service       *service.UserActivationService
+	journeys      service.UserActivationJourneyRepository
+	evidence      service.UserActivationEvidenceRepository
+	subscriptions *service.SubscriptionService
+	settings      *service.SettingService
+	cfg           config.UserActivationConfig
+	user          *dbent.User
+	starterGroup  *dbent.Group
+	recallGroup   *dbent.Group
+}
+
+type failOnceActivationJourneyRepository struct {
+	service.UserActivationJourneyRepository
+
+	mu             sync.Mutex
+	err            error
+	failNextUpdate bool
+}
+
+func (r *failOnceActivationJourneyRepository) Update(
+	ctx context.Context,
+	journey *service.UserActivationJourney,
+) error {
+	r.mu.Lock()
+	if r.failNextUpdate {
+		r.failNextUpdate = false
+		err := r.err
+		r.mu.Unlock()
+		return err
+	}
+	r.mu.Unlock()
+	return r.UserActivationJourneyRepository.Update(ctx, journey)
 }
 
 func newActivationServicePostgresFixture(
@@ -247,10 +378,14 @@ func newActivationServicePostgresFixtureWithoutStarter(
 			settings,
 			integrationEntClient,
 		),
-		journeys:     journeys,
-		user:         user,
-		starterGroup: starterGroup,
-		recallGroup:  recallGroup,
+		journeys:      journeys,
+		evidence:      evidence,
+		subscriptions: subscriptions,
+		settings:      settings,
+		cfg:           cfg,
+		user:          user,
+		starterGroup:  starterGroup,
+		recallGroup:   recallGroup,
 	}
 }
 
