@@ -27,7 +27,6 @@ const (
 	activationStarterNotes = "user_activation:starter"
 	activationRecallNotes  = "user_activation:recall"
 	activationValidityDays = 1
-	activationRecallWindow = 7 * 24 * time.Hour
 )
 
 var (
@@ -309,6 +308,9 @@ func (s *UserActivationService) withLockedActivation(
 	if err != nil {
 		return nil, fmt.Errorf("begin user activation transaction: %w", err)
 	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
 	txCtx := dbent.NewTxContext(ctx, tx)
 
 	lockedEntity, err := tx.Client().User.Query().
@@ -395,7 +397,9 @@ func (s *UserActivationService) applyEvidenceState(
 		journey.StarterExpiresAt == nil ||
 		journey.StarterExpiresAt.After(now):
 		journey.RecallState = "locked"
-	case user == nil || !now.Before(user.CreatedAt.Add(activationRecallWindow)):
+	case user == nil || !now.Before(user.CreatedAt.Add(
+		time.Duration(s.cfg.RecallWindowDays)*24*time.Hour,
+	)):
 		journey.RecallState = "expired"
 	default:
 		journey.RecallState = "claimable"
@@ -426,10 +430,12 @@ func (s *UserActivationService) statusFromJourney(
 		},
 		SupportWeChat: s.cfg.SupportWeChat,
 	}
-	if journey.RecallState == "claimed" &&
-		journey.RecallSubscriptionID != nil &&
+	if journey.RecallSubscriptionID != nil &&
 		journey.RecallClaimedAt != nil &&
-		journey.RecallExpiresAt != nil {
+		journey.RecallExpiresAt != nil &&
+		journey.LastEvaluatedAt != nil &&
+		!journey.RecallClaimedAt.After(*journey.LastEvaluatedAt) &&
+		journey.RecallExpiresAt.After(*journey.LastEvaluatedAt) {
 		status.ActiveGroup = &ActivationGroupStatus{
 			GroupID:        s.cfg.RecallGroupID,
 			SubscriptionID: *journey.RecallSubscriptionID,

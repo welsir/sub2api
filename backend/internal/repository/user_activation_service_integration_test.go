@@ -113,8 +113,11 @@ func TestUserActivationServiceBootstrapAndClaimShareLockOrderPostgres(t *testing
 	const callers = bootstrapCallers + claimCallers
 	start := make(chan struct{})
 	results := make(chan error, callers)
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(callers)
 	for range bootstrapCallers {
 		go func() {
+			defer waitGroup.Done()
 			<-start
 			results <- fixture.service.BootstrapVerifiedRegistration(
 				ctx,
@@ -125,6 +128,7 @@ func TestUserActivationServiceBootstrapAndClaimShareLockOrderPostgres(t *testing
 	}
 	for range claimCallers {
 		go func() {
+			defer waitGroup.Done()
 			<-start
 			_, err := fixture.service.ClaimRecall(ctx, fixture.user.ID)
 			results <- err
@@ -132,13 +136,25 @@ func TestUserActivationServiceBootstrapAndClaimShareLockOrderPostgres(t *testing
 	}
 	close(start)
 
+	var timeoutErr error
+	errs := make([]error, 0, callers)
+collectResults:
 	for range callers {
 		select {
 		case err := <-results:
-			require.NoError(t, err)
+			errs = append(errs, err)
 		case <-ctx.Done():
-			t.Fatalf("bootstrap and claim exceeded lock-order timeout: %v", ctx.Err())
+			timeoutErr = ctx.Err()
+			cancel()
+			break collectResults
 		}
+	}
+	waitGroup.Wait()
+	if timeoutErr != nil {
+		t.Fatalf("bootstrap and claim exceeded lock-order timeout: %v", timeoutErr)
+	}
+	for _, err := range errs {
+		require.NoError(t, err)
 	}
 
 	require.Equal(t, 1, activationSubscriptionCount(

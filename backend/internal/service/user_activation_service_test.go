@@ -1,5 +1,5 @@
 // [INPUT]: Activation configuration, verified users, and activation service dependencies.
-// [OUTPUT]: Unit proof for activation safety gates, durable success, and subscription grants.
+// [OUTPUT]: Unit proof for activation safety gates, durable outcomes, and active entitlements.
 // [POS]: Service-layer TDD contract for the HVOY new-user activation workflow.
 //
 // [PROTOCOL]:
@@ -422,6 +422,141 @@ func TestUserActivationDurableSuccessSurvivesMissingSnapshotAndBlocksRecall(t *t
 	require.NoError(t, sqlMock.ExpectationsWereMet())
 }
 
+func TestUserActivationActiveRecallRemainsEntitlementAfterSuccess(t *testing.T) {
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	successAt := now.Add(-15 * time.Minute)
+	claimedAt := now.Add(-30 * time.Minute)
+	expiresAt := now.Add(30 * time.Minute)
+	recallSubscriptionID := int64(961)
+	user := &User{
+		ID:           261,
+		Email:        "active-recall-success@example.com",
+		SignupSource: "email",
+		CreatedAt:    now.Add(-2 * 24 * time.Hour),
+	}
+	client, sqlMock := newActivationServiceSQLMockClient(t)
+	journeys := newActivationJourneyRepoStub()
+	seedActivationJourney(t, journeys, user.ID, func(journey *UserActivationJourney) {
+		journey.RecallState = "claimed"
+		journey.RecallSubscriptionID = &recallSubscriptionID
+		journey.RecallClaimedAt = &claimedAt
+		journey.RecallExpiresAt = &expiresAt
+	})
+	evidence := &activationEvidenceRepoStub{
+		byUser: map[int64]*UserActivationEvidence{
+			user.ID: {FirstSuccessfulUsageAt: &successAt},
+		},
+	}
+	subscriptions, _ := newActivationSubscriptionService()
+	svc := NewUserActivationService(
+		testActivationConfig(now),
+		journeys,
+		evidence,
+		subscriptions,
+		activationSettingService(true),
+		client,
+	)
+	expectActivationTransaction(sqlMock, user, true)
+
+	status, err := svc.Evaluate(context.Background(), user.ID, now)
+
+	require.NoError(t, err)
+	require.Equal(t, UserActivationSegmentSuccess, status.Segment)
+	require.Equal(t, "closed_success", status.Recall.State)
+	require.NotNil(t, status.ActiveGroup)
+	require.Equal(t, int64(202), status.ActiveGroup.GroupID)
+	require.Equal(t, recallSubscriptionID, status.ActiveGroup.SubscriptionID)
+	require.Equal(t, claimedAt, status.ActiveGroup.StartsAt)
+	require.Equal(t, expiresAt, status.ActiveGroup.ExpiresAt)
+	require.NoError(t, sqlMock.ExpectationsWereMet())
+}
+
+func TestUserActivationActiveRecallRemainsEntitlementAfterPayment(t *testing.T) {
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	paidAt := now.Add(-15 * time.Minute)
+	claimedAt := now.Add(-30 * time.Minute)
+	expiresAt := now.Add(30 * time.Minute)
+	recallSubscriptionID := int64(962)
+	user := &User{
+		ID:           262,
+		Email:        "active-recall-paid@example.com",
+		SignupSource: "email",
+		CreatedAt:    now.Add(-2 * 24 * time.Hour),
+	}
+	client, sqlMock := newActivationServiceSQLMockClient(t)
+	journeys := newActivationJourneyRepoStub()
+	seedActivationJourney(t, journeys, user.ID, func(journey *UserActivationJourney) {
+		journey.RecallState = "claimed"
+		journey.RecallSubscriptionID = &recallSubscriptionID
+		journey.RecallClaimedAt = &claimedAt
+		journey.RecallExpiresAt = &expiresAt
+	})
+	evidence := &activationEvidenceRepoStub{
+		byUser: map[int64]*UserActivationEvidence{
+			user.ID: {FirstCompletedPaymentAt: &paidAt},
+		},
+	}
+	subscriptions, _ := newActivationSubscriptionService()
+	svc := NewUserActivationService(
+		testActivationConfig(now),
+		journeys,
+		evidence,
+		subscriptions,
+		activationSettingService(true),
+		client,
+	)
+	expectActivationTransaction(sqlMock, user, true)
+
+	status, err := svc.Evaluate(context.Background(), user.ID, now)
+
+	require.NoError(t, err)
+	require.Equal(t, UserActivationSegmentPaidZeroSuccess, status.Segment)
+	require.Equal(t, "blocked_paid", status.Recall.State)
+	require.NotNil(t, status.ActiveGroup)
+	require.Equal(t, int64(202), status.ActiveGroup.GroupID)
+	require.Equal(t, recallSubscriptionID, status.ActiveGroup.SubscriptionID)
+	require.Equal(t, claimedAt, status.ActiveGroup.StartsAt)
+	require.Equal(t, expiresAt, status.ActiveGroup.ExpiresAt)
+	require.NoError(t, sqlMock.ExpectationsWereMet())
+}
+
+func TestUserActivationRecallEntitlementRequiresClaimedAtByEvaluationTime(t *testing.T) {
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	claimedAt := now.Add(time.Minute)
+	expiresAt := now.Add(30 * time.Minute)
+	recallSubscriptionID := int64(963)
+	user := &User{
+		ID:           263,
+		Email:        "future-recall@example.com",
+		SignupSource: "email",
+		CreatedAt:    now.Add(-2 * 24 * time.Hour),
+	}
+	client, sqlMock := newActivationServiceSQLMockClient(t)
+	journeys := newActivationJourneyRepoStub()
+	seedActivationJourney(t, journeys, user.ID, func(journey *UserActivationJourney) {
+		journey.RecallState = "claimed"
+		journey.RecallSubscriptionID = &recallSubscriptionID
+		journey.RecallClaimedAt = &claimedAt
+		journey.RecallExpiresAt = &expiresAt
+	})
+	subscriptions, _ := newActivationSubscriptionService()
+	svc := NewUserActivationService(
+		testActivationConfig(now),
+		journeys,
+		&activationEvidenceRepoStub{},
+		subscriptions,
+		activationSettingService(true),
+		client,
+	)
+	expectActivationTransaction(sqlMock, user, true)
+
+	status, err := svc.Evaluate(context.Background(), user.ID, now)
+
+	require.NoError(t, err)
+	require.Nil(t, status.ActiveGroup)
+	require.NoError(t, sqlMock.ExpectationsWereMet())
+}
+
 func TestUserActivationEvaluateRecallStateTable(t *testing.T) {
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
 	evidenceAt := now.Add(-time.Hour)
@@ -552,6 +687,91 @@ func TestUserActivationEvaluateRecallStateTable(t *testing.T) {
 			require.NoError(t, sqlMock.ExpectationsWereMet())
 		})
 	}
+}
+
+func TestUserActivationRecallWindowUsesConfiguredDays(t *testing.T) {
+	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
+	expiredStarterAt := now.Add(-48 * time.Hour)
+	starterSubscriptionID := int64(881)
+	user := &User{
+		ID:           381,
+		Email:        "configured-recall-window@example.com",
+		SignupSource: "email",
+		CreatedAt:    now.Add(-3 * 24 * time.Hour),
+	}
+	client, sqlMock := newActivationServiceSQLMockClient(t)
+	journeys := newActivationJourneyRepoStub()
+	seedActivationJourney(t, journeys, user.ID, func(journey *UserActivationJourney) {
+		journey.StarterState = "expired"
+		journey.StarterSubscriptionID = &starterSubscriptionID
+		journey.StarterExpiresAt = &expiredStarterAt
+	})
+	cfg := testActivationConfig(now)
+	cfg.RecallWindowDays = 2
+	subscriptions, _ := newActivationSubscriptionService()
+	svc := NewUserActivationService(
+		cfg,
+		journeys,
+		&activationEvidenceRepoStub{},
+		subscriptions,
+		activationSettingService(true),
+		client,
+	)
+	expectActivationTransaction(sqlMock, user, true)
+
+	status, err := svc.Evaluate(context.Background(), user.ID, now)
+
+	require.NoError(t, err)
+	require.Equal(t, "expired", status.Recall.State)
+	require.False(t, status.Recall.Claimable)
+	require.NoError(t, sqlMock.ExpectationsWereMet())
+}
+
+func TestUserActivationWithLockedActivationRollsBackOnPanic(t *testing.T) {
+	now := time.Now().UTC()
+	user := &User{
+		ID:           391,
+		Email:        "panic-rollback@example.com",
+		SignupSource: "email",
+		CreatedAt:    now,
+	}
+	client, sqlMock := newActivationServiceSQLMockClient(t)
+	journeys := newActivationJourneyRepoStub()
+	seedActivationJourney(t, journeys, user.ID, nil)
+	subscriptions, _ := newActivationSubscriptionService()
+	svc := NewUserActivationService(
+		testActivationConfig(now),
+		journeys,
+		&activationEvidenceRepoStub{},
+		subscriptions,
+		activationSettingService(true),
+		client,
+	)
+	sentinel := errors.New("panic inside activation mutation")
+	expectActivationTransaction(sqlMock, user, false)
+
+	var recovered any
+	func() {
+		defer func() {
+			recovered = recover()
+		}()
+		_, _ = svc.withLockedActivation(
+			context.Background(),
+			user.ID,
+			func(
+				context.Context,
+				*User,
+				*UserActivationJourney,
+				*UserActivationEvidence,
+				time.Time,
+			) error {
+				panic(sentinel)
+			},
+		)
+	}()
+
+	require.Same(t, sentinel, recovered)
+	require.NoError(t, sqlMock.ExpectationsWereMet())
 }
 
 func TestUserActivationClaimRecallGrantsOnceWithoutExtension(t *testing.T) {
@@ -755,6 +975,68 @@ func TestUserActivationCommittedGrantRetriesSynchronousCacheInvalidation(t *test
 	require.NoError(t, svc.BootstrapVerifiedRegistration(context.Background(), user, "direct"))
 	require.Equal(t, 1, subs.createCalls, "retry after commit must not issue another grant")
 	require.Equal(t, 2, cache.invalidationCalls(), "retry must synchronously reattempt cache invalidation")
+	require.NoError(t, sqlMock.ExpectationsWereMet())
+}
+
+func TestUserActivationRecallGrantRetriesCacheInvalidationWithoutDuplicateOrExtension(t *testing.T) {
+	now := time.Now().UTC()
+	user := &User{
+		ID:           681,
+		Email:        "recall-cache-retry@example.com",
+		SignupSource: "email",
+		CreatedAt:    now.Add(-2 * 24 * time.Hour),
+	}
+	client, sqlMock := newActivationServiceSQLMockClient(t)
+	journeys := newActivationJourneyRepoStub()
+	seedActivationJourney(t, journeys, user.ID, func(journey *UserActivationJourney) {
+		expired := now.Add(-time.Hour)
+		starterSubscriptionID := int64(891)
+		journey.StarterState = "expired"
+		journey.StarterSubscriptionID = &starterSubscriptionID
+		journey.StarterExpiresAt = &expired
+	})
+	subscriptions, subs := newActivationSubscriptionService()
+	cache := &activationBillingCacheStub{
+		invalidateErr: errors.New("redis unavailable"),
+		onInvalidate: func() {
+			require.NoError(t, sqlMock.ExpectationsWereMet(), "cache invalidation must run after commit")
+		},
+	}
+	subscriptions.billingCacheService = &BillingCacheService{cache: cache}
+	svc := NewUserActivationService(
+		testActivationConfig(now),
+		journeys,
+		&activationEvidenceRepoStub{},
+		subscriptions,
+		activationSettingService(true),
+		client,
+	)
+
+	expectActivationTransaction(sqlMock, user, true)
+	firstStatus, err := svc.ClaimRecall(context.Background(), user.ID)
+	var committedErr *UserActivationGrantCommittedError
+	require.ErrorAs(t, err, &committedErr)
+	require.NotNil(t, firstStatus)
+	require.Equal(t, user.ID, committedErr.UserID)
+	require.Equal(t, int64(202), committedErr.GroupID)
+	firstGrant := subs.subscription(user.ID, 202)
+	require.NotNil(t, firstGrant)
+	require.Equal(t, "user_activation:recall", firstGrant.Notes)
+	require.Equal(t, 1, subs.createCalls)
+	require.Equal(t, 1, cache.invalidationCalls())
+
+	cache.setInvalidateError(nil)
+	expectActivationTransaction(sqlMock, user, true)
+	secondStatus, err := svc.ClaimRecall(context.Background(), user.ID)
+	require.NoError(t, err)
+	require.NotNil(t, secondStatus)
+	secondGrant := subs.subscription(user.ID, 202)
+	require.NotNil(t, secondGrant)
+	require.Equal(t, firstGrant.ID, secondGrant.ID)
+	require.Equal(t, firstGrant.StartsAt, secondGrant.StartsAt)
+	require.Equal(t, firstGrant.ExpiresAt, secondGrant.ExpiresAt)
+	require.Equal(t, 1, subs.createCalls, "cache retry must not issue another recall grant")
+	require.Equal(t, 2, cache.invalidationCalls(), "cache retry must synchronously invalidate again")
 	require.NoError(t, sqlMock.ExpectationsWereMet())
 }
 
