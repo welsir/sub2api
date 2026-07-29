@@ -91,14 +91,34 @@ func TestUserActivationWorkerSelectStagePriorityAndTimeRules(t *testing.T) {
 
 		userAtWindowEnd := *baseUser
 		userAtWindowEnd.CreatedAt = now.Add(-7 * 24 * time.Hour)
-		_, ok = selectUserActivationEmailStage(
+		stage, ok = selectUserActivationEmailStage(
 			7,
 			&userAtWindowEnd,
 			baseJourney,
 			&UserActivationEvidence{},
 			now,
 		)
-		require.False(t, ok)
+		require.True(t, ok)
+		require.Equal(t, UserActivationEmailStageNoAttempt, stage)
+	})
+
+	t.Run("attempted remains eligible after recall window", func(t *testing.T) {
+		user := *baseUser
+		user.CreatedAt = now.Add(-8 * 24 * time.Hour)
+		journey := *baseJourney
+		journey.RecallState = "locked"
+		stage, ok := selectUserActivationEmailStage(
+			7,
+			&user,
+			&journey,
+			&UserActivationEvidence{
+				FirstAPIKeyAt: timePointer(now.Add(-2 * time.Hour)),
+				APIKeyCount:   1,
+			},
+			now,
+		)
+		require.True(t, ok)
+		require.Equal(t, UserActivationEmailStageAttempted, stage)
 	})
 
 	t.Run("attempt waits thirty minutes from later key or request", func(t *testing.T) {
@@ -280,27 +300,54 @@ func TestUserActivationWorkerSendsOneDeduplicatedStageAndMarksNilSendResult(t *t
 	}, journeys.marked)
 }
 
-func TestUserActivationWorkerClearsActivationURLWhenFrontendURLIsUnavailable(t *testing.T) {
+func TestUserActivationWorkerDefersURLStageWhenFrontendURLIsUnavailable(t *testing.T) {
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	user := &User{ID: 9, Email: "user@example.com", CreatedAt: now.Add(-3 * time.Hour)}
+	journey := UserActivationJourney{
+		ID:                    90,
+		UserID:                user.ID,
+		StarterSubscriptionID: int64Pointer(1),
+		RecallState:           "locked",
+	}
+	journeys := &activationWorkerJourneyRepoStub{
+		dueJourneys: []UserActivationJourney{journey},
+		byUserID:    map[int64]UserActivationJourney{user.ID: journey},
+	}
+	sender := &activationWorkerEmailSenderStub{}
 	worker := NewUserActivationWorker(
-		activationWorkerConfig(time.Now().UTC()),
-		&activationWorkerJourneyRepoStub{},
+		activationWorkerConfig(now),
+		journeys,
 		&activationWorkerEvidenceRepoStub{},
 		&activationWorkerLifecycleStub{},
-		&activationWorkerUserReaderStub{},
-		&activationWorkerEmailSenderStub{},
+		&activationWorkerUserReaderStub{users: map[int64]*User{user.ID: user}},
+		sender,
 		&activationWorkerFrontendURLStub{},
 	)
 
-	input := worker.notificationInput(
-		context.Background(),
-		&User{ID: 9, Email: "user@example.com"},
-		&UserActivationJourney{ID: 90, UserID: 9},
-		UserActivationEmailStageNoAttempt,
+	worker.runOnceAt(context.Background(), now)
+
+	require.Empty(t, sender.inputs)
+	require.Empty(t, journeys.marked)
+}
+
+func TestUserActivationWorkerLogsSafeFailureCategoryWithoutDownstreamDetails(t *testing.T) {
+	sink, cleanup := captureStructuredLog(t)
+	defer cleanup()
+
+	logUserActivationWorkerError(
+		"attempted_zero_success",
+		42,
+		7,
+		errors.New("smtp failed for full-user@example.com body=private-message token=sk-secret-value"),
 	)
 
-	activationURL, exists := input.Variables["activation_url"]
-	require.True(t, exists)
-	require.Empty(t, activationURL)
+	require.True(t, sink.ContainsMessage("failure_category=downstream"))
+	require.True(t, sink.ContainsMessage("stage=attempted_zero_success"))
+	require.True(t, sink.ContainsMessage("journey_id=42"))
+	require.True(t, sink.ContainsMessage("user_id=7"))
+	require.False(t, sink.ContainsMessage("full-user@example.com"))
+	require.False(t, sink.ContainsMessage("private-message"))
+	require.False(t, sink.ContainsMessage("sk-secret-value"))
 }
 
 func TestUserActivationWorkerLeaderAllowsOnlyOneInstanceToScan(t *testing.T) {

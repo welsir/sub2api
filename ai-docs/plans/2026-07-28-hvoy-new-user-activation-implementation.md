@@ -687,13 +687,15 @@ paid_zero_success
 - 注册满 2 小时且没有 Key/调用/支付：no-attempt 邮件；
 - 完成充值后下一轮扫描：paid-support 邮件；
 - 新手订阅到期、零成功、零充值且仍在 7 天窗口：recall-available 邮件；
+- 7 天窗口只限制 recall-available；attempted/no-attempt 超过 7 天仍可发送；
 - `$2` 到期仍零成功：recall-expired 最终支持邮件；
 - 除 paid-support 外，任意两封激活邮件至少间隔 12 小时；
 - paid-support 发现已完成充值时绕过冷却，下一轮立即发送；
 - 一轮最多发送一个阶段；
 - 每次发送前再次读取成功证据；
 - 成功用户不再发送任何激活邮件；
-- paid/no-success 邮件不得包含领取链接。
+- paid/no-success 邮件不得包含领取链接；
+- frontend URL 未配置时，依赖 `activation_url` 的阶段不发送、不写发送时间，留待配置恢复后重试；不依赖该 URL 的 paid-support 等阶段不受影响。
 
 还要证明：
 
@@ -720,7 +722,7 @@ Expected: FAIL，新事件和 worker 不存在。
 - 已有 journey 但 `StarterSubscriptionID=nil` 时也调用同一 bootstrap 路径重试 `$1`。
 - 发送成功或被退订/去重后写相应 `*_email_sent_at` 和 `last_email_sent_at`。
 - 邮件写回使用仓储窄更新，只修改对应阶段邮件字段和 `last_email_sent_at`。
-- 失败只记录阶段、journey ID、user ID 和错误，不记录完整邮箱或邮件正文。
+- 失败只记录安全的有限类别、阶段、journey ID 和 user ID，不拼接下游错误正文、完整邮箱、邮件正文或凭据。
 
 **Step 5: Wire、cleanup 和 GREEN**
 

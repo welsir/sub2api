@@ -1,5 +1,5 @@
 // [INPUT]: Activation configuration, lifecycle/evidence repositories, email delivery, and leader locks.
-// [OUTPUT]: Recoverable activation scans and one deduplicated recovery email per eligible user and cycle.
+// [OUTPUT]: Recoverable activation scans with URL-gated mail and bounded failure diagnostics.
 // [POS]: Application worker that owns HVOY activation timing, priority, and recovery orchestration.
 //
 // [PROTOCOL]:
@@ -298,7 +298,10 @@ func (w *UserActivationWorker) processJourney(
 		return
 	}
 
-	input := w.notificationInput(ctx, user, journey, stage)
+	input, ok := w.notificationInput(ctx, user, journey, stage)
+	if !ok {
+		return
+	}
 	if err := w.emailSender.Send(ctx, input); err != nil {
 		logUserActivationWorkerError(string(stage), journey.ID, journey.UserID, err)
 		return
@@ -313,19 +316,19 @@ func (w *UserActivationWorker) notificationInput(
 	user *User,
 	journey *UserActivationJourney,
 	stage UserActivationEmailStage,
-) NotificationEmailSendInput {
+) (NotificationEmailSendInput, bool) {
 	variables := map[string]string{
 		"support_wechat": strings.TrimSpace(w.cfg.SupportWeChat),
 	}
 	if userActivationStageUsesActivationURL(stage) {
-		variables["activation_url"] = ""
 		frontendURL := ""
 		if w.frontendURL != nil {
 			frontendURL = strings.TrimSpace(w.frontendURL.GetFrontendURL(ctx))
 		}
-		if frontendURL != "" {
-			variables["activation_url"] = strings.TrimRight(frontendURL, "/") + "/activation"
+		if frontendURL == "" {
+			return NotificationEmailSendInput{}, false
 		}
+		variables["activation_url"] = strings.TrimRight(frontendURL, "/") + "/activation"
 	}
 	return NotificationEmailSendInput{
 		Event:          userActivationNotificationEvent(stage),
@@ -336,7 +339,7 @@ func (w *UserActivationWorker) notificationInput(
 		SourceID:       strconv.FormatInt(journey.ID, 10),
 		ReminderKey:    string(stage),
 		Variables:      variables,
-	}
+	}, true
 }
 
 func selectUserActivationEmailStage(
@@ -376,10 +379,8 @@ func selectUserActivationEmailStage(
 	recallWindow := time.Duration(recallWindowDays) * 24 * time.Hour
 	insideRecallWindow := recallWindowDays > 0 &&
 		now.Before(user.CreatedAt.Add(recallWindow))
-	if !insideRecallWindow {
-		return "", false
-	}
-	if journey.RecallState == "claimable" &&
+	if insideRecallWindow &&
+		journey.RecallState == "claimable" &&
 		journey.RecallAvailableEmailSentAt == nil {
 		return UserActivationEmailStageRecallAvailable, true
 	}
@@ -443,14 +444,13 @@ func logUserActivationWorkerError(
 	stage string,
 	journeyID int64,
 	userID int64,
-	err error,
+	_ error,
 ) {
 	logger.LegacyPrintf(
 		"service.user_activation_worker",
-		"stage=%s journey_id=%d user_id=%d error=%v",
+		"error: stage=%s journey_id=%d user_id=%d failure_category=downstream",
 		stage,
 		journeyID,
 		userID,
-		err,
 	)
 }

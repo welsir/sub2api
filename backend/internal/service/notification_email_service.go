@@ -1,5 +1,5 @@
 // [INPUT]: Settings persistence, email delivery, and notification template variables.
-// [OUTPUT]: Validated, localized, deduplicated transactional and optional email delivery.
+// [OUTPUT]: Validated, localized, URL-gated, deduplicated transactional and optional email delivery.
 // [POS]: Service-layer notification template registry and delivery coordinator.
 //
 // [PROTOCOL]:
@@ -673,6 +673,12 @@ func renderNotificationEmail(event, subject, htmlBody string, variables map[stri
 	if err := validateNotificationEmailTemplate(event, subject, htmlBody); err != nil {
 		return NotificationEmailPreview{}, err
 	}
+	if notificationEmailEventRequiresActivationURL(event) {
+		activationURL := strings.TrimSpace(variables["activation_url"])
+		if activationURL == "" || !isSafeNotificationEmailURL(activationURL) {
+			return NotificationEmailPreview{}, errors.New("activation URL is not configured")
+		}
+	}
 	renderedSubject, err := renderNotificationEmailString(event, subject, variables, nil, false)
 	if err != nil {
 		return NotificationEmailPreview{}, err
@@ -682,6 +688,12 @@ func renderNotificationEmail(event, subject, htmlBody string, variables map[stri
 		return NotificationEmailPreview{}, err
 	}
 	return NotificationEmailPreview{Subject: sanitizeEmailHeader(renderedSubject), HTML: renderedHTML}, nil
+}
+
+func notificationEmailEventRequiresActivationURL(event string) bool {
+	return event == NotificationEmailEventActivationNoAttempt ||
+		event == NotificationEmailEventActivationAttemptedZeroSuccess ||
+		event == NotificationEmailEventActivationRecallAvailable
 }
 
 func renderNotificationEmailString(event, raw string, variables map[string]string, rawHTMLVariables map[string]string, escapeHTML bool) (string, error) {

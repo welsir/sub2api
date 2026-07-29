@@ -1,5 +1,5 @@
 // [INPUT]: Notification template registry, settings fixtures, and local SMTP test delivery.
-// [OUTPUT]: Proof of template validation, localization, opt-out, and delivery deduplication.
+// [OUTPUT]: Proof of template validation, URL gating, localization, opt-out, and delivery deduplication.
 // [POS]: Service contract suite for the notification email coordinator.
 //
 // [PROTOCOL]:
@@ -262,6 +262,31 @@ func TestNotificationEmailActivationPaidZeroSuccessHasNoRecallOffer(t *testing.T
 		require.NotContains(t, content, "2 美元")
 		require.NotContains(t, content, "领取")
 		require.Contains(t, content, "{{support_wechat}}")
+	}
+}
+
+func TestNotificationEmailActivationURLCTARejectsEmptyRuntimeURL(t *testing.T) {
+	svc := NewNotificationEmailService(newNotificationEmailMemorySettingRepo(), nil)
+
+	for _, event := range []string{
+		NotificationEmailEventActivationNoAttempt,
+		NotificationEmailEventActivationAttemptedZeroSuccess,
+		NotificationEmailEventActivationRecallAvailable,
+	} {
+		t.Run(event, func(t *testing.T) {
+			preview, err := svc.PreviewTemplate(context.Background(), NotificationEmailPreviewInput{
+				Event:  event,
+				Locale: "zh",
+				Variables: map[string]string{
+					"activation_url": "",
+					"support_wechat": "welsir02",
+				},
+			})
+
+			require.Error(t, err)
+			require.NotContains(t, preview.HTML, "example.com")
+			require.NotContains(t, preview.HTML, `href=""`)
+		})
 	}
 }
 
