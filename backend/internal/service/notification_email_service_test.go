@@ -486,7 +486,9 @@ func TestNotificationEmailSendDeduplicatesSubscriptionExpiryReminder(t *testing.
 	ctx := context.Background()
 	repo := newNotificationEmailMemorySettingRepo()
 	smtpServer := startNotificationEmailTestSMTPServer(t)
-	require.NoError(t, repo.SetMultiple(ctx, smtpServer.settings()))
+	settings := smtpServer.settings()
+	settings[SettingKeyAPIBaseURL] = "https://api.example.test"
+	require.NoError(t, repo.SetMultiple(ctx, settings))
 
 	emailSvc := NewEmailService(repo, nil)
 	svc := NewNotificationEmailService(repo, emailSvc)
@@ -525,7 +527,9 @@ func TestNotificationEmailSendFailsClosedWhenUnsubscribeSecretCannotPersist(t *t
 		failKey:                            notificationEmailUnsubscribeSecretKey,
 	}
 	smtpServer := startNotificationEmailTestSMTPServer(t)
-	require.NoError(t, repo.SetMultiple(ctx, smtpServer.settings()))
+	settings := smtpServer.settings()
+	settings[SettingKeyAPIBaseURL] = "https://api.example.test"
+	require.NoError(t, repo.SetMultiple(ctx, settings))
 	svc := NewNotificationEmailService(repo, NewEmailService(repo, nil))
 
 	err := svc.Send(ctx, NotificationEmailSendInput{
@@ -542,9 +546,59 @@ func TestNotificationEmailSendFailsClosedWhenUnsubscribeSecretCannotPersist(t *t
 	require.NotContains(t, smtpServer.joinedMessages(), "example.com/unsubscribe")
 }
 
+func TestNotificationEmailSendFailsClosedWhenUnsubscribeBaseURLUnavailable(t *testing.T) {
+	ctx := context.Background()
+	repo := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, repo.SetMultiple(ctx, smtpServer.settings()))
+	require.NoError(t, repo.Set(ctx, notificationEmailUnsubscribeSecretKey, "fixed-test-secret"))
+	svc := NewNotificationEmailService(repo, NewEmailService(repo, nil))
+
+	err := svc.Send(ctx, NotificationEmailSendInput{
+		Event:          NotificationEmailEventActivationPaidZeroSuccess,
+		RecipientEmail: "user@example.com",
+		UserID:         42,
+		SourceType:     "user_activation_journey",
+		SourceID:       "42",
+		ReminderKey:    string(UserActivationEmailStagePaidSupport),
+	})
+
+	require.EqualError(t, err, "optional email unsubscribe URL is unavailable")
+	require.Equal(t, int64(0), smtpServer.messageCount())
+	require.NotContains(t, smtpServer.joinedMessages(), "example.com/unsubscribe")
+	require.NotContains(t, smtpServer.joinedMessages(), "/api/v1/settings/email-unsubscribe")
+}
+
+func TestNotificationEmailBuildUnsubscribeURLRejectsNonAbsoluteHTTPBase(t *testing.T) {
+	for name, baseURL := range map[string]string{
+		"empty":            "",
+		"relative":         "/console",
+		"dangerous_scheme": "javascript:alert(1)",
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := newNotificationEmailMemorySettingRepo()
+			require.NoError(t, repo.Set(context.Background(), notificationEmailUnsubscribeSecretKey, "fixed-test-secret"))
+			if baseURL != "" {
+				require.NoError(t, repo.Set(context.Background(), SettingKeyAPIBaseURL, baseURL))
+			}
+			svc := NewNotificationEmailService(repo, nil)
+
+			unsubscribeURL, err := svc.buildUnsubscribeURL(
+				context.Background(),
+				"user@example.com",
+				NotificationEmailEventActivationPaidZeroSuccess,
+			)
+
+			require.Error(t, err)
+			require.Empty(t, unsubscribeURL)
+		})
+	}
+}
+
 func TestNotificationEmailSendRespectsLegacyDeliveryKey(t *testing.T) {
 	ctx := context.Background()
 	repo := newNotificationEmailMemorySettingRepo()
+	require.NoError(t, repo.Set(ctx, SettingKeyAPIBaseURL, "https://api.example.test"))
 	svc := NewNotificationEmailService(repo, nil)
 	input := NotificationEmailSendInput{
 		Event:          NotificationEmailEventSubscriptionExpiryReminder,

@@ -696,7 +696,7 @@ paid_zero_success
 - 成功用户不再发送任何激活邮件；
 - paid/no-success 邮件不得包含领取链接；
 - frontend URL 未配置时，依赖 `activation_url` 的阶段不发送、不写发送时间，留待配置恢复后重试；不依赖该 URL 的 paid-support 等阶段不受影响。
-- optional 邮件运行时无法生成真实退订 URL 时 fail-closed，不得继承 preview 的 `example.com` 示例链接或投递 SMTP。
+- optional 邮件运行时必须由合法绝对 `http(s)` API/frontend base URL 生成真实退订链接；缺失、相对或危险 scheme 时 fail-closed，不得继承 preview 示例、投递 SMTP或写发送时间。
 
 还要证明：
 

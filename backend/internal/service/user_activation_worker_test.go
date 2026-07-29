@@ -306,7 +306,9 @@ func TestUserActivationWorkerMarksAfterSMTPDeliveryWhenDeliveryKeyPersistenceFai
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	baseRepo := newNotificationEmailMemorySettingRepo()
 	smtpServer := startNotificationEmailTestSMTPServer(t)
-	require.NoError(t, baseRepo.SetMultiple(ctx, smtpServer.settings()))
+	settings := smtpServer.settings()
+	settings[SettingKeyAPIBaseURL] = "https://api.example.test"
+	require.NoError(t, baseRepo.SetMultiple(ctx, settings))
 	require.NoError(t, baseRepo.Set(ctx, notificationEmailUnsubscribeSecretKey, "fixed-test-secret"))
 	settingRepo := &notificationEmailFailingSetRepo{
 		notificationEmailMemorySettingRepo: baseRepo,
@@ -345,6 +347,48 @@ func TestUserActivationWorkerMarksAfterSMTPDeliveryWhenDeliveryKeyPersistenceFai
 	require.Equal(t, int64(1), smtpServer.messageCount())
 	require.Len(t, journeys.marked, 1)
 	require.Equal(t, UserActivationEmailStagePaidSupport, journeys.marked[0].stage)
+}
+
+func TestUserActivationWorkerDoesNotMarkEmailSentWhenUnsubscribeBaseURLUnavailable(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	settingRepo := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, settingRepo.SetMultiple(ctx, smtpServer.settings()))
+	require.NoError(t, settingRepo.Set(ctx, notificationEmailUnsubscribeSecretKey, "fixed-test-secret"))
+	emailSender := NewNotificationEmailService(settingRepo, NewEmailService(settingRepo, nil))
+
+	user := &User{ID: 89, Email: "paid@example.com", CreatedAt: now.Add(-4 * time.Hour)}
+	journey := UserActivationJourney{
+		ID:                    890,
+		UserID:                user.ID,
+		StarterSubscriptionID: int64Pointer(1),
+		RecallState:           "blocked_paid",
+	}
+	journeys := &activationWorkerJourneyRepoStub{
+		dueJourneys: []UserActivationJourney{journey},
+		byUserID:    map[int64]UserActivationJourney{user.ID: journey},
+	}
+	evidence := &activationWorkerEvidenceRepoStub{
+		defaults: map[int64]*UserActivationEvidence{
+			user.ID: {FirstCompletedPaymentAt: timePointer(now.Add(-time.Minute))},
+		},
+	}
+	worker := newActivationWorkerForTest(
+		activationWorkerConfig(now),
+		journeys,
+		evidence,
+		&activationWorkerLifecycleStub{},
+		&activationWorkerUserReaderStub{users: map[int64]*User{user.ID: user}},
+		emailSender,
+	)
+
+	worker.runOnceAt(ctx, now)
+
+	require.Equal(t, int64(0), smtpServer.messageCount())
+	require.Empty(t, journeys.marked)
+	require.NotContains(t, smtpServer.joinedMessages(), "example.com/unsubscribe")
+	require.NotContains(t, smtpServer.joinedMessages(), "/api/v1/settings/email-unsubscribe")
 }
 
 func TestUserActivationWorkerDefersURLStageWhenFrontendURLIsUnavailable(t *testing.T) {

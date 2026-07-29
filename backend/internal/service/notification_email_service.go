@@ -575,16 +575,25 @@ func (s *NotificationEmailService) baseURL(ctx context.Context) string {
 }
 
 func (s *NotificationEmailService) buildUnsubscribeURL(ctx context.Context, email, event string) (string, error) {
+	baseURL := s.baseURL(ctx)
+	parsedBaseURL, err := url.Parse(baseURL)
+	if err != nil ||
+		!parsedBaseURL.IsAbs() ||
+		parsedBaseURL.Host == "" ||
+		(parsedBaseURL.Scheme != "http" && parsedBaseURL.Scheme != "https") {
+		return "", errors.New("unsubscribe base URL is unavailable")
+	}
 	token, err := s.createUnsubscribeToken(ctx, email, event)
 	if err != nil {
 		return "", err
 	}
-	path := "/api/v1/settings/email-unsubscribe?token=" + url.QueryEscape(token)
-	baseURL := s.baseURL(ctx)
-	if baseURL == "" {
-		return path, nil
+	unsubscribePath, err := url.Parse(
+		"/api/v1/settings/email-unsubscribe?token=" + url.QueryEscape(token),
+	)
+	if err != nil {
+		return "", errors.New("unsubscribe URL is unavailable")
 	}
-	return baseURL + path, nil
+	return parsedBaseURL.ResolveReference(unsubscribePath).String(), nil
 }
 
 func (s *NotificationEmailService) createUnsubscribeToken(ctx context.Context, email, event string) (string, error) {
