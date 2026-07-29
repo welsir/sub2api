@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -573,7 +574,7 @@ func TestNotificationEmailBuildUnsubscribeURLRejectsNonAbsoluteHTTPBase(t *testi
 	for name, baseURL := range map[string]string{
 		"empty":            "",
 		"relative":         "/console",
-		"dangerous_scheme": "javascript:alert(1)",
+		"dangerous_scheme": "javascript://evil.example",
 	} {
 		t.Run(name, func(t *testing.T) {
 			repo := newNotificationEmailMemorySettingRepo()
@@ -593,6 +594,34 @@ func TestNotificationEmailBuildUnsubscribeURLRejectsNonAbsoluteHTTPBase(t *testi
 			require.Empty(t, unsubscribeURL)
 		})
 	}
+}
+
+func TestNotificationEmailBuildUnsubscribeURLUsesAbsoluteHTTPBaseAndValidToken(t *testing.T) {
+	ctx := context.Background()
+	repo := newNotificationEmailMemorySettingRepo()
+	require.NoError(t, repo.Set(ctx, SettingKeyAPIBaseURL, "https://api.example.test/console"))
+	require.NoError(t, repo.Set(ctx, notificationEmailUnsubscribeSecretKey, "fixed-test-secret"))
+	svc := NewNotificationEmailService(repo, nil)
+
+	unsubscribeURL, err := svc.buildUnsubscribeURL(
+		ctx,
+		"user@example.com",
+		NotificationEmailEventActivationPaidZeroSuccess,
+	)
+	require.NoError(t, err)
+
+	parsed, err := url.Parse(unsubscribeURL)
+	require.NoError(t, err)
+	require.Equal(t, "https", parsed.Scheme)
+	require.Equal(t, "api.example.test", parsed.Host)
+	require.Equal(t, "/api/v1/settings/email-unsubscribe", parsed.Path)
+	token := parsed.Query().Get("token")
+	require.NotEmpty(t, token)
+
+	claims, err := svc.parseUnsubscribeToken(ctx, token)
+	require.NoError(t, err)
+	require.Equal(t, "user@example.com", claims.Email)
+	require.Equal(t, NotificationEmailEventActivationPaidZeroSuccess, claims.Event)
 }
 
 func TestNotificationEmailSendRespectsLegacyDeliveryKey(t *testing.T) {
