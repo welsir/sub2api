@@ -1,3 +1,10 @@
+// [INPUT]: Notification template registry, settings fixtures, and local SMTP test delivery.
+// [OUTPUT]: Proof of template validation, localization, opt-out, and delivery deduplication.
+// [POS]: Service contract suite for the notification email coordinator.
+//
+// [PROTOCOL]:
+// 1. Update this header when notification email test coverage changes.
+// 2. Keep event-specific policy assertions close to their official templates.
 package service
 
 import (
@@ -156,6 +163,134 @@ func TestNotificationEmailAdditionalEventsAreListedAndPreviewable(t *testing.T) 
 		require.NotEmpty(t, preview.Subject)
 		require.NotEmpty(t, preview.HTML)
 	}
+}
+
+func TestNotificationEmailActivationEventsAreOptionalAndPreviewable(t *testing.T) {
+	ctx := context.Background()
+	svc := NewNotificationEmailService(newNotificationEmailMemorySettingRepo(), nil)
+
+	infos := make(map[string]NotificationEmailEventInfo)
+	for _, info := range svc.ListEventInfos() {
+		infos[info.Event] = info
+	}
+
+	checks := []struct {
+		event        string
+		placeholders []string
+	}{
+		{
+			event: NotificationEmailEventActivationNoAttempt,
+			placeholders: []string{
+				"site_name", "recipient_name", "recipient_email",
+				"activation_url", "support_wechat", "unsubscribe_url",
+			},
+		},
+		{
+			event: NotificationEmailEventActivationAttemptedZeroSuccess,
+			placeholders: []string{
+				"site_name", "recipient_name", "recipient_email",
+				"activation_url", "support_wechat", "unsubscribe_url",
+			},
+		},
+		{
+			event: NotificationEmailEventActivationPaidZeroSuccess,
+			placeholders: []string{
+				"site_name", "recipient_name", "recipient_email",
+				"support_wechat", "unsubscribe_url",
+			},
+		},
+		{
+			event: NotificationEmailEventActivationRecallAvailable,
+			placeholders: []string{
+				"site_name", "recipient_name", "recipient_email",
+				"activation_url", "support_wechat", "unsubscribe_url",
+			},
+		},
+		{
+			event: NotificationEmailEventActivationRecallExpired,
+			placeholders: []string{
+				"site_name", "recipient_name", "recipient_email",
+				"support_wechat", "unsubscribe_url",
+			},
+		},
+	}
+
+	for _, check := range checks {
+		info, ok := infos[check.event]
+		require.Truef(t, ok, "expected %s to be listed", check.event)
+		require.True(t, info.Optional)
+		require.ElementsMatch(t, check.placeholders, info.Placeholders)
+
+		for _, locale := range []string{"zh", "en"} {
+			tmpl, err := svc.GetTemplate(ctx, check.event, locale)
+			require.NoError(t, err)
+			require.Contains(t, tmpl.HTML, "{{unsubscribe_url}}")
+			require.NoError(t, validateNotificationEmailTemplate(check.event, tmpl.Subject, tmpl.HTML))
+
+			preview, err := svc.PreviewTemplate(ctx, NotificationEmailPreviewInput{
+				Event:  check.event,
+				Locale: locale,
+				Variables: map[string]string{
+					"activation_url": "https://example.com/activation",
+					"support_wechat": "welsir02",
+				},
+			})
+			require.NoError(t, err)
+			require.NotEmpty(t, preview.Subject)
+			require.NotEmpty(t, preview.HTML)
+			require.NotContains(t, preview.HTML, "{{")
+		}
+	}
+}
+
+func TestNotificationEmailActivationPaidZeroSuccessHasNoRecallOffer(t *testing.T) {
+	svc := NewNotificationEmailService(newNotificationEmailMemorySettingRepo(), nil)
+
+	for _, locale := range []string{"zh", "en"} {
+		tmpl, err := svc.GetTemplate(
+			context.Background(),
+			NotificationEmailEventActivationPaidZeroSuccess,
+			locale,
+		)
+		require.NoError(t, err)
+
+		content := strings.ToLower(tmpl.Subject + "\n" + tmpl.HTML)
+		require.NotContains(t, content, "{{activation_url}}")
+		require.NotContains(t, content, "/activation")
+		require.NotContains(t, content, "$2")
+		require.NotContains(t, content, "2 usd")
+		require.NotContains(t, content, "2 美元")
+		require.NotContains(t, content, "领取")
+		require.Contains(t, content, "{{support_wechat}}")
+	}
+}
+
+func TestNotificationEmailActivationDeliveryKeyUsesJourneyAndStage(t *testing.T) {
+	first := notificationEmailDeliveryKey(
+		NotificationEmailEventActivationNoAttempt,
+		"user_activation_journey",
+		"42",
+		"user@example.com",
+		"no_attempt",
+	)
+	replay := notificationEmailDeliveryKey(
+		NotificationEmailEventActivationNoAttempt,
+		"user_activation_journey",
+		"42",
+		"user@example.com",
+		"no_attempt",
+	)
+	otherStage := notificationEmailDeliveryKey(
+		NotificationEmailEventActivationAttemptedZeroSuccess,
+		"user_activation_journey",
+		"42",
+		"user@example.com",
+		"attempted_zero_success",
+	)
+
+	require.NotEmpty(t, first)
+	require.Equal(t, first, replay)
+	require.NotEqual(t, first, otherStage)
 }
 
 func TestNotificationEmailRawHTMLVariablesAreTrustedOnlyForHTMLPlaceholders(t *testing.T) {

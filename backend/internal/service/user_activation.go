@@ -53,17 +53,29 @@ type UserActivationEvidence struct {
 	FirstSuccessfulUsageAt  *time.Time
 	FirstCompletedPaymentAt *time.Time
 	LastAttemptAt           *time.Time
+	FirstAPIKeyAt           *time.Time
 	UsageCount              int64
 	APIKeyCount             int64
 }
+
+type UserActivationEmailStage string
+
+const (
+	UserActivationEmailStageNoAttempt       UserActivationEmailStage = "no_attempt"
+	UserActivationEmailStageAttempted       UserActivationEmailStage = "attempted_zero_success"
+	UserActivationEmailStagePaidSupport     UserActivationEmailStage = "paid_zero_success"
+	UserActivationEmailStageRecallAvailable UserActivationEmailStage = "recall_available"
+	UserActivationEmailStageRecallExpired   UserActivationEmailStage = "recall_expired"
+)
 
 type UserActivationJourneyRepository interface {
 	CreateIfAbsent(ctx context.Context, userID int64, source string) (*UserActivationJourney, bool, error)
 	GetByUserID(ctx context.Context, userID int64) (*UserActivationJourney, error)
 	GetByUserIDForUpdate(ctx context.Context, userID int64) (*UserActivationJourney, error)
 	Update(ctx context.Context, journey *UserActivationJourney) error
-	ListDue(ctx context.Context, now time.Time, limit int) ([]UserActivationJourney, error)
-	ListEligibleUsersWithoutJourney(ctx context.Context, eligibleAfter time.Time, limit int) ([]User, error)
+	MarkEmailSent(ctx context.Context, journeyID int64, stage UserActivationEmailStage, sentAt time.Time) error
+	ListDue(ctx context.Context, now time.Time, afterID int64, limit int) ([]UserActivationJourney, error)
+	ListEligibleUsersWithoutJourney(ctx context.Context, eligibleAfter time.Time, afterID int64, limit int) ([]User, error)
 }
 
 type UserActivationEvidenceRepository interface {

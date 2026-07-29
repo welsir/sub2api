@@ -562,6 +562,31 @@ func ProvideUserActivationService(
 	)
 }
 
+func ProvideUserActivationWorker(
+	cfg *config.Config,
+	journeys UserActivationJourneyRepository,
+	evidence UserActivationEvidenceRepository,
+	activation *UserActivationService,
+	userRepo UserRepository,
+	notificationEmailService *NotificationEmailService,
+	settingService *SettingService,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *UserActivationWorker {
+	worker := NewUserActivationWorker(
+		cfg.UserActivation,
+		journeys,
+		evidence,
+		activation,
+		userRepo,
+		notificationEmailService,
+		settingService,
+	)
+	worker.SetLeaderLock(lockCache, db)
+	worker.Start()
+	return worker
+}
+
 func ProvideAuthService(
 	entClient *dbent.Client,
 	userRepo UserRepository,
@@ -681,6 +706,7 @@ var ProviderSet = wire.NewSet(
 	ProvideSettingService,
 	ProvideUserActivationService,
 	wire.Bind(new(UserActivationBootstrapper), new(*UserActivationService)),
+	ProvideUserActivationWorker,
 	NewDataManagementService,
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,

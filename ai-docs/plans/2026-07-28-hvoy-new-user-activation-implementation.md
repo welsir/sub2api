@@ -252,8 +252,9 @@ type UserActivationJourneyRepository interface {
     GetByUserID(ctx context.Context, userID int64) (*UserActivationJourney, error)
     GetByUserIDForUpdate(ctx context.Context, userID int64) (*UserActivationJourney, error)
     Update(ctx context.Context, journey *UserActivationJourney) error
-    ListDue(ctx context.Context, now time.Time, limit int) ([]UserActivationJourney, error)
-    ListEligibleUsersWithoutJourney(ctx context.Context, eligibleAfter time.Time, limit int) ([]User, error)
+    MarkEmailSent(ctx context.Context, journeyID int64, stage UserActivationEmailStage, sentAt time.Time) error
+    ListDue(ctx context.Context, now time.Time, afterID int64, limit int) ([]UserActivationJourney, error)
+    ListEligibleUsersWithoutJourney(ctx context.Context, eligibleAfter time.Time, afterID int64, limit int) ([]User, error)
 }
 
 type UserActivationEvidenceRepository interface {
@@ -264,6 +265,7 @@ type UserActivationEvidence struct {
     FirstSuccessfulUsageAt *time.Time
     FirstCompletedPaymentAt *time.Time
     LastAttemptAt          *time.Time
+    FirstAPIKeyAt          *time.Time
     UsageCount             int64
     APIKeyCount            int64
 }
@@ -276,6 +278,9 @@ type UserActivationEvidence struct {
 - 失败/零费用记录计入尝试，但不计入成功；
 - 支付证据使用余额订单的 `completed_at` 和正 `pay_amount`，不使用 `users.total_recharged`；
 - Key 数使用现有未删除 Key 口径；
+- Key 首次出现时间使用未删除 Key 的 `MIN(created_at)`，用于证明 30 分钟等待窗口；
+- 两个扫描列表都使用 `afterID` 稳定 keyset 游标，单用户失败不能饿死后续用户；
+- `MarkEmailSent` 只更新对应阶段邮件字段和 `last_email_sent_at`，不能覆盖并发变化的 starter/recall 状态；
 - SQL 参数化，不拼接用户输入。
 
 **Step 2: 验证 RED**
@@ -636,6 +641,13 @@ git commit -m "feat(api): expose activation status and recall claim"
 - Modify: `backend/internal/service/wire.go`
 - Modify: `backend/cmd/server/wire.go`
 - Generate: `backend/cmd/server/wire_gen.go`
+- Modify: `backend/cmd/server/wire_gen_test.go`
+- Modify: `backend/internal/service/user_activation.go`
+- Modify: `backend/internal/repository/user_activation_evidence_repo.go`
+- Modify: `backend/internal/repository/user_activation_evidence_repo_test.go`
+- Modify: `backend/internal/repository/user_activation_repo.go`
+- Modify: `backend/internal/repository/user_activation_repo_test.go`
+- Modify: `ai-docs/plans/2026-07-28-hvoy-new-user-activation-implementation.md`
 
 **Step 1: 写邮件事件 RED 测试**
 
@@ -671,6 +683,7 @@ paid_zero_success
 时间规则：
 
 - Key/失败请求出现后至少 30 分钟仍零成功：attempted 邮件；
+- Key 年龄由 `FirstAPIKeyAt` 证明；同时存在 Key 和失败请求时，从两者较晚时间开始计算 30 分钟；
 - 注册满 2 小时且没有 Key/调用/支付：no-attempt 邮件；
 - 完成充值后下一轮扫描：paid-support 邮件；
 - 新手订阅到期、零成功、零充值且仍在 7 天窗口：recall-available 邮件；
@@ -703,7 +716,10 @@ Expected: FAIL，新事件和 worker 不存在。
 - 复用 `SubscriptionExpiryService` 的 leader lock/DB advisory lock 模式。
 - lock key 使用 `user_activation:worker:leader`，TTL 必须大于一轮最大超时。
 - 每轮先分页修复 `eligible_after` 之后无 journey 的邮箱注册用户，再分页评估 due journey。
+- 两类分页均使用 `afterID` 稳定游标；due 列表使用本轮固定 cutoff，避免 `Evaluate` 写入新时间后在同一轮再次入选。
+- 已有 journey 但 `StarterSubscriptionID=nil` 时也调用同一 bootstrap 路径重试 `$1`。
 - 发送成功或被退订/去重后写相应 `*_email_sent_at` 和 `last_email_sent_at`。
+- 邮件写回使用仓储窄更新，只修改对应阶段邮件字段和 `last_email_sent_at`。
 - 失败只记录阶段、journey ID、user ID 和错误，不记录完整邮箱或邮件正文。
 
 **Step 5: Wire、cleanup 和 GREEN**

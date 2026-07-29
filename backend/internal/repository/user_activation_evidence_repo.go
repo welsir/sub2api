@@ -39,6 +39,11 @@ SELECT
 		WHERE user_id = $1
 	) AS last_attempt_at,
 	(
+		SELECT MIN(created_at)
+		FROM api_keys
+		WHERE user_id = $1 AND deleted_at IS NULL
+	) AS first_api_key_at,
+	(
 		SELECT COUNT(*)
 		FROM usage_logs
 		WHERE user_id = $1
@@ -87,11 +92,13 @@ func (r *userActivationEvidenceRepository) Snapshot(
 	var firstSuccessfulUsageAt sql.NullTime
 	var firstCompletedPaymentAt sql.NullTime
 	var lastAttemptAt sql.NullTime
+	var firstAPIKeyAt sql.NullTime
 	evidence := &service.UserActivationEvidence{}
 	if err := rows.Scan(
 		&firstSuccessfulUsageAt,
 		&firstCompletedPaymentAt,
 		&lastAttemptAt,
+		&firstAPIKeyAt,
 		&evidence.UsageCount,
 		&evidence.APIKeyCount,
 	); err != nil {
@@ -107,6 +114,7 @@ func (r *userActivationEvidenceRepository) Snapshot(
 	evidence.FirstSuccessfulUsageAt = nullTimePointer(firstSuccessfulUsageAt)
 	evidence.FirstCompletedPaymentAt = nullTimePointer(firstCompletedPaymentAt)
 	evidence.LastAttemptAt = nullTimePointer(lastAttemptAt)
+	evidence.FirstAPIKeyAt = nullTimePointer(firstAPIKeyAt)
 	return evidence, nil
 }
 

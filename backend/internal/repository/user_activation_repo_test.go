@@ -244,7 +244,7 @@ func TestUserActivationJourneyUpdateSetsAndClearsNullableFields(t *testing.T) {
 	require.ErrorIs(t, repo.Update(context.Background(), &missing), service.ErrUserActivationJourneyNotFound)
 }
 
-func TestUserActivationJourneyListDueUsesNullFirstStableOrderingAndLimit(t *testing.T) {
+func TestUserActivationJourneyListDueUsesStableIDCursorAndCutoff(t *testing.T) {
 	client := newUserActivationEntClient(t)
 	repo := NewUserActivationJourneyRepository(client)
 	now := time.Date(2026, 7, 28, 12, 0, 0, 0, time.UTC)
@@ -258,14 +258,18 @@ func TestUserActivationJourneyListDueUsesNullFirstStableOrderingAndLimit(t *test
 	oldestJourney.RecallState = "closed_success"
 	require.NoError(t, repo.Update(context.Background(), oldestJourney))
 
-	due, err := repo.ListDue(context.Background(), now, 4)
+	firstPage, err := repo.ListDue(context.Background(), now, 0, 2)
 	require.NoError(t, err)
-	require.Equal(t, []int64{nullJourney.ID, oldestJourney.ID, sameTimeFirst.ID, sameTimeSecond.ID}, journeyIDs(due))
-	require.NotContains(t, journeyIDs(due), futureJourney.ID)
+	require.Equal(t, []int64{nullJourney.ID, oldestJourney.ID}, journeyIDs(firstPage))
 
-	due, err = repo.ListDue(context.Background(), now, 2)
+	secondPage, err := repo.ListDue(context.Background(), now, firstPage[len(firstPage)-1].ID, 2)
 	require.NoError(t, err)
-	require.Equal(t, []int64{nullJourney.ID, oldestJourney.ID}, journeyIDs(due))
+	require.Equal(t, []int64{sameTimeFirst.ID, sameTimeSecond.ID}, journeyIDs(secondPage))
+	require.NotContains(t, journeyIDs(secondPage), futureJourney.ID)
+
+	lastPage, err := repo.ListDue(context.Background(), now, secondPage[len(secondPage)-1].ID, 2)
+	require.NoError(t, err)
+	require.Empty(t, lastPage)
 }
 
 func TestUserActivationJourneyListEligibleUsersWithoutJourneyFiltersAndOrders(t *testing.T) {
@@ -283,14 +287,70 @@ func TestUserActivationJourneyListEligibleUsersWithoutJourneyFiltersAndOrders(t 
 	_, _, err := repo.CreateIfAbsent(context.Background(), withJourney.ID, "unknown")
 	require.NoError(t, err)
 
-	users, err := repo.ListEligibleUsersWithoutJourney(context.Background(), eligibleAfter, 1)
+	users, err := repo.ListEligibleUsersWithoutJourney(context.Background(), eligibleAfter, 0, 1)
 	require.NoError(t, err)
 	require.Equal(t, []int64{first.ID}, userIDs(users))
 
-	users, err = repo.ListEligibleUsersWithoutJourney(context.Background(), eligibleAfter, 10)
+	users, err = repo.ListEligibleUsersWithoutJourney(context.Background(), eligibleAfter, first.ID, 10)
 	require.NoError(t, err)
-	require.Equal(t, []int64{first.ID, second.ID}, userIDs(users))
-	require.Equal(t, "eligible-1@example.com", users[0].Email)
+	require.Equal(t, []int64{second.ID}, userIDs(users))
+	require.Equal(t, "eligible-2@example.com", users[0].Email)
+}
+
+func TestUserActivationJourneyMarkEmailSentOnlyUpdatesRequestedEmailFields(t *testing.T) {
+	client := newUserActivationEntClient(t)
+	repo := NewUserActivationJourneyRepository(client)
+	ctx := context.Background()
+	base := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+
+	stages := []struct {
+		stage service.UserActivationEmailStage
+		read  func(*service.UserActivationJourney) *time.Time
+	}{
+		{service.UserActivationEmailStageNoAttempt, func(j *service.UserActivationJourney) *time.Time {
+			return j.NoAttemptEmailSentAt
+		}},
+		{service.UserActivationEmailStageAttempted, func(j *service.UserActivationJourney) *time.Time {
+			return j.AttemptedEmailSentAt
+		}},
+		{service.UserActivationEmailStagePaidSupport, func(j *service.UserActivationJourney) *time.Time {
+			return j.PaidSupportEmailSentAt
+		}},
+		{service.UserActivationEmailStageRecallAvailable, func(j *service.UserActivationJourney) *time.Time {
+			return j.RecallAvailableEmailSentAt
+		}},
+		{service.UserActivationEmailStageRecallExpired, func(j *service.UserActivationJourney) *time.Time {
+			return j.RecallExpiredEmailSentAt
+		}},
+	}
+
+	for index, check := range stages {
+		user := createActivationTestUser(
+			t,
+			client,
+			fmt.Sprintf("mark-email-%d@example.com", index),
+			"email",
+			base,
+			nil,
+		)
+		journey, _, err := repo.CreateIfAbsent(ctx, user.ID, "direct")
+		require.NoError(t, err)
+		journey.StarterState = "expired"
+		journey.RecallState = "claimable"
+		journey.LastEvaluatedAt = timePtr(base.Add(time.Hour))
+		require.NoError(t, repo.Update(ctx, journey))
+
+		sentAt := base.Add(time.Duration(index+2) * time.Hour)
+		require.NoError(t, repo.MarkEmailSent(ctx, journey.ID, check.stage, sentAt))
+
+		stored, err := repo.GetByUserID(ctx, user.ID)
+		require.NoError(t, err)
+		require.Equal(t, "expired", stored.StarterState)
+		require.Equal(t, "claimable", stored.RecallState)
+		require.Equal(t, journey.LastEvaluatedAt, stored.LastEvaluatedAt)
+		require.Equal(t, sentAt, *stored.LastEmailSentAt)
+		require.Equal(t, sentAt, *check.read(stored))
+	}
 }
 
 func newUserActivationEntClient(t *testing.T) *dbent.Client {

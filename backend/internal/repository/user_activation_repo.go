@@ -17,8 +17,6 @@ import (
 	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	dbjourney "github.com/Wei-Shaw/sub2api/ent/useractivationjourney"
 	"github.com/Wei-Shaw/sub2api/internal/service"
-
-	entsql "entgo.io/ent/dialect/sql"
 )
 
 type userActivationJourneyRepository struct {
@@ -194,6 +192,7 @@ func (r *userActivationJourneyRepository) Update(
 func (r *userActivationJourneyRepository) ListDue(
 	ctx context.Context,
 	now time.Time,
+	afterID int64,
 	limit int,
 ) ([]service.UserActivationJourney, error) {
 	if limit <= 0 {
@@ -202,14 +201,14 @@ func (r *userActivationJourneyRepository) ListDue(
 
 	client := clientFromContext(ctx, r.client)
 	entities, err := client.UserActivationJourney.Query().
-		Where(dbjourney.Or(
-			dbjourney.LastEvaluatedAtIsNil(),
-			dbjourney.LastEvaluatedAtLTE(now),
-		)).
-		Order(
-			dbjourney.ByLastEvaluatedAt(entsql.OrderNullsFirst()),
-			dbjourney.ByID(),
+		Where(
+			dbjourney.IDGT(afterID),
+			dbjourney.Or(
+				dbjourney.LastEvaluatedAtIsNil(),
+				dbjourney.LastEvaluatedAtLTE(now),
+			),
 		).
+		Order(dbjourney.ByID()).
 		Limit(limit).
 		All(ctx)
 	if err != nil {
@@ -221,6 +220,7 @@ func (r *userActivationJourneyRepository) ListDue(
 func (r *userActivationJourneyRepository) ListEligibleUsersWithoutJourney(
 	ctx context.Context,
 	eligibleAfter time.Time,
+	afterID int64,
 	limit int,
 ) ([]service.User, error) {
 	if limit <= 0 {
@@ -230,12 +230,13 @@ func (r *userActivationJourneyRepository) ListEligibleUsersWithoutJourney(
 	client := clientFromContext(ctx, r.client)
 	entities, err := client.User.Query().
 		Where(
+			dbuser.IDGT(afterID),
 			dbuser.CreatedAtGTE(eligibleAfter),
 			dbuser.SignupSourceEQ("email"),
 			dbuser.DeletedAtIsNil(),
 			dbuser.Not(dbuser.HasActivationJourney()),
 		).
-		Order(dbuser.ByCreatedAt(), dbuser.ByID()).
+		Order(dbuser.ByID()).
 		Limit(limit).
 		All(ctx)
 	if err != nil {
@@ -247,6 +248,37 @@ func (r *userActivationJourneyRepository) ListEligibleUsersWithoutJourney(
 		users = append(users, *userEntityToService(entity))
 	}
 	return users, nil
+}
+
+func (r *userActivationJourneyRepository) MarkEmailSent(
+	ctx context.Context,
+	journeyID int64,
+	stage service.UserActivationEmailStage,
+	sentAt time.Time,
+) error {
+	client := clientFromContext(ctx, r.client)
+	update := client.UserActivationJourney.UpdateOneID(journeyID).
+		SetLastEmailSentAt(sentAt)
+
+	switch stage {
+	case service.UserActivationEmailStageNoAttempt:
+		update.SetNoAttemptEmailSentAt(sentAt)
+	case service.UserActivationEmailStageAttempted:
+		update.SetAttemptedEmailSentAt(sentAt)
+	case service.UserActivationEmailStagePaidSupport:
+		update.SetPaidSupportEmailSentAt(sentAt)
+	case service.UserActivationEmailStageRecallAvailable:
+		update.SetRecallAvailableEmailSentAt(sentAt)
+	case service.UserActivationEmailStageRecallExpired:
+		update.SetRecallExpiredEmailSentAt(sentAt)
+	default:
+		return errors.New("unsupported user activation email stage")
+	}
+
+	if _, err := update.Save(ctx); err != nil {
+		return translatePersistenceError(err, service.ErrUserActivationJourneyNotFound, nil)
+	}
+	return nil
 }
 
 func activationJourneyEntityToService(entity *dbent.UserActivationJourney) *service.UserActivationJourney {

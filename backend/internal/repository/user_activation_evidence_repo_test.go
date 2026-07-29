@@ -35,11 +35,12 @@ func TestUserActivationEvidenceSnapshotUsesOneParameterizedAggregateQuery(t *tes
 	firstSuccess := time.Date(2026, 7, 28, 1, 0, 0, 0, time.UTC)
 	firstPayment := firstSuccess.Add(time.Hour)
 	lastAttempt := firstPayment.Add(time.Hour)
+	firstAPIKey := lastAttempt.Add(time.Hour)
 
 	mock.ExpectQuery("activation evidence snapshot").
 		WithArgs(userID).
 		WillReturnRows(activationEvidenceRows().
-			AddRow(firstSuccess, firstPayment, lastAttempt, int64(3), int64(2)))
+			AddRow(firstSuccess, firstPayment, lastAttempt, firstAPIKey, int64(3), int64(2)))
 
 	snapshot, err := repo.Snapshot(context.Background(), userID)
 	require.NoError(t, err)
@@ -48,6 +49,7 @@ func TestUserActivationEvidenceSnapshotUsesOneParameterizedAggregateQuery(t *tes
 	require.Equal(t, firstSuccess, *snapshot.FirstSuccessfulUsageAt)
 	require.Equal(t, firstPayment, *snapshot.FirstCompletedPaymentAt)
 	require.Equal(t, lastAttempt, *snapshot.LastAttemptAt)
+	require.Equal(t, firstAPIKey, *snapshot.FirstAPIKeyAt)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -58,13 +60,14 @@ func TestUserActivationEvidenceSnapshotPreservesNullEvidence(t *testing.T) {
 	mock.ExpectQuery("activation evidence snapshot").
 		WithArgs(int64(7)).
 		WillReturnRows(activationEvidenceRows().
-			AddRow(nil, nil, nil, int64(0), int64(0)))
+			AddRow(nil, nil, nil, nil, int64(0), int64(0)))
 
 	snapshot, err := repo.Snapshot(context.Background(), 7)
 	require.NoError(t, err)
 	require.Nil(t, snapshot.FirstSuccessfulUsageAt)
 	require.Nil(t, snapshot.FirstCompletedPaymentAt)
 	require.Nil(t, snapshot.LastAttemptAt)
+	require.Nil(t, snapshot.FirstAPIKeyAt)
 	require.Zero(t, snapshot.UsageCount)
 	require.Zero(t, snapshot.APIKeyCount)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -84,7 +87,8 @@ func TestUserActivationEvidenceSnapshotAppliesBusinessEvidenceSemantics(t *testi
 		);
 		CREATE TABLE api_keys (
 			user_id INTEGER NOT NULL,
-			deleted_at TIMESTAMP NULL
+			deleted_at TIMESTAMP NULL,
+			created_at TIMESTAMP NOT NULL
 		);
 		CREATE TABLE payment_orders (
 			user_id INTEGER NOT NULL,
@@ -102,6 +106,7 @@ func TestUserActivationEvidenceSnapshotAppliesBusinessEvidenceSemantics(t *testi
 	lastAttempt := firstAttempt.Add(4 * time.Hour)
 	firstPayment := firstAttempt.Add(5 * time.Hour)
 	laterPayment := firstPayment.Add(time.Hour)
+	firstAPIKey := firstAttempt.Add(15 * time.Minute)
 
 	_, err = db.Exec(`
 		INSERT INTO usage_logs (user_id, actual_cost, created_at) VALUES
@@ -122,12 +127,12 @@ func TestUserActivationEvidenceSnapshotAppliesBusinessEvidenceSemantics(t *testi
 	require.NoError(t, err)
 
 	_, err = db.Exec(`
-		INSERT INTO api_keys (user_id, deleted_at) VALUES
-			(55, NULL),
-			(55, NULL),
-			(55, ?),
-			(56, NULL)
-	`, firstAttempt)
+		INSERT INTO api_keys (user_id, deleted_at, created_at) VALUES
+			(55, NULL, ?),
+			(55, NULL, ?),
+			(55, ?, ?),
+			(56, NULL, ?)
+	`, firstAPIKey.Add(time.Hour), firstAPIKey, firstAttempt, firstAttempt.Add(-time.Hour), firstAttempt)
 	require.NoError(t, err)
 
 	_, err = db.Exec(`
@@ -150,6 +155,7 @@ func TestUserActivationEvidenceSnapshotAppliesBusinessEvidenceSemantics(t *testi
 	var firstSuccessRaw any
 	var firstPaymentRaw any
 	var lastAttemptRaw any
+	var firstAPIKeyRaw any
 	var usageCount int64
 	var apiKeyCount int64
 	err = db.QueryRowContext(
@@ -160,6 +166,7 @@ func TestUserActivationEvidenceSnapshotAppliesBusinessEvidenceSemantics(t *testi
 		&firstSuccessRaw,
 		&firstPaymentRaw,
 		&lastAttemptRaw,
+		&firstAPIKeyRaw,
 		&usageCount,
 		&apiKeyCount,
 	)
@@ -169,6 +176,7 @@ func TestUserActivationEvidenceSnapshotAppliesBusinessEvidenceSemantics(t *testi
 	require.Equal(t, firstSuccess, parseSQLiteAggregateTime(t, firstSuccessRaw))
 	require.Equal(t, firstPayment, parseSQLiteAggregateTime(t, firstPaymentRaw))
 	require.Equal(t, lastAttempt, parseSQLiteAggregateTime(t, lastAttemptRaw))
+	require.Equal(t, firstAPIKey, parseSQLiteAggregateTime(t, firstAPIKeyRaw))
 }
 
 func TestUserActivationEvidenceSnapshotPrefersTransactionExecutor(t *testing.T) {
@@ -188,7 +196,7 @@ func TestUserActivationEvidenceSnapshotPrefersTransactionExecutor(t *testing.T) 
 	txMock.ExpectQuery("activation evidence snapshot").
 		WithArgs(int64(99)).
 		WillReturnRows(activationEvidenceRows().
-			AddRow(nil, nil, nil, int64(1), int64(0)))
+			AddRow(nil, nil, nil, nil, int64(1), int64(0)))
 
 	repo := NewUserActivationEvidenceRepository(client, fallbackDB)
 	snapshot, err := repo.Snapshot(txCtx, 99)
@@ -222,6 +230,7 @@ func matchActivationEvidenceQuery(_ string, actual string) error {
 		"min(completed_at)",
 		"max(created_at)",
 		"count(*)",
+		"first_api_key_at",
 		"deleted_at is null",
 		"order_type = 'balance'",
 		"completed_at is not null",
@@ -244,6 +253,7 @@ func activationEvidenceRows() *sqlmock.Rows {
 		"first_successful_usage_at",
 		"first_completed_payment_at",
 		"last_attempt_at",
+		"first_api_key_at",
 		"usage_count",
 		"api_key_count",
 	})
