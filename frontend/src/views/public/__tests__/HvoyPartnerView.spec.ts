@@ -109,6 +109,10 @@ function mountPage() {
           template: '<span :data-icon="name"></span>',
         },
         LocaleSwitcher: true,
+        RouterLink: {
+          props: ['to'],
+          template: '<a data-router-link :data-to="to"><slot /></a>',
+        },
       },
     },
   })
@@ -132,13 +136,30 @@ describe('HvoyPartnerView', () => {
     expect(wrapper.text()).toContain('最低充值 ¥5')
     expect(wrapper.text()).toContain('付费额度不过期')
     expect(wrapper.text()).toContain('微信 omni-support')
-    expect(wrapper.get('[data-testid="primary-cta"]').attributes('href')).toBe(
+    expect(wrapper.get('[data-testid="primary-cta"]').attributes('data-to')).toBe(
       '/register?source=hvoy_partner&redirect=/activation',
     )
-    expect(wrapper.get('[data-testid="secondary-cta"]').attributes('href')).toBe(
+    expect(wrapper.get('[data-testid="secondary-cta"]').attributes('data-to')).toBe(
       '/login?redirect=/activation',
     )
     expect(wrapper.text()).not.toContain('加微信领钱')
+  })
+
+  it('delegates every internal destination to RouterLink', async () => {
+    getHvoyActivationOfferMock.mockResolvedValue(enabledOffer)
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(
+      wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to')),
+    ).toEqual([
+      '/home',
+      '/login?redirect=/activation',
+      '/register?source=hvoy_partner&redirect=/activation',
+      '/login?redirect=/activation',
+    ])
+    expect(wrapper.findAll('a[href^="/"]')).toHaveLength(0)
   })
 
   it('removes the starter-credit promise and offers service entry when the offer is disabled', async () => {
@@ -150,10 +171,10 @@ describe('HvoyPartnerView', () => {
     expect(wrapper.text()).not.toContain('$1 / 24h')
     expect(wrapper.text()).not.toContain('注册送')
     expect(wrapper.text()).not.toContain('免费 $1')
-    expect(wrapper.get('[data-testid="primary-cta"]').attributes('href')).toBe(
+    expect(wrapper.get('[data-testid="primary-cta"]').attributes('data-to')).toBe(
       '/login?redirect=/activation',
     )
-    expect(wrapper.get('[data-testid="secondary-cta"]').attributes('href')).toBe('/home')
+    expect(wrapper.get('[data-testid="secondary-cta"]').attributes('data-to')).toBe('/home')
   })
 
   it('fails closed when the public offer request is rejected', async () => {
@@ -164,10 +185,10 @@ describe('HvoyPartnerView', () => {
 
     expect(wrapper.text()).not.toContain('$1 / 24h')
     expect(wrapper.text()).not.toContain('当前可领取')
-    expect(wrapper.get('[data-testid="primary-cta"]').attributes('href')).toBe(
+    expect(wrapper.get('[data-testid="primary-cta"]').attributes('data-to')).toBe(
       '/login?redirect=/activation',
     )
-    expect(wrapper.get('[data-testid="secondary-cta"]').attributes('href')).toBe('/home')
+    expect(wrapper.get('[data-testid="secondary-cta"]').attributes('data-to')).toBe('/home')
   })
 
   it('keeps the layout fluid and leaves the next information band in normal document flow', () => {

@@ -11,7 +11,7 @@
   >
     <header class="border-b border-gray-200 bg-white dark:border-dark-800 dark:bg-dark-900">
       <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <a href="/home" class="flex min-w-0 items-center gap-3">
+        <RouterLink to="/home" class="flex min-w-0 items-center gap-3">
           <span
             class="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
           >
@@ -23,17 +23,17 @@
               {{ t('hvoyPartner.channel') }}
             </span>
           </span>
-        </a>
+        </RouterLink>
 
         <div class="flex flex-shrink-0 items-center gap-2 sm:gap-3">
           <LocaleSwitcher />
-          <a
-            href="/login?redirect=/activation"
+          <RouterLink
+            to="/login?redirect=/activation"
             class="inline-flex items-center gap-2 rounded-md border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 dark:border-dark-700 dark:text-dark-200 dark:hover:bg-dark-800"
           >
             <Icon name="login" size="sm" />
             <span class="hidden sm:inline">{{ t('hvoyPartner.navLogin') }}</span>
-          </a>
+          </RouterLink>
         </div>
       </div>
     </header>
@@ -66,22 +66,22 @@
             </p>
 
             <div class="mt-6 flex min-w-0 flex-col gap-3 sm:flex-row">
-              <a
+              <RouterLink
                 data-testid="primary-cta"
-                :href="primaryCta.href"
+                :to="primaryCta.href"
                 class="inline-flex min-h-11 min-w-0 items-center justify-center gap-2 rounded-md bg-primary-600 px-5 py-2.5 text-center text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700"
               >
                 <Icon :name="isEnabled ? 'gift' : 'login'" size="sm" />
                 <span class="break-words">{{ primaryCta.label }}</span>
                 <Icon name="arrowRight" size="sm" />
-              </a>
-              <a
+              </RouterLink>
+              <RouterLink
                 data-testid="secondary-cta"
-                :href="secondaryCta.href"
+                :to="secondaryCta.href"
                 class="inline-flex min-h-11 min-w-0 items-center justify-center rounded-md border border-gray-300 bg-white px-5 py-2.5 text-center text-sm font-semibold text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50 dark:border-dark-700 dark:bg-dark-900 dark:text-dark-200 dark:hover:bg-dark-800"
               >
                 <span class="break-words">{{ secondaryCta.label }}</span>
-              </a>
+              </RouterLink>
             </div>
           </div>
 
