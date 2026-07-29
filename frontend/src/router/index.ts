@@ -40,6 +40,16 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/partner/hvoy',
+    name: 'HvoyPartner',
+    component: () => import('@/views/public/HvoyPartnerView.vue'),
+    meta: {
+      requiresAuth: false,
+      title: 'HVOY Partner',
+      titleKey: 'hvoyPartner.pageTitle'
+    }
+  },
+  {
     path: '/login',
     name: 'Login',
     component: () => import('@/views/auth/LoginView.vue'),

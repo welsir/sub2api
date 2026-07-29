@@ -3,6 +3,77 @@ export default {
     title: 'Batch Image Generation',
     description: 'Submit multiple prompts in one job and download the generated images when complete'
   },
+  hvoyPartner: {
+    pageTitle: 'HVOY Partner Access',
+    brand: 'Omni API',
+    channel: 'HVOY partner access',
+    navLogin: 'Log in',
+    loading: 'Checking trial availability',
+    available: 'HVOY new-user trial is available',
+    unavailable: 'Trial availability cannot be confirmed',
+    hero: {
+      enabledTitle: 'Make a real request before deciding whether this service fits',
+      enabledDescription: 'Complete one real model request after registration, then decide whether to recharge. Trial limits, billing rates, and support boundaries are stated here.',
+      unavailableTitle: 'Log in to review current services and available models',
+      unavailableDescription: 'We cannot confirm a new-user trial right now, so this page will not promise free credit. Existing users can still log in or review the service first.'
+    },
+    offer: {
+      label: 'Current new-user trial',
+      starterNote: 'Issued automatically after registration for the first real request, then expires at the stated deadline.',
+      unavailableLabel: 'Service access',
+      unavailableTitle: 'No unverified credit promise',
+      unavailableNote: 'Log in to review your account, models, and recharge status.'
+    },
+    pricing: {
+      rechargeLabel: 'CNY to credit',
+      proLabel: 'Pro model rate',
+      balanceLabel: 'Paid balance',
+      paidNoExpiry: 'Paid credit does not expire',
+      minimumRecharge: 'Minimum recharge ¥{amount}'
+    },
+    support: {
+      withWechat: 'WeChat {wechat} provides manual setup and troubleshooting support; it is not tied to free credit.',
+      generic: 'WeChat is only for manual setup and troubleshooting support, not for obtaining free credit.'
+    },
+    cta: {
+      register: 'Register and start trial',
+      existingUser: 'Existing user? Log in',
+      login: 'Log in to view services',
+      viewService: 'View service home'
+    },
+    facts: {
+      trialTitle: 'A clearly timed trial',
+      trialDescription: 'Trial credit connects the first-request journey and expires automatically.',
+      entryTitle: 'Existing accounts continue normally',
+      entryDescription: 'When trial eligibility is unavailable, existing account access remains unchanged.',
+      rechargeTitle: 'Transparent recharge rules',
+      rechargeDescription: 'CNY payments are credited in USD-denominated usage balance at the displayed rate.',
+      balanceTitle: 'Paid credit does not expire',
+      balanceDescription: 'Short-term trial credit expires; credit purchased by the user does not.',
+      supportTitle: 'Clear support boundaries',
+      supportDescription: 'WeChat helps with setup and troubleshooting and is never a condition for receiving trial credit.'
+    },
+    flow: {
+      eyebrow: 'From registration to first request',
+      title: 'Complete a real validation in three steps',
+      enabled: {
+        verifyTitle: 'Register and verify email',
+        verifyDescription: 'Use a common email provider to complete registration and verification.',
+        creditTitle: 'Receive trial credit automatically',
+        creditDescription: 'When the current offer conditions are met, timed trial credit is issued by the system.',
+        useTitle: 'Open activation and make a request',
+        useDescription: 'Create a key, finish setup, and use one real request to judge the service.'
+      },
+      unavailable: {
+        loginTitle: 'Log in to an existing account',
+        loginDescription: 'Existing users can sign in; current accounts and paid credit are unaffected.',
+        serviceTitle: 'Review available services',
+        serviceDescription: 'Check models, billing, and account status before choosing the next step.',
+        supportTitle: 'Contact support when needed',
+        supportDescription: 'Manual support covers setup and troubleshooting, not promotional credit promises.'
+      }
+    }
+  },
   // Home Page
   home: {
     viewOnGithub: 'View on GitHub',
