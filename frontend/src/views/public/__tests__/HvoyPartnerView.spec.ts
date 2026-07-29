@@ -209,6 +209,9 @@ describe('HvoyPartnerView', () => {
     expect(pageSource).toContain('overflow-x-hidden')
     expect(pageSource).toContain('flex-col')
     expect(pageSource).toContain('sm:flex-row')
+    expect(pageSource).toContain(
+      'gap-5 px-4 pb-4 pt-5 sm:gap-7 sm:px-6 sm:pb-10 sm:pt-11',
+    )
     expect(pageSource).toContain('data-testid="next-section"')
   })
 
