@@ -1,5 +1,5 @@
 // [INPUT]: Activation worker dependencies, deterministic account evidence, and lifecycle controls.
-// [OUTPUT]: Proof of activation email policy, recoverable scans, leader election, and clean shutdown.
+// [OUTPUT]: Proof of activation policy, split-brain exclusion, delivery recovery, and safe shutdown.
 // [POS]: Service-layer contract suite for the HVOY activation recovery worker.
 //
 // [PROTOCOL]:
@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
 )
@@ -300,6 +301,52 @@ func TestUserActivationWorkerSendsOneDeduplicatedStageAndMarksNilSendResult(t *t
 	}, journeys.marked)
 }
 
+func TestUserActivationWorkerMarksAfterSMTPDeliveryWhenDeliveryKeyPersistenceFails(t *testing.T) {
+	ctx := context.Background()
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	baseRepo := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, baseRepo.SetMultiple(ctx, smtpServer.settings()))
+	require.NoError(t, baseRepo.Set(ctx, notificationEmailUnsubscribeSecretKey, "fixed-test-secret"))
+	settingRepo := &notificationEmailFailingSetRepo{
+		notificationEmailMemorySettingRepo: baseRepo,
+		failPrefix:                         notificationEmailDeliveryKeyPrefix,
+	}
+	emailSender := NewNotificationEmailService(settingRepo, NewEmailService(settingRepo, nil))
+
+	user := &User{ID: 88, Email: "paid@example.com", CreatedAt: now.Add(-4 * time.Hour)}
+	journey := UserActivationJourney{
+		ID:                    880,
+		UserID:                user.ID,
+		StarterSubscriptionID: int64Pointer(1),
+		RecallState:           "blocked_paid",
+	}
+	journeys := &activationWorkerJourneyRepoStub{
+		dueJourneys: []UserActivationJourney{journey},
+		byUserID:    map[int64]UserActivationJourney{user.ID: journey},
+	}
+	evidence := &activationWorkerEvidenceRepoStub{
+		defaults: map[int64]*UserActivationEvidence{
+			user.ID: {FirstCompletedPaymentAt: timePointer(now.Add(-time.Minute))},
+		},
+	}
+	worker := newActivationWorkerForTest(
+		activationWorkerConfig(now),
+		journeys,
+		evidence,
+		&activationWorkerLifecycleStub{},
+		&activationWorkerUserReaderStub{users: map[int64]*User{user.ID: user}},
+		emailSender,
+	)
+
+	worker.runOnceAt(ctx, now)
+	worker.runOnceAt(ctx, now.Add(time.Minute))
+
+	require.Equal(t, int64(1), smtpServer.messageCount())
+	require.Len(t, journeys.marked, 1)
+	require.Equal(t, UserActivationEmailStagePaidSupport, journeys.marked[0].stage)
+}
+
 func TestUserActivationWorkerDefersURLStageWhenFrontendURLIsUnavailable(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	user := &User{ID: 9, Email: "user@example.com", CreatedAt: now.Add(-3 * time.Hour)}
@@ -392,6 +439,67 @@ func TestUserActivationWorkerLeaderAllowsOnlyOneInstanceToScan(t *testing.T) {
 	require.Equal(t, 1, journeys.dueCalls)
 }
 
+func TestUserActivationWorkerPGMutexBlocksRecoveredRedisPeer(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	lockID := hashAdvisoryLockID(userActivationWorkerLeaderLockKey)
+	mock.ExpectQuery("SELECT pg_try_advisory_lock").
+		WithArgs(lockID).
+		WillReturnRows(sqlmock.NewRows([]string{"acquired"}).AddRow(true))
+	mock.ExpectQuery("SELECT pg_try_advisory_lock").
+		WithArgs(lockID).
+		WillReturnRows(sqlmock.NewRows([]string{"acquired"}).AddRow(false))
+	mock.ExpectExec("SELECT pg_advisory_unlock").
+		WithArgs(lockID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	firstRepo := &activationWorkerJourneyRepoStub{
+		eligibleEntered: entered,
+		eligibleRelease: release,
+	}
+	secondRepo := &activationWorkerJourneyRepoStub{}
+	cache := &activationSplitBrainCache{failedOwners: map[string]bool{"A": true}}
+	first := newActivationWorkerForTest(
+		activationWorkerConfig(now),
+		firstRepo,
+		&activationWorkerEvidenceRepoStub{},
+		&activationWorkerLifecycleStub{},
+		&activationWorkerUserReaderStub{},
+		&activationWorkerEmailSenderStub{},
+	)
+	second := newActivationWorkerForTest(
+		activationWorkerConfig(now),
+		secondRepo,
+		&activationWorkerEvidenceRepoStub{},
+		&activationWorkerLifecycleStub{},
+		&activationWorkerUserReaderStub{},
+		&activationWorkerEmailSenderStub{},
+	)
+	first.instanceID = "A"
+	second.instanceID = "B"
+	first.SetLeaderLock(cache, db)
+	second.SetLeaderLock(cache, db)
+
+	done := make(chan struct{})
+	go func() {
+		first.runOnceAt(context.Background(), now)
+		close(done)
+	}()
+	<-entered
+	second.runOnceAt(context.Background(), now)
+
+	close(release)
+	<-done
+	require.Zero(t, secondRepo.eligibleCalls)
+	require.Zero(t, secondRepo.dueCalls)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestUserActivationWorkerStopWaitsForRunningScan(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	entered := make(chan struct{})
@@ -427,6 +535,35 @@ func TestUserActivationWorkerStopWaitsForRunningScan(t *testing.T) {
 	case <-stopped:
 	case <-time.After(time.Second):
 		t.Fatal("Stop did not wait for and join the worker goroutine")
+	}
+}
+
+func TestUserActivationWorkerStartStopConcurrent(t *testing.T) {
+	for range 1000 {
+		worker := newActivationWorkerForTest(
+			activationWorkerConfig(time.Now().UTC()),
+			&activationWorkerJourneyRepoStub{},
+			&activationWorkerEvidenceRepoStub{},
+			&activationWorkerLifecycleStub{},
+			&activationWorkerUserReaderStub{},
+			&activationWorkerEmailSenderStub{},
+		)
+		start := make(chan struct{})
+		var calls sync.WaitGroup
+		calls.Add(2)
+		go func() {
+			defer calls.Done()
+			<-start
+			worker.Start()
+		}()
+		go func() {
+			defer calls.Done()
+			<-start
+			worker.Stop()
+		}()
+		close(start)
+		calls.Wait()
+		worker.Stop()
 	}
 }
 
@@ -583,6 +720,26 @@ func (s *activationWorkerJourneyRepoStub) MarkEmailSent(
 		stage:     stage,
 		sentAt:    sentAt,
 	})
+	for userID, journey := range s.byUserID {
+		if journey.ID != journeyID {
+			continue
+		}
+		journey.LastEmailSentAt = timePointer(sentAt)
+		switch stage {
+		case UserActivationEmailStageNoAttempt:
+			journey.NoAttemptEmailSentAt = timePointer(sentAt)
+		case UserActivationEmailStageAttempted:
+			journey.AttemptedEmailSentAt = timePointer(sentAt)
+		case UserActivationEmailStagePaidSupport:
+			journey.PaidSupportEmailSentAt = timePointer(sentAt)
+		case UserActivationEmailStageRecallAvailable:
+			journey.RecallAvailableEmailSentAt = timePointer(sentAt)
+		case UserActivationEmailStageRecallExpired:
+			journey.RecallExpiredEmailSentAt = timePointer(sentAt)
+		}
+		s.byUserID[userID] = journey
+		break
+	}
 	return nil
 }
 
@@ -704,4 +861,44 @@ type activationWorkerFrontendURLStub struct {
 
 func (s *activationWorkerFrontendURLStub) GetFrontendURL(context.Context) string {
 	return s.url
+}
+
+type activationSplitBrainCache struct {
+	mu           sync.Mutex
+	owners       map[string]string
+	failedOwners map[string]bool
+}
+
+func (c *activationSplitBrainCache) TryAcquireLeaderLock(
+	_ context.Context,
+	key string,
+	owner string,
+	_ time.Duration,
+) (bool, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.failedOwners[owner] {
+		return false, errors.New("redis unavailable")
+	}
+	if c.owners == nil {
+		c.owners = make(map[string]string)
+	}
+	if _, exists := c.owners[key]; exists {
+		return false, nil
+	}
+	c.owners[key] = owner
+	return true, nil
+}
+
+func (c *activationSplitBrainCache) ReleaseLeaderLock(
+	_ context.Context,
+	key string,
+	owner string,
+) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.owners[key] == owner {
+		delete(c.owners, key)
+	}
+	return nil
 }

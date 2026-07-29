@@ -1,5 +1,5 @@
 // [INPUT]: Notification template registry, settings fixtures, and local SMTP test delivery.
-// [OUTPUT]: Proof of template validation, URL gating, localization, opt-out, and delivery deduplication.
+// [OUTPUT]: Proof of URL fail-closed behavior, localization, opt-out, SMTP, and delivery deduplication.
 // [POS]: Service contract suite for the notification email coordinator.
 //
 // [PROTOCOL]:
@@ -517,6 +517,31 @@ func TestNotificationEmailSendDeduplicatesSubscriptionExpiryReminder(t *testing.
 	require.Equal(t, int64(1), smtpServer.messageCount())
 }
 
+func TestNotificationEmailSendFailsClosedWhenUnsubscribeSecretCannotPersist(t *testing.T) {
+	ctx := context.Background()
+	baseRepo := newNotificationEmailMemorySettingRepo()
+	repo := &notificationEmailFailingSetRepo{
+		notificationEmailMemorySettingRepo: baseRepo,
+		failKey:                            notificationEmailUnsubscribeSecretKey,
+	}
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, repo.SetMultiple(ctx, smtpServer.settings()))
+	svc := NewNotificationEmailService(repo, NewEmailService(repo, nil))
+
+	err := svc.Send(ctx, NotificationEmailSendInput{
+		Event:          NotificationEmailEventActivationPaidZeroSuccess,
+		RecipientEmail: "user@example.com",
+		UserID:         42,
+		SourceType:     "user_activation_journey",
+		SourceID:       "42",
+		ReminderKey:    string(UserActivationEmailStagePaidSupport),
+	})
+
+	require.Error(t, err)
+	require.Equal(t, int64(0), smtpServer.messageCount())
+	require.NotContains(t, smtpServer.joinedMessages(), "example.com/unsubscribe")
+}
+
 func TestNotificationEmailSendRespectsLegacyDeliveryKey(t *testing.T) {
 	ctx := context.Background()
 	repo := newNotificationEmailMemorySettingRepo()
@@ -537,6 +562,19 @@ func TestNotificationEmailSendRespectsLegacyDeliveryKey(t *testing.T) {
 type notificationEmailMemorySettingRepo struct {
 	mu     sync.RWMutex
 	values map[string]string
+}
+
+type notificationEmailFailingSetRepo struct {
+	*notificationEmailMemorySettingRepo
+	failKey    string
+	failPrefix string
+}
+
+func (r *notificationEmailFailingSetRepo) Set(ctx context.Context, key, value string) error {
+	if key == r.failKey || (r.failPrefix != "" && strings.HasPrefix(key, r.failPrefix)) {
+		return errors.New("setting write failed")
+	}
+	return r.notificationEmailMemorySettingRepo.Set(ctx, key, value)
 }
 
 func newNotificationEmailMemorySettingRepo() *notificationEmailMemorySettingRepo {
@@ -618,6 +656,8 @@ type notificationEmailTestSMTPServer struct {
 	listener net.Listener
 	wg       sync.WaitGroup
 	messages atomic.Int64
+	mu       sync.Mutex
+	bodies   []string
 }
 
 func startNotificationEmailTestSMTPServer(t *testing.T) *notificationEmailTestSMTPServer {
@@ -647,6 +687,12 @@ func (s *notificationEmailTestSMTPServer) settings() map[string]string {
 
 func (s *notificationEmailTestSMTPServer) messageCount() int64 {
 	return s.messages.Load()
+}
+
+func (s *notificationEmailTestSMTPServer) joinedMessages() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return strings.Join(s.bodies, "\n")
 }
 
 func (s *notificationEmailTestSMTPServer) close() {
@@ -707,6 +753,7 @@ func (s *notificationEmailTestSMTPServer) handleConn(conn net.Conn) {
 			if !writeLine("354 End data with <CR><LF>.<CR><LF>") {
 				return
 			}
+			var data strings.Builder
 			for {
 				dataLine, err := rw.ReadString('\n')
 				if err != nil {
@@ -715,8 +762,12 @@ func (s *notificationEmailTestSMTPServer) handleConn(conn net.Conn) {
 				if strings.TrimRight(dataLine, "\r\n") == "." {
 					break
 				}
+				data.WriteString(dataLine)
 			}
 			s.messages.Add(1)
+			s.mu.Lock()
+			s.bodies = append(s.bodies, data.String())
+			s.mu.Unlock()
 			if !writeLine("250 2.0.0 OK") {
 				return
 			}

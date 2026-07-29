@@ -696,6 +696,7 @@ paid_zero_success
 - 成功用户不再发送任何激活邮件；
 - paid/no-success 邮件不得包含领取链接；
 - frontend URL 未配置时，依赖 `activation_url` 的阶段不发送、不写发送时间，留待配置恢复后重试；不依赖该 URL 的 paid-support 等阶段不受影响。
+- optional 邮件运行时无法生成真实退订 URL 时 fail-closed，不得继承 preview 的 `example.com` 示例链接或投递 SMTP。
 
 还要证明：
 
@@ -715,14 +716,16 @@ Expected: FAIL，新事件和 worker 不存在。
 
 **Step 4: 实现 worker**
 
-- 复用 `SubscriptionExpiryService` 的 leader lock/DB advisory lock 模式。
+- activation worker 在配置 PostgreSQL 时始终持有同一个 advisory lock；Redis 仅作为附加锁，Redis 失败时可凭 PG 工作，Redis 恢复的另一实例仍受 PG 互斥。
 - lock key 使用 `user_activation:worker:leader`，TTL 必须大于一轮最大超时。
 - 每轮先分页修复 `eligible_after` 之后无 journey 的邮箱注册用户，再分页评估 due journey。
 - 两类分页均使用 `afterID` 稳定游标；due 列表使用本轮固定 cutoff，避免 `Evaluate` 写入新时间后在同一轮再次入选。
 - 已有 journey 但 `StarterSubscriptionID=nil` 时也调用同一 bootstrap 路径重试 `$1`。
 - 发送成功或被退订/去重后写相应 `*_email_sent_at` 和 `last_email_sent_at`。
+- SMTP 已投递但 delivery-key 落库失败时返回固定 typed outcome，worker 仍写 journey 发送时间，避免下一轮重复投递；不得把底层错误带入 worker 日志。
 - 邮件写回使用仓储窄更新，只修改对应阶段邮件字段和 `last_email_sent_at`。
 - 失败只记录安全的有限类别、阶段、journey ID 和 user ID，不拼接下游错误正文、完整邮箱、邮件正文或凭据。
+- `Start()` 与 `Stop()` 共享同一生命周期 mutex/state，确保 `wg.Add` 不会与 `Wait` 并发。
 
 **Step 5: Wire、cleanup 和 GREEN**
 

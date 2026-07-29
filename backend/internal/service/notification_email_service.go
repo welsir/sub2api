@@ -1,9 +1,9 @@
 // [INPUT]: Settings persistence, email delivery, and notification template variables.
-// [OUTPUT]: Validated, localized, URL-gated, deduplicated transactional and optional email delivery.
+// [OUTPUT]: Fail-closed optional mail and typed delivery-state outcomes after validated SMTP delivery.
 // [POS]: Service-layer notification template registry and delivery coordinator.
 //
 // [PROTOCOL]:
-// 1. Update this header when template validation, event metadata, or delivery semantics change.
+// 1. Update this header when template validation, runtime URLs, or delivery semantics change.
 // 2. Keep business-stage selection in its owning application service.
 package service
 
@@ -168,6 +168,12 @@ func (e notificationEmailDeliveryError) Unwrap() error {
 	return e.Err
 }
 
+type notificationEmailPostDeliveryError struct{}
+
+func (notificationEmailPostDeliveryError) Error() string {
+	return "email delivered but delivery state was not persisted"
+}
+
 type notificationEmailUnsubscribeClaims struct {
 	Email string `json:"email"`
 	Event string `json:"event"`
@@ -218,6 +224,11 @@ func shouldFallbackNotificationEmail(err error) bool {
 func isNotificationEmailDeliveryError(err error) bool {
 	var deliveryErr notificationEmailDeliveryError
 	return errors.As(err, &deliveryErr)
+}
+
+func isNotificationEmailPostDeliveryError(err error) bool {
+	var postDeliveryErr notificationEmailPostDeliveryError
+	return errors.As(err, &postDeliveryErr)
 }
 
 func (s *NotificationEmailService) ListEventInfos() []NotificationEmailEventInfo {
@@ -387,7 +398,10 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 	if err != nil {
 		return notificationEmailTemplateErr(err)
 	}
-	variables := s.runtimeVariables(ctx, normalizedEvent, locale, input)
+	variables, err := s.runtimeVariables(ctx, normalizedEvent, locale, input)
+	if err != nil {
+		return notificationEmailConfigErr(errors.New("optional email unsubscribe URL is unavailable"))
+	}
 	rendered, err := renderNotificationEmail(normalizedEvent, tmpl.Subject, tmpl.HTML, variables, input.RawHTMLVariables)
 	if err != nil {
 		return notificationEmailTemplateErr(err)
@@ -412,7 +426,7 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 	}
 	if deliveryKey != "" {
 		if err := s.settingRepo.Set(ctx, deliveryKey, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-			return err
+			return notificationEmailPostDeliveryError{}
 		}
 	}
 	return nil
@@ -511,7 +525,12 @@ func (s *NotificationEmailService) sampleVariables(ctx context.Context, event, l
 	return variables
 }
 
-func (s *NotificationEmailService) runtimeVariables(ctx context.Context, event, locale string, input NotificationEmailSendInput) map[string]string {
+func (s *NotificationEmailService) runtimeVariables(
+	ctx context.Context,
+	event string,
+	locale string,
+	input NotificationEmailSendInput,
+) (map[string]string, error) {
 	variables := s.sampleVariables(ctx, event, locale)
 	for key, value := range input.Variables {
 		variables[key] = value
@@ -522,11 +541,13 @@ func (s *NotificationEmailService) runtimeVariables(ctx context.Context, event, 
 		variables["recipient_name"] = input.RecipientName
 	}
 	if notificationEmailEventDefinitions[event].Optional {
-		if unsubscribeURL, err := s.buildUnsubscribeURL(ctx, input.RecipientEmail, event); err == nil {
-			variables["unsubscribe_url"] = unsubscribeURL
+		unsubscribeURL, err := s.buildUnsubscribeURL(ctx, input.RecipientEmail, event)
+		if err != nil {
+			return nil, err
 		}
+		variables["unsubscribe_url"] = unsubscribeURL
 	}
-	return variables
+	return variables, nil
 }
 
 func (s *NotificationEmailService) siteName(ctx context.Context) string {

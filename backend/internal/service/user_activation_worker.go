@@ -1,9 +1,9 @@
 // [INPUT]: Activation configuration, lifecycle/evidence repositories, email delivery, and leader locks.
-// [OUTPUT]: Recoverable activation scans with URL-gated mail and bounded failure diagnostics.
+// [OUTPUT]: PG-serialized activation scans with URL-gated mail and bounded failure diagnostics.
 // [POS]: Application worker that owns HVOY activation timing, priority, and recovery orchestration.
 //
 // [PROTOCOL]:
-// 1. Update this header when scan recovery, timing priority, or worker lifecycle changes.
+// 1. Update this header when lock composition, scan recovery, timing, or lifecycle changes.
 // 2. Keep SQL factual and email transport free of activation policy.
 package service
 
@@ -61,13 +61,12 @@ type UserActivationWorker struct {
 	db         *sql.DB
 	instanceID string
 
-	startOnce sync.Once
-	stopOnce  sync.Once
-	stopCh    chan struct{}
-	wg        sync.WaitGroup
-
-	cancelMu sync.Mutex
-	cancel   context.CancelFunc
+	lifecycleMu sync.Mutex
+	started     bool
+	stopped     bool
+	stopCh      chan struct{}
+	wg          sync.WaitGroup
+	cancel      context.CancelFunc
 }
 
 func NewUserActivationWorker(
@@ -104,52 +103,50 @@ func (w *UserActivationWorker) Start() {
 	if w == nil || !w.cfg.Enabled || w.cfg.WorkerInterval <= 0 {
 		return
 	}
-	select {
-	case <-w.stopCh:
+	w.lifecycleMu.Lock()
+	if w.started || w.stopped {
+		w.lifecycleMu.Unlock()
 		return
-	default:
 	}
 
-	w.startOnce.Do(func() {
-		ctx, cancel := context.WithCancel(context.Background())
-		w.cancelMu.Lock()
-		w.cancel = cancel
-		w.cancelMu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	w.cancel = cancel
+	w.started = true
+	w.wg.Add(1)
+	w.lifecycleMu.Unlock()
 
-		w.wg.Add(1)
-		go func() {
-			defer w.wg.Done()
-			ticker := time.NewTicker(w.cfg.WorkerInterval)
-			defer ticker.Stop()
+	go func() {
+		defer w.wg.Done()
+		ticker := time.NewTicker(w.cfg.WorkerInterval)
+		defer ticker.Stop()
 
-			w.runOnce(ctx)
-			for {
-				select {
-				case <-ticker.C:
-					w.runOnce(ctx)
-				case <-ctx.Done():
-					return
-				case <-w.stopCh:
-					return
-				}
+		w.runOnce(ctx)
+		for {
+			select {
+			case <-ticker.C:
+				w.runOnce(ctx)
+			case <-ctx.Done():
+				return
+			case <-w.stopCh:
+				return
 			}
-		}()
-	})
+		}
+	}()
 }
 
 func (w *UserActivationWorker) Stop() {
 	if w == nil {
 		return
 	}
-	w.stopOnce.Do(func() {
+	w.lifecycleMu.Lock()
+	if !w.stopped {
+		w.stopped = true
 		close(w.stopCh)
-		w.cancelMu.Lock()
-		cancel := w.cancel
-		w.cancelMu.Unlock()
-		if cancel != nil {
-			cancel()
+		if w.cancel != nil {
+			w.cancel()
 		}
-	})
+	}
+	w.lifecycleMu.Unlock()
 	w.wg.Wait()
 }
 
@@ -163,14 +160,7 @@ func (w *UserActivationWorker) runOnceAt(ctx context.Context, cycleNow time.Time
 	if w == nil || !w.cfg.Enabled || w.journeys == nil || w.lifecycle == nil {
 		return
 	}
-	release, ok := tryAcquireSingletonLeaderLock(
-		ctx,
-		w.lockCache,
-		w.db,
-		userActivationWorkerLeaderLockKey,
-		w.instanceID,
-		userActivationWorkerLeaderLockTTL,
-	)
+	release, ok := w.tryAcquireLeaderLock(ctx)
 	if !ok {
 		return
 	}
@@ -182,6 +172,56 @@ func (w *UserActivationWorker) runOnceAt(ctx context.Context, cycleNow time.Time
 	if err := w.processDueJourneys(ctx, cycleNow); err != nil {
 		logUserActivationWorkerError("process_due_journeys", 0, 0, err)
 	}
+}
+
+func (w *UserActivationWorker) tryAcquireLeaderLock(ctx context.Context) (func(), bool) {
+	if w.db == nil {
+		return tryAcquireSingletonLeaderLock(
+			ctx,
+			w.lockCache,
+			nil,
+			userActivationWorkerLeaderLockKey,
+			w.instanceID,
+			userActivationWorkerLeaderLockTTL,
+		)
+	}
+
+	releaseDB, ok := tryAcquireDBAdvisoryLock(
+		ctx,
+		w.db,
+		hashAdvisoryLockID(userActivationWorkerLeaderLockKey),
+	)
+	if !ok {
+		return nil, false
+	}
+	if w.lockCache == nil {
+		return releaseDB, true
+	}
+
+	cacheOK, err := w.lockCache.TryAcquireLeaderLock(
+		ctx,
+		userActivationWorkerLeaderLockKey,
+		w.instanceID,
+		userActivationWorkerLeaderLockTTL,
+	)
+	if err != nil {
+		return releaseDB, true
+	}
+	if !cacheOK {
+		releaseDB()
+		return nil, false
+	}
+
+	return func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = w.lockCache.ReleaseLeaderLock(
+			releaseCtx,
+			userActivationWorkerLeaderLockKey,
+			w.instanceID,
+		)
+		releaseDB()
+	}, true
 }
 
 func (w *UserActivationWorker) repairMissingJourneys(ctx context.Context) error {
@@ -303,8 +343,10 @@ func (w *UserActivationWorker) processJourney(
 		return
 	}
 	if err := w.emailSender.Send(ctx, input); err != nil {
-		logUserActivationWorkerError(string(stage), journey.ID, journey.UserID, err)
-		return
+		if !isNotificationEmailPostDeliveryError(err) {
+			logUserActivationWorkerError(string(stage), journey.ID, journey.UserID, err)
+			return
+		}
 	}
 	if err := w.journeys.MarkEmailSent(ctx, journey.ID, stage, cycleNow); err != nil {
 		logUserActivationWorkerError("mark_email_sent", journey.ID, journey.UserID, err)
