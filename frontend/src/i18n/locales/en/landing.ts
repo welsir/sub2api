@@ -13,7 +13,7 @@ export default {
     unavailable: 'Trial availability cannot be confirmed',
     hero: {
       enabledTitle: 'Test the service with one real request',
-      enabledDescription: 'Register, make one real model request, then decide whether to recharge. Trial limits and rates are shown here.',
+      enabledDescription: 'Register, make one real request, then decide on recharge. Trial limits and rates are clear.',
       unavailableTitle: 'Log in to review current services and available models',
       unavailableDescription: 'We cannot confirm a new-user trial right now, so this page will not promise free credit. Existing users can still log in or review the service first.'
     },
