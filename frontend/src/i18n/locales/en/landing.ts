@@ -12,8 +12,8 @@ export default {
     available: 'HVOY new-user trial is available',
     unavailable: 'Trial availability cannot be confirmed',
     hero: {
-      enabledTitle: 'Make a real request before deciding whether this service fits',
-      enabledDescription: 'Complete one real model request after registration, then decide whether to recharge. Trial limits, billing rates, and support boundaries are stated here.',
+      enabledTitle: 'Test the service with one real request',
+      enabledDescription: 'Register, make one real model request, then decide whether to recharge. Trial limits and rates are shown here.',
       unavailableTitle: 'Log in to review current services and available models',
       unavailableDescription: 'We cannot confirm a new-user trial right now, so this page will not promise free credit. Existing users can still log in or review the service first.'
     },
@@ -32,7 +32,7 @@ export default {
       minimumRecharge: 'Minimum recharge ¥{amount}'
     },
     support: {
-      withWechat: 'WeChat {wechat} provides manual setup and troubleshooting support; it is not tied to free credit.',
+      withWechat: 'WeChat {wechat} is for setup and troubleshooting only, not for claiming free credit.',
       generic: 'WeChat is only for manual setup and troubleshooting support, not for obtaining free credit.'
     },
     cta: {
