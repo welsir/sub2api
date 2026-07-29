@@ -41,7 +41,7 @@
     <main>
       <section class="border-b border-gray-200 bg-white dark:border-dark-800 dark:bg-dark-900">
         <div
-          class="mx-auto grid max-w-6xl min-w-0 gap-5 px-4 pb-4 pt-5 sm:gap-7 sm:px-6 sm:pb-10 sm:pt-11 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)] lg:gap-12"
+          class="mx-auto grid max-w-6xl min-w-0 gap-3 px-4 pb-4 pt-3 sm:gap-7 sm:px-6 sm:pb-10 sm:pt-11 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)] lg:gap-12"
         >
           <div class="min-w-0">
             <div
