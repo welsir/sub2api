@@ -24,6 +24,7 @@ const authStore = vi.hoisted(() => ({
   isAuthenticated: false,
   isAdmin: false,
   isSimpleMode: false,
+  hasPendingAuthSession: false,
 }))
 
 const appStore = vi.hoisted(() => ({
@@ -61,6 +62,12 @@ vi.mock('@/composables/useRoutePrefetch', () => ({
     resetPrefetchState: vi.fn(),
   }),
 }))
+
+vi.mock('@/router/title', () => ({
+  resolveRouteDocumentTitle: () => 'HVOY Partner',
+}))
+
+vi.stubGlobal('scrollTo', vi.fn())
 
 const enabledOffer = {
   enabled: true,
@@ -121,6 +128,12 @@ function mountPage() {
 describe('HvoyPartnerView', () => {
   beforeEach(() => {
     getHvoyActivationOfferMock.mockReset()
+    authStore.checkAuth.mockReset()
+    authStore.isAuthenticated = false
+    authStore.isAdmin = false
+    authStore.isSimpleMode = false
+    authStore.hasPendingAuthSession = false
+    appStore.backendModeEnabled = false
   })
 
   it('shows the live starter offer and exact activation CTAs when the offer is enabled', async () => {
@@ -205,5 +218,20 @@ describe('HvoyPartnerView', () => {
 
     expect(route?.path).toBe('/partner/hvoy')
     expect(route?.meta.requiresAuth).toBe(false)
+  })
+
+  it('keeps the HVOY handoff public for unauthenticated visitors in backend mode', async () => {
+    const { default: router } = await import('@/router')
+    appStore.backendModeEnabled = true
+
+    try {
+      await router.push('/partner/hvoy')
+      await router.isReady()
+
+      expect(router.currentRoute.value.path).toBe('/partner/hvoy')
+    } finally {
+      appStore.backendModeEnabled = false
+      await router.replace('/login')
+    }
   })
 })
