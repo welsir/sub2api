@@ -34,9 +34,11 @@ describe('risk control locale copy', () => {
   it('labels excluded groups and the active runtime scope explicitly', () => {
     expect(zh.admin.riskControl.excludedGroups).toBe('豁免分组')
     expect(zh.admin.riskControl.excludedGroupsHint).toContain('名称和 ID')
+    expect(zh.admin.riskControl.removeExcludedGroup).toContain('{id}')
     expect(zh.admin.riskControl.runtimeDefaultOn).toContain('默认审核')
     expect(en.admin.riskControl.excludedGroups).toBe('Excluded groups')
     expect(en.admin.riskControl.excludedGroupsHint).toContain('name and ID')
+    expect(en.admin.riskControl.removeExcludedGroup).toContain('{id}')
     expect(en.admin.riskControl.runtimeDefaultOn).toContain('Default-on')
   })
 })

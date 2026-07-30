@@ -339,6 +339,7 @@ export default {
       excludedGroupCount: '已豁免 {count} 个分组',
       includedGroupCount: '已选择 {count} 个分组',
       unknownGroup: '未知分组',
+      removeExcludedGroup: '移除豁免分组 {name} #{id}',
       runtimeDefaultOn: '默认审核',
       runtimeSelectedGroups: '指定分组审核',
       runtimeExcludedGroupCount: '当前豁免 {count} 个',

@@ -125,8 +125,8 @@ export interface ContentModerationRuntimeStatus {
   enabled: boolean
   risk_control_enabled: boolean
   mode: ModerationMode
-  all_groups: boolean
-  excluded_group_ids: number[]
+  all_groups?: boolean
+  excluded_group_ids?: number[]
   worker_count: number
   max_workers: number
   active_workers: number

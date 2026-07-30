@@ -706,6 +706,7 @@
                 <button
                   type="button"
                   data-test="scope-mode-default-on"
+                  :aria-pressed="configForm.all_groups"
                   class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
                   :class="configForm.all_groups ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
                   @click="configForm.all_groups = true"
@@ -715,6 +716,7 @@
                 <button
                   type="button"
                   data-test="scope-mode-selected"
+                  :aria-pressed="!configForm.all_groups"
                   class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
                   :class="!configForm.all_groups ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
                   @click="configForm.all_groups = false"
@@ -756,6 +758,16 @@
                 >
                   <span class="truncate font-medium">{{ group.name }}</span>
                   <span class="font-mono">#{{ group.id }}</span>
+                  <button
+                    type="button"
+                    :data-test="`remove-excluded-group-${group.id}`"
+                    :aria-label="t('admin.riskControl.removeExcludedGroup', { name: group.name, id: group.id })"
+                    :title="t('admin.riskControl.removeExcludedGroup', { name: group.name, id: group.id })"
+                    class="ml-1 inline-flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-amber-700 hover:bg-amber-100 dark:text-amber-200 dark:hover:bg-amber-900/40"
+                    @click="removeExcludedGroup(group.id)"
+                  >
+                    <Icon name="x" size="xs" />
+                  </button>
                 </span>
               </div>
 
@@ -1250,6 +1262,10 @@ const flaggedHashInput = ref('')
 const groups = ref<AdminGroup[]>([])
 const logs = ref<ContentModerationLog[]>([])
 const status = ref<ContentModerationRuntimeStatus | null>(null)
+const serverScopeSnapshot = reactive({
+  all_groups: true,
+  excluded_group_ids: [] as number[],
+})
 const testedApiKeyStatuses = ref<ContentModerationAPIKeyStatus[]>([])
 const pendingDeleteApiKeyHashes = ref<string[]>([])
 const apiKeyRowsExpanded = ref<boolean>(false)
@@ -1481,10 +1497,16 @@ const filteredGroups = computed(() => {
 })
 
 const runtimeExcludedGroupIDs = computed(() => (
-  Array.isArray(status.value?.excluded_group_ids) ? status.value.excluded_group_ids : []
+  Array.isArray(status.value?.excluded_group_ids)
+    ? status.value.excluded_group_ids
+    : serverScopeSnapshot.excluded_group_ids
 ))
 
-const runtimeAllGroups = computed(() => status.value?.all_groups ?? configForm.all_groups)
+const runtimeAllGroups = computed(() => (
+  typeof status.value?.all_groups === 'boolean'
+    ? status.value.all_groups
+    : serverScopeSnapshot.all_groups
+))
 
 const runtimeGroupScopeValue = computed(() => (
   runtimeAllGroups.value
@@ -1788,7 +1810,10 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.sample_rate = config.sample_rate ?? 100
   configForm.all_groups = config.all_groups
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
-  configForm.excluded_group_ids = Array.isArray(config.excluded_group_ids) ? [...config.excluded_group_ids] : []
+  const excludedGroupIDs = Array.isArray(config.excluded_group_ids) ? [...config.excluded_group_ids] : []
+  configForm.excluded_group_ids = [...excludedGroupIDs]
+  serverScopeSnapshot.all_groups = config.all_groups
+  serverScopeSnapshot.excluded_group_ids = excludedGroupIDs
   configForm.record_non_hits = config.record_non_hits
   configForm.worker_count = config.worker_count || 4
   configForm.queue_size = config.queue_size || 32768
@@ -2182,6 +2207,13 @@ function isGroupSelected(groupID: number): boolean {
   return configForm.all_groups
     ? configForm.excluded_group_ids.includes(groupID)
     : configForm.group_ids.includes(groupID)
+}
+
+function removeExcludedGroup(groupID: number) {
+  const index = configForm.excluded_group_ids.indexOf(groupID)
+  if (index >= 0) {
+    configForm.excluded_group_ids.splice(index, 1)
+  }
 }
 
 function modeLabel(mode: ModerationMode): string {

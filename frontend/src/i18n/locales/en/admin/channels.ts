@@ -339,6 +339,7 @@ export default {
       excludedGroupCount: '{count} groups exempted',
       includedGroupCount: '{count} groups selected',
       unknownGroup: 'Unknown group',
+      removeExcludedGroup: 'Remove excluded group {name} #{id}',
       runtimeDefaultOn: 'Default-on moderation',
       runtimeSelectedGroups: 'Selected-group moderation',
       runtimeExcludedGroupCount: '{count} groups currently exempted',

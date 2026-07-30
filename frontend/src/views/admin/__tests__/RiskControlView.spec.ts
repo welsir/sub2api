@@ -65,6 +65,9 @@ vi.mock('vue-i18n', async () => {
         if (key === 'admin.riskControl.excludedGroupCount') {
           return `已豁免 ${params?.count} 个分组`
         }
+        if (key === 'admin.riskControl.removeExcludedGroup') {
+          return `移除豁免分组 ${params?.name} #${params?.id}`
+        }
         return key.replace(/\{(\w+)\}/g, (_, token) => String(params?.[token] ?? `{${token}}`))
       },
     }),
@@ -299,7 +302,17 @@ describe('admin RiskControlView', () => {
     await flushPromises()
     await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
     await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
-    await wrapper.get('[data-test="scope-mode-selected"]').trigger('click')
+    const defaultOnMode = wrapper.get('[data-test="scope-mode-default-on"]')
+    const selectedMode = wrapper.get('[data-test="scope-mode-selected"]')
+
+    expect(defaultOnMode.attributes('aria-pressed')).toBe('true')
+    expect(selectedMode.attributes('aria-pressed')).toBe('false')
+
+    await selectedMode.trigger('click')
+
+    expect(defaultOnMode.attributes('aria-pressed')).toBe('false')
+    expect(selectedMode.attributes('aria-pressed')).toBe('true')
+
     await wrapper.get('[data-test="scope-group-18"]').trigger('click')
     await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
     await flushPromises()
@@ -326,6 +339,65 @@ describe('admin RiskControlView', () => {
     expect(runtimeScope.text()).toContain('admin.riskControl.runtimeDefaultOn')
     expect(runtimeScope.text()).toContain('#17')
     expect(runtimeScope.text()).toContain('#42')
+  })
+
+  it('keeps runtime overview on the latest server config snapshot while settings are unsaved', async () => {
+    getConfig.mockResolvedValue({
+      ...baseConfig(),
+      all_groups: true,
+      excluded_group_ids: [17],
+    })
+    const legacyRuntimeStatus = runtimeStatus() as Partial<ReturnType<typeof runtimeStatus>>
+    delete legacyRuntimeStatus.all_groups
+    delete legacyRuntimeStatus.excluded_group_ids
+    getStatus.mockResolvedValue(legacyRuntimeStatus)
+
+    const wrapper = mountRiskControlView()
+
+    await flushPromises()
+
+    const runtimeScope = wrapper.get('[data-test="runtime-group-scope"]')
+    expect(runtimeScope.text()).toContain('admin.riskControl.runtimeDefaultOn')
+    expect(runtimeScope.text()).toContain('#17')
+    expect(runtimeScope.text()).not.toContain('admin.riskControl.runtimeNoExcludedGroups')
+
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
+    await wrapper.get('[data-test="scope-mode-selected"]').trigger('click')
+
+    expect(runtimeScope.text()).toContain('admin.riskControl.runtimeDefaultOn')
+    expect(runtimeScope.text()).toContain('#17')
+    expect(runtimeScope.text()).not.toContain('admin.riskControl.runtimeSelectedGroups')
+  })
+
+  it('removes an excluded group by exact ID even when the group list no longer contains it', async () => {
+    getConfig.mockResolvedValue({
+      ...baseConfig(),
+      all_groups: true,
+      excluded_group_ids: [404],
+    })
+    getGroups.mockResolvedValue([])
+
+    const wrapper = mountRiskControlView()
+
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
+
+    const removeButton = wrapper.get('[data-test="remove-excluded-group-404"]')
+    expect(removeButton.attributes('aria-label')).toContain('#404')
+
+    await removeButton.trigger('click')
+
+    expect(wrapper.find('[data-test="selected-excluded-groups"]').exists()).toBe(false)
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      all_groups: true,
+      group_ids: [],
+      excluded_group_ids: [],
+    }))
   })
 
   it('saves the selected model filter mode and models', async () => {
