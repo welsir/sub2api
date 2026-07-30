@@ -94,6 +94,7 @@ function simulateGuard(
       ]
       const pendingAuthPaths = ['/register', '/email-verify']
       const isAllowed =
+        toPath === '/' ||
         allowed.some((path) => toPath === path || toPath.startsWith(path)) ||
         callbackPaths.includes(toPath) ||
         (authState.hasPendingAuthSession && pendingAuthPaths.includes(toPath))
@@ -336,7 +337,7 @@ describe('路由守卫逻辑', () => {
   })
 
   describe('Backend Mode', () => {
-    it('unauthenticated: /home redirects to /login', () => {
+    it('unauthenticated: root homepage is allowed', () => {
       const authState: MockAuthState = {
         isAuthenticated: false,
         isAdmin: false,
@@ -344,7 +345,19 @@ describe('路由守卫逻辑', () => {
         backendModeEnabled: true,
         hasPendingAuthSession: false,
       }
-      const redirect = simulateGuard('/home', { requiresAuth: false }, authState)
+      const redirect = simulateGuard('/', { requiresAuth: false }, authState)
+      expect(redirect).toBeNull()
+    })
+
+    it('unauthenticated: root allowance does not expose other routes', () => {
+      const authState: MockAuthState = {
+        isAuthenticated: false,
+        isAdmin: false,
+        isSimpleMode: false,
+        backendModeEnabled: true,
+        hasPendingAuthSession: false,
+      }
+      const redirect = simulateGuard('/admin/users', { requiresAuth: false }, authState)
       expect(redirect).toBe('/login')
     })
 

@@ -125,6 +125,34 @@ describe('EmailVerifyView', () => {
     setTokenMock.mockResolvedValue({})
   })
 
+  it('allows a long registration email to wrap inside the verification card', async () => {
+    const longEmail = 'very.long.activation.preview.user.with.multiple.sections.20260730@gmail.com'
+    sessionStorage.setItem(
+      'register_data',
+      JSON.stringify({
+        email: longEmail,
+        password: 'secret-123',
+      })
+    )
+
+    const wrapper = mount(EmailVerifyView, {
+      global: {
+        stubs: {
+          AuthLayout: { template: '<div><slot /><slot name="footer" /></div>' },
+          Icon: true,
+          TurnstileWidget: true,
+          transition: false,
+        },
+      },
+    })
+
+    await flushPromises()
+
+    const emailLabel = wrapper.findAll('span').find((span) => span.text() === longEmail)
+    expect(emailLabel).toBeDefined()
+    expect(emailLabel?.classes()).toContain('break-all')
+  })
+
   it('uses the pending oauth verify-code endpoint when register data carries a pending auth session', async () => {
     authStoreState.pendingAuthSession = {
       token: 'pending-token-1',
@@ -491,7 +519,7 @@ describe('EmailVerifyView', () => {
     expect(pushMock).toHaveBeenCalledWith('/activation')
   })
 
-  it('drops an unknown campaign and its redirect before verified registration', async () => {
+  it('drops an unknown campaign but preserves its safe redirect after verified registration', async () => {
     sessionStorage.setItem(
       'register_data',
       JSON.stringify({
@@ -520,7 +548,7 @@ describe('EmailVerifyView', () => {
     await flushPromises()
 
     expect(registerMock.mock.calls[0]?.[0]).not.toHaveProperty('campaign_source')
-    expect(pushMock).toHaveBeenCalledWith('/dashboard')
+    expect(pushMock).toHaveBeenCalledWith('/activation')
   })
 
   it.each([

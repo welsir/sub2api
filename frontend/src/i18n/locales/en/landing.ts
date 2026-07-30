@@ -4,36 +4,37 @@ export default {
     description: 'Submit multiple prompts in one job and download the generated images when complete'
   },
   hvoyPartner: {
-    pageTitle: 'HVOY Partner Access',
+    pageTitle: 'Omni API',
     brand: 'Omni API',
-    channel: 'HVOY partner access',
     navLogin: 'Log in',
     loading: 'Checking trial availability',
-    available: 'HVOY new-user trial is available',
+    available: 'Free trial available for new users',
     unavailable: 'Trial availability cannot be confirmed',
     hero: {
-      enabledTitle: 'Test the service with one real request',
-      enabledDescription: 'Register, make one real request, then decide on recharge. Trial limits and rates are clear.',
+      enabledTitle: 'Try it free, recharge when you are ready',
+      enabledDescription: 'Trial credit arrives after registration. Create a key and start using it right away.',
       unavailableTitle: 'Log in to review current services and available models',
       unavailableDescription: 'We cannot confirm a new-user trial right now, so this page will not promise free credit. Existing users can still log in or review the service first.'
     },
     offer: {
-      label: 'Current new-user trial',
-      starterNote: 'Issued automatically after registration for the first real request, then expires at the stated deadline.',
+      label: 'New-user trial',
+      starterTitle: 'Credited after registration',
+      starterNote: 'No recharge needed. Create a key and start using it.',
       unavailableLabel: 'Service access',
       unavailableTitle: 'No unverified credit promise',
       unavailableNote: 'Log in to review your account, models, and recharge status.'
     },
     pricing: {
-      rechargeLabel: 'CNY to credit',
-      proLabel: 'Pro model rate',
+      paymentLabel: 'Payment options',
+      paymentChannels: 'Multiple payment methods supported',
+      refundLabel: 'Usage protection',
+      proportionalRefund: 'Not satisfied? Refunds are based on actual usage',
       balanceLabel: 'Paid balance',
-      paidNoExpiry: 'Paid credit does not expire',
-      minimumRecharge: 'Minimum recharge ¥{amount}'
+      paidNoExpiry: 'Recharged credit does not expire'
     },
     support: {
-      withWechat: 'WeChat {wechat} is for setup and troubleshooting only, not for claiming free credit.',
-      generic: 'WeChat is only for manual setup and troubleshooting support, not for obtaining free credit.'
+      withWechat: 'Need help with setup or a request? Add {wechat} on WeChat.',
+      generic: 'Need help with setup or a request? Contact us on WeChat.'
     },
     cta: {
       register: 'Register and start trial',
@@ -42,27 +43,27 @@ export default {
       viewService: 'View service home'
     },
     facts: {
-      trialTitle: 'A clearly timed trial',
-      trialDescription: 'Trial credit connects the first-request journey and expires automatically.',
+      trialTitle: 'Free trial credit after registration',
+      trialDescription: 'It arrives after email verification. Nothing to claim manually.',
       entryTitle: 'Existing accounts continue normally',
       entryDescription: 'When trial eligibility is unavailable, existing account access remains unchanged.',
-      rechargeTitle: 'Transparent recharge rules',
-      rechargeDescription: 'CNY payments are credited in USD-denominated usage balance at the displayed rate.',
-      balanceTitle: 'Paid credit does not expire',
-      balanceDescription: 'Short-term trial credit expires; credit purchased by the user does not.',
-      supportTitle: 'Clear support boundaries',
-      supportDescription: 'WeChat helps with setup and troubleshooting and is never a condition for receiving trial credit.'
+      rechargeTitle: 'Flexible payment options',
+      rechargeDescription: 'Multiple payment methods are supported, with refunds based on actual usage.',
+      balanceTitle: 'Recharged credit does not expire',
+      balanceDescription: 'Use your recharged credit whenever you need it.',
+      supportTitle: 'Need help? Just ask',
+      supportDescription: 'For setup or request issues, contact us on WeChat.'
     },
     flow: {
-      eyebrow: 'From registration to first request',
-      title: 'Complete a real validation in three steps',
+      eyebrow: 'Getting started',
+      title: 'Make your first request in three steps',
       enabled: {
-        verifyTitle: 'Register and verify email',
-        verifyDescription: 'Use a common email provider to complete registration and verification.',
-        creditTitle: 'Receive trial credit automatically',
-        creditDescription: 'When the current offer conditions are met, timed trial credit is issued by the system.',
-        useTitle: 'Open activation and make a request',
-        useDescription: 'Create a key, finish setup, and use one real request to judge the service.'
+        verifyTitle: 'Verify your email',
+        verifyDescription: 'Register with a common email address and enter the code you receive.',
+        creditTitle: 'Trial credit arrives automatically',
+        creditDescription: 'It is added after verification. Nothing to claim manually.',
+        useTitle: 'Create a key and send a request',
+        useDescription: 'Run the command on the activation page. A model reply means you are connected.'
       },
       unavailable: {
         loginTitle: 'Log in to an existing account',

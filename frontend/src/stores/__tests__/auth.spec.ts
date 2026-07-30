@@ -1,6 +1,17 @@
+/**
+ * [INPUT]: Mocked authentication APIs, persisted browser auth state, and related account stores.
+ * [OUTPUT]: Auth lifecycle coverage for login, logout, refresh, pending sessions, and account-state reset.
+ * [POS]: Pinia integration tests for the authenticated browser session boundary.
+ *
+ * [PROTOCOL]:
+ * 1. Assert account-scoped stores reset whenever authenticated identity starts or ends.
+ * 2. Update this header and the containing folder documentation when auth lifecycle behavior changes.
+ */
+
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
+import { useActivationStore } from '@/stores/activation'
 
 // Mock authAPI
 const mockLogin = vi.fn()
@@ -69,6 +80,8 @@ describe('useAuthStore', () => {
     it('成功登录后设置 token 和 user', async () => {
       mockLogin.mockResolvedValue(fakeAuthResponse)
       const store = useAuthStore()
+      const activationStore = useActivationStore()
+      activationStore.status = { enabled: false }
 
       await store.login({ email: 'test@example.com', password: '123456' })
 
@@ -77,6 +90,7 @@ describe('useAuthStore', () => {
       expect(store.isAuthenticated).toBe(true)
       expect(localStorage.getItem('auth_token')).toBe('test-token-123')
       expect(localStorage.getItem('auth_user')).toBe(JSON.stringify(fakeUser))
+      expect(activationStore.status).toBeNull()
     })
 
     it('登录失败时清除状态并抛出错误', async () => {
@@ -144,6 +158,8 @@ describe('useAuthStore', () => {
       // 先登录
       await store.login({ email: 'test@example.com', password: '123456' })
       expect(store.isAuthenticated).toBe(true)
+      const activationStore = useActivationStore()
+      activationStore.status = { enabled: false }
 
       // 注销
       await store.logout()
@@ -155,6 +171,7 @@ describe('useAuthStore', () => {
       expect(localStorage.getItem('auth_user')).toBeNull()
       expect(localStorage.getItem('refresh_token')).toBeNull()
       expect(localStorage.getItem('token_expires_at')).toBeNull()
+      expect(activationStore.status).toBeNull()
     })
   })
 

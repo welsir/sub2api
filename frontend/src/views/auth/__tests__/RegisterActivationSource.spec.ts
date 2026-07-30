@@ -137,7 +137,18 @@ describe('RegisterView activation source', () => {
     expect(registerMock).not.toHaveBeenCalled()
   })
 
-  it('drops an unknown source and its redirect from email verification context', async () => {
+  it('persists a safe redirect without requiring a campaign source', async () => {
+    routeQuery.redirect = '/activation'
+    getPublicSettingsMock.mockResolvedValue(publicSettings(true))
+
+    await mountAndSubmitRegister()
+
+    const stored = JSON.parse(sessionStorage.getItem('register_data') || '{}')
+    expect(stored).not.toHaveProperty('campaign_source')
+    expect(stored.redirect).toBe('/activation')
+  })
+
+  it('drops an unknown source but preserves its safe redirect', async () => {
     routeQuery.source = 'unknown_partner'
     routeQuery.redirect = '/activation'
     getPublicSettingsMock.mockResolvedValue(publicSettings(true))
@@ -146,7 +157,7 @@ describe('RegisterView activation source', () => {
 
     const stored = JSON.parse(sessionStorage.getItem('register_data') || '{}')
     expect(stored).not.toHaveProperty('campaign_source')
-    expect(stored).not.toHaveProperty('redirect')
+    expect(stored.redirect).toBe('/activation')
   })
 
   it.each([

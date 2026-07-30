@@ -1,5 +1,11 @@
 /**
- * Core Type Definitions for Sub2API Frontend
+ * [INPUT]: Backend response/request contracts shared across frontend modules.
+ * [OUTPUT]: Typed domain models for API, store, component, and router consumers.
+ * [POS]: Central frontend type boundary for Sub2API.
+ *
+ * [PROTOCOL]:
+ * 1. Keep business states aligned with explicit backend fields rather than UI inference.
+ * 2. Update this header and the containing folder documentation when contracts change.
  */
 
 // ==================== Common Types ====================
@@ -243,6 +249,72 @@ export interface PublicSettings {
   affiliate_enabled: boolean
   allow_user_view_error_requests?: boolean
 }
+
+// ==================== User Activation Types ====================
+
+export type UserActivationSegment =
+  | 'SUCCESS'
+  | 'PAID_ZERO_SUCCESS'
+  | 'ATTEMPTED_ZERO_SUCCESS'
+  | 'REGISTERED_NO_ATTEMPT'
+
+export type ActivationStarterState = 'pending' | 'granted' | 'expired'
+
+export type ActivationRecallState =
+  | 'locked'
+  | 'claimable'
+  | 'claimed'
+  | 'expired'
+  | 'blocked_paid'
+  | 'closed_success'
+
+export interface ActivationGrantStatus {
+  state: ActivationStarterState
+  subscription_id?: number
+  granted_at?: string
+  expires_at?: string
+}
+
+export interface ActivationRecallStatus {
+  state: ActivationRecallState
+  subscription_id?: number
+  claimed_at?: string
+  expires_at?: string
+  claimable: boolean
+}
+
+export interface ActivationGroupStatus {
+  group_id: number
+  subscription_id: number
+  starts_at: string
+  expires_at: string
+}
+
+export interface EnabledUserActivationStatus {
+  enabled: true
+  segment: UserActivationSegment
+  starter: ActivationGrantStatus
+  recall: ActivationRecallStatus
+  active_group?: ActivationGroupStatus
+  support_wechat?: string
+  next_action?: string
+  first_success_at?: string
+}
+
+export interface DisabledUserActivationStatus {
+  enabled: false
+  segment?: never
+  starter?: never
+  recall?: never
+  active_group?: never
+  support_wechat?: never
+  next_action?: never
+  first_success_at?: never
+}
+
+export type UserActivationStatus =
+  | EnabledUserActivationStatus
+  | DisabledUserActivationStatus
 
 export interface AuthResponse {
   access_token: string

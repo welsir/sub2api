@@ -8,7 +8,7 @@
         </h2>
         <p class="mt-2 text-sm text-gray-500 dark:text-dark-400">
           {{ t('auth.sendCodeDesc') }}
-          <span class="font-medium text-gray-700 dark:text-gray-300">{{ email }}</span>
+          <span class="break-all font-medium text-gray-700 dark:text-gray-300">{{ email }}</span>
         </p>
       </div>
 

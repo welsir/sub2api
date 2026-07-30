@@ -1,6 +1,6 @@
 // [INPUT]: Untrusted registration source and redirect values from URL or session storage.
-// [OUTPUT]: A normalized HVOY campaign source and optional safe same-origin path.
-// [POS]: Shared security boundary for ordinary email registration attribution.
+// [OUTPUT]: An optional normalized campaign source and independently validated same-origin path.
+// [POS]: Shared security boundary for email registration attribution and post-verification routing.
 
 export interface RegistrationContext {
   campaign_source?: 'hvoy_partner'
@@ -18,13 +18,11 @@ export function sanitizeRegistrationContext(
   source: unknown,
   redirect: unknown
 ): RegistrationContext {
-  if (source !== 'hvoy_partner') {
-    return {}
+  const context: RegistrationContext = {}
+  if (source === 'hvoy_partner') {
+    context.campaign_source = 'hvoy_partner'
   }
 
-  const context: RegistrationContext = {
-    campaign_source: 'hvoy_partner'
-  }
   if (
     typeof redirect === 'string' &&
     redirect.startsWith('/') &&

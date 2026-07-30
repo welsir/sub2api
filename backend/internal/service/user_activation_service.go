@@ -1,6 +1,6 @@
 // [INPUT]: Activation configuration, journey/evidence ports, subscriptions, settings, and Ent.
 // [OUTPUT]: Starter grants, evidence-derived status, and transactional recall claims.
-// [POS]: Service-layer policy owner for the HVOY new-user activation lifecycle.
+// [POS]: Service-layer policy owner for the Omni new-user activation lifecycle.
 //
 // [PROTOCOL]:
 // 1. Update this header when activation eligibility, locking, or grant semantics change.

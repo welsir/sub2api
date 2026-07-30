@@ -1,6 +1,11 @@
 /**
- * Vue Router configuration for Sub2API frontend
- * Defines all application routes with lazy loading and navigation guards
+ * [INPUT]: Application views, authentication/admin stores, setup state, and navigation helpers.
+ * [OUTPUT]: A public activation homepage, legacy entry redirects, and guarded user/admin routes.
+ * [POS]: Frontend route registry and authorization boundary.
+ *
+ * [PROTOCOL]:
+ * 1. Keep access requirements explicit in route metadata.
+ * 2. Update this header and the containing folder documentation when routes change.
  */
 
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
@@ -31,23 +36,22 @@ const routes: RouteRecordRaw[] = [
 
   // ==================== Public Routes ====================
   {
-    path: '/home',
+    path: '/',
     name: 'Home',
-    component: () => import('@/views/HomeView.vue'),
-    meta: {
-      requiresAuth: false,
-      title: 'Home'
-    }
-  },
-  {
-    path: '/partner/hvoy',
-    name: 'HvoyPartner',
     component: () => import('@/views/public/HvoyPartnerView.vue'),
     meta: {
       requiresAuth: false,
-      title: 'HVOY Partner',
+      title: 'Omni API',
       titleKey: 'hvoyPartner.pageTitle'
     }
+  },
+  {
+    path: '/home',
+    redirect: '/'
+  },
+  {
+    path: '/partner/hvoy',
+    redirect: '/'
   },
   {
     path: '/login',
@@ -188,10 +192,6 @@ const routes: RouteRecordRaw[] = [
 
   // ==================== User Routes ====================
   {
-    path: '/',
-    redirect: '/home'
-  },
-  {
     path: '/dashboard',
     name: 'Dashboard',
     component: () => import('@/views/user/DashboardView.vue'),
@@ -201,6 +201,18 @@ const routes: RouteRecordRaw[] = [
       title: 'Dashboard',
       titleKey: 'dashboard.title',
       descriptionKey: 'dashboard.welcomeMessage'
+    }
+  },
+  {
+    path: '/activation',
+    name: 'Activation',
+    component: () => import('@/views/user/ActivationView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Activation',
+      titleKey: 'activation.title',
+      descriptionKey: 'activation.description'
     }
   },
   {
@@ -713,7 +725,7 @@ let authInitialized = false
 const navigationLoading = useNavigationLoadingState()
 // 延迟初始化预加载，传入 router 实例
 let routePrefetch: ReturnType<typeof useRoutePrefetch> | null = null
-const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal', '/partner/hvoy']
+const BACKEND_MODE_ALLOWED_PATHS = ['/login', '/key-usage', '/setup', '/payment/result', '/payment/airwallex', '/legal']
 const BACKEND_MODE_CALLBACK_PATHS = [
   '/auth/callback',
   '/auth/linuxdo/callback',
@@ -726,6 +738,10 @@ const BACKEND_MODE_CALLBACK_PATHS = [
 const BACKEND_MODE_PENDING_AUTH_PATHS = ['/register', '/email-verify']
 
 function isBackendModePublicRouteAllowed(path: string, hasPendingAuthSession: boolean): boolean {
+  if (path === '/') {
+    return true
+  }
+
   if (BACKEND_MODE_ALLOWED_PATHS.some((allowedPath) => path === allowedPath || path.startsWith(allowedPath))) {
     return true
   }

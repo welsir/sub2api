@@ -136,6 +136,41 @@ func TestActivationHandlerPublicOfferDisabledDoesNotLeakGrantTerms(t *testing.T)
 	require.NotContains(t, recorder.Body.String(), "support_wechat")
 }
 
+func TestActivationHandlerPublicOfferDoesNotDependOnActivationService(t *testing.T) {
+	h := NewActivationHandler(nil, config.UserActivationConfig{
+		Enabled:          true,
+		RecallWindowDays: 7,
+		SupportWeChat:    "welsir02",
+	})
+
+	recorder := activationRequest(
+		t,
+		http.MethodGet,
+		"/api/v1/public/activation/hvoy",
+		h.GetPublicOffer,
+		nil,
+		"",
+	)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	require.JSONEq(t, `{
+		"code": 0,
+		"message": "success",
+		"data": {
+			"enabled": true,
+			"starter_credit_usd": 1,
+			"starter_valid_hours": 24,
+			"recall_credit_usd": 2,
+			"recall_valid_hours": 24,
+			"recall_window_days": 7,
+			"minimum_recharge_cny": 10,
+			"recharge_credit_rate": 1,
+			"pro_rate_multiplier": 0.2,
+			"support_wechat": "welsir02"
+		}
+	}`, recorder.Body.String())
+}
+
 func TestActivationHandlerStatusUsesAuthenticatedSubjectOnly(t *testing.T) {
 	var gotUserID int64
 	expected := &service.UserActivationStatus{

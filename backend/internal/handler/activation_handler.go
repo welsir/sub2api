@@ -1,6 +1,6 @@
 // [INPUT]: Activation configuration, activation lifecycle service, JWT subjects, and idempotency helpers.
-// [OUTPUT]: Public HVOY offer, current-user activation status, and idempotent recall claim handlers.
-// [POS]: HTTP boundary for the HVOY activation lifecycle.
+// [OUTPUT]: Public activation offer, current-user activation status, and idempotent recall claim handlers.
+// [POS]: HTTP boundary for the Omni new-user activation lifecycle.
 package handler
 
 import (

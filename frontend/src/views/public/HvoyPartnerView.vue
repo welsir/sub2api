@@ -1,7 +1,7 @@
 <!--
 [INPUT]: The public HVOY activation offer, landing-page i18n messages, and shared public UI primitives.
-[OUTPUT]: A responsive trust handoff with truthful offer disclosure and activation entry points.
-[POS]: Public conversion page between the HVOY partner listing and Sub2API registration or login.
+[OUTPUT]: A responsive public homepage with trial, payment, refund, and activation entry points.
+[POS]: Primary unauthenticated entry point for Omni API registration and login.
 -->
 
 <template>
@@ -11,17 +11,14 @@
   >
     <header class="border-b border-gray-200 bg-white dark:border-dark-800 dark:bg-dark-900">
       <div class="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <RouterLink to="/home" class="flex min-w-0 items-center gap-3">
+        <RouterLink to="/" class="flex min-w-0 items-center gap-3">
           <span
             class="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-md border border-gray-200 bg-white dark:border-dark-700 dark:bg-dark-800"
           >
             <img src="/logo.png" alt="Omni API" class="h-full w-full object-contain" />
           </span>
-          <span class="min-w-0">
-            <span class="block truncate text-sm font-semibold">{{ t('hvoyPartner.brand') }}</span>
-            <span class="block truncate text-xs text-gray-500 dark:text-dark-400">
-              {{ t('hvoyPartner.channel') }}
-            </span>
+          <span class="min-w-0 truncate text-sm font-semibold">
+            {{ t('hvoyPartner.brand') }}
           </span>
         </RouterLink>
 
@@ -93,10 +90,9 @@
                 {{ t('hvoyPartner.offer.label') }}
               </p>
               <p
-                v-if="starterSummary"
                 class="mt-2 break-words text-4xl font-bold tracking-normal text-gray-950 dark:text-white"
               >
-                {{ starterSummary }}
+                {{ t('hvoyPartner.offer.starterTitle') }}
               </p>
               <p class="mt-2 text-sm leading-6 text-gray-600 dark:text-dark-300">
                 {{ t('hvoyPartner.offer.starterNote') }}
@@ -115,19 +111,23 @@
             </template>
 
             <dl class="mt-5 divide-y divide-gray-200 border-y border-gray-200 dark:divide-dark-700 dark:border-dark-700">
-              <div v-if="rechargeSummary" class="flex min-w-0 items-center justify-between gap-4 py-3">
-                <dt class="flex min-w-0 items-center gap-2 text-sm text-gray-500 dark:text-dark-400">
-                  <Icon name="calculator" size="sm" class="flex-shrink-0" />
-                  <span class="break-words">{{ t('hvoyPartner.pricing.rechargeLabel') }}</span>
-                </dt>
-                <dd class="flex-shrink-0 text-sm font-semibold">{{ rechargeSummary }}</dd>
-              </div>
-              <div v-if="proRateSummary" class="flex min-w-0 items-center justify-between gap-4 py-3">
+              <div class="flex min-w-0 items-center justify-between gap-4 py-3">
                 <dt class="flex min-w-0 items-center gap-2 text-sm text-gray-500 dark:text-dark-400">
                   <Icon name="creditCard" size="sm" class="flex-shrink-0" />
-                  <span class="break-words">{{ t('hvoyPartner.pricing.proLabel') }}</span>
+                  <span class="break-words">{{ t('hvoyPartner.pricing.paymentLabel') }}</span>
                 </dt>
-                <dd class="flex-shrink-0 text-sm font-semibold">{{ proRateSummary }}</dd>
+                <dd class="text-right text-sm font-semibold">
+                  {{ t('hvoyPartner.pricing.paymentChannels') }}
+                </dd>
+              </div>
+              <div class="flex min-w-0 items-center justify-between gap-4 py-3">
+                <dt class="flex min-w-0 items-center gap-2 text-sm text-gray-500 dark:text-dark-400">
+                  <Icon name="shield" size="sm" class="flex-shrink-0" />
+                  <span class="break-words">{{ t('hvoyPartner.pricing.refundLabel') }}</span>
+                </dt>
+                <dd class="max-w-[65%] text-right text-sm font-semibold">
+                  {{ t('hvoyPartner.pricing.proportionalRefund') }}
+                </dd>
               </div>
               <div class="flex min-w-0 items-center justify-between gap-4 py-3">
                 <dt class="flex min-w-0 items-center gap-2 text-sm text-gray-500 dark:text-dark-400">
@@ -138,9 +138,6 @@
               </div>
             </dl>
 
-            <p v-if="minimumRechargeSummary" class="mt-3 text-xs text-gray-500 dark:text-dark-400">
-              {{ minimumRechargeSummary }}
-            </p>
             <p class="mt-3 flex min-w-0 items-start gap-2 text-xs leading-5 text-gray-500 dark:text-dark-400">
               <Icon name="chat" size="sm" class="mt-0.5 flex-shrink-0" />
               <span class="break-words">{{ supportSummary }}</span>
@@ -225,50 +222,6 @@ const offer = ref<HvoyActivationOffer | null>(null)
 
 const isEnabled = computed(() => !loading.value && offer.value?.enabled === true)
 
-function isPositiveNumber(value: number | undefined): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value > 0
-}
-
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: 2,
-  }).format(value)
-}
-
-const starterSummary = computed(() => {
-  if (
-    !isEnabled.value
-    || !isPositiveNumber(offer.value?.starter_credit_usd)
-    || !isPositiveNumber(offer.value?.starter_valid_hours)
-  ) {
-    return ''
-  }
-  return `$${formatNumber(offer.value.starter_credit_usd)} / ${formatNumber(offer.value.starter_valid_hours)}h`
-})
-
-const rechargeSummary = computed(() => {
-  if (!isEnabled.value || !isPositiveNumber(offer.value?.recharge_credit_rate)) {
-    return ''
-  }
-  return `¥1 = $${formatNumber(offer.value.recharge_credit_rate)}`
-})
-
-const proRateSummary = computed(() => {
-  if (!isEnabled.value || !isPositiveNumber(offer.value?.pro_rate_multiplier)) {
-    return ''
-  }
-  return `${formatNumber(offer.value.pro_rate_multiplier)}x`
-})
-
-const minimumRechargeSummary = computed(() => {
-  if (!isEnabled.value || !isPositiveNumber(offer.value?.minimum_recharge_cny)) {
-    return ''
-  }
-  return t('hvoyPartner.pricing.minimumRecharge', {
-    amount: formatNumber(offer.value.minimum_recharge_cny),
-  })
-})
-
 const availabilityLabel = computed(() => {
   if (loading.value) {
     return t('hvoyPartner.loading')
@@ -293,7 +246,7 @@ const heroDescription = computed(() =>
 const primaryCta = computed(() => (
   isEnabled.value
     ? {
-        href: '/register?source=hvoy_partner&redirect=/activation',
+        href: '/register?redirect=/activation',
         label: t('hvoyPartner.cta.register'),
       }
     : {
@@ -309,7 +262,7 @@ const secondaryCta = computed(() => (
         label: t('hvoyPartner.cta.existingUser'),
       }
     : {
-        href: '/home',
+        href: '/',
         label: t('hvoyPartner.cta.viewService'),
       }
 ))

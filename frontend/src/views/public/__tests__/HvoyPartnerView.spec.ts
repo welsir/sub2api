@@ -1,7 +1,7 @@
 /**
  * [INPUT]: HvoyPartnerView, the public HVOY offer API, router records, and landing-page i18n messages.
- * [OUTPUT]: Regression coverage for offer disclosure, fallback CTAs, public routing, and responsive layout intent.
- * [POS]: Public-partner handoff acceptance test for the HVOY activation funnel.
+ * [OUTPUT]: Regression coverage for offer disclosure, fallback CTAs, homepage routing, and responsive layout intent.
+ * [POS]: Public-homepage acceptance test for the new-user activation funnel.
  */
 
 import { createI18n } from 'vue-i18n'
@@ -64,7 +64,7 @@ vi.mock('@/composables/useRoutePrefetch', () => ({
 }))
 
 vi.mock('@/router/title', () => ({
-  resolveRouteDocumentTitle: () => 'HVOY Partner',
+  resolveRouteDocumentTitle: () => 'Omni API',
 }))
 
 vi.stubGlobal('scrollTo', vi.fn())
@@ -136,21 +136,38 @@ describe('HvoyPartnerView', () => {
     appStore.backendModeEnabled = false
   })
 
-  it('shows the live starter offer and exact activation CTAs when the offer is enabled', async () => {
+  it('promotes the trial and payment safeguards without exposing internal pricing fields', async () => {
     getHvoyActivationOfferMock.mockResolvedValue(enabledOffer)
 
     const wrapper = mountPage()
     await flushPromises()
 
     expect(getHvoyActivationOfferMock).toHaveBeenCalledOnce()
-    expect(wrapper.text()).toContain('$1 / 24h')
-    expect(wrapper.text()).toContain('¥1 = $1')
-    expect(wrapper.text()).toContain('0.2x')
-    expect(wrapper.text()).toContain('最低充值 ¥5')
-    expect(wrapper.text()).toContain('付费额度不过期')
+    expect(wrapper.text()).toContain('免费体验，满意再充值')
+    expect(wrapper.text()).toContain('注册后体验额度自动到账，创建密钥就能直接用。')
+    expect(wrapper.text()).toContain('注册即送免费体验额度')
+    expect(wrapper.text()).toContain('完成邮箱验证后自动到账，不用手动领取。')
+    expect(wrapper.text()).toContain('支持多种支付渠道')
+    expect(wrapper.text()).toContain('使用不满意可按实际使用比例退款')
+    expect(wrapper.text()).toContain('正常充值不会过期')
+    expect(wrapper.text()).toContain('充值后的额度可以一直使用。')
+    expect(wrapper.text()).toContain('不会配置？直接问')
+    expect(wrapper.text()).toContain('配置或调用遇到问题，可以加页面上的微信找人排查。')
     expect(wrapper.text()).toContain('微信 omni-support')
+    expect(wrapper.text()).not.toContain('$1')
+    expect(wrapper.text()).not.toContain('¥1')
+    expect(wrapper.text()).not.toContain('0.2x')
+    expect(wrapper.text()).not.toContain('最低充值')
+    expect(wrapper.text()).not.toContain('计价倍率')
+    expect(wrapper.text()).not.toContain('HVOY 合作入口')
+    expect(wrapper.text()).not.toContain('Codex / GPT 按量 API 服务')
+    expect(wrapper.text()).not.toContain('先用真实调用，验证这项服务是否适合你')
+    expect(wrapper.text()).not.toContain('体验有明确时效')
+    expect(wrapper.text()).not.toContain('人工支持有边界')
+    expect(wrapper.text()).not.toContain('短期体验额度会过期')
+    expect(pageSource).not.toContain("t('hvoyPartner.channel')")
     expect(wrapper.get('[data-testid="primary-cta"]').attributes('data-to')).toBe(
-      '/register?source=hvoy_partner&redirect=/activation',
+      '/register?redirect=/activation',
     )
     expect(wrapper.get('[data-testid="secondary-cta"]').attributes('data-to')).toBe(
       '/login?redirect=/activation',
@@ -167,9 +184,9 @@ describe('HvoyPartnerView', () => {
     expect(
       wrapper.findAll('[data-router-link]').map((link) => link.attributes('data-to')),
     ).toEqual([
-      '/home',
+      '/',
       '/login?redirect=/activation',
-      '/register?source=hvoy_partner&redirect=/activation',
+      '/register?redirect=/activation',
       '/login?redirect=/activation',
     ])
     expect(wrapper.findAll('a[href^="/"]')).toHaveLength(0)
@@ -187,7 +204,7 @@ describe('HvoyPartnerView', () => {
     expect(wrapper.get('[data-testid="primary-cta"]').attributes('data-to')).toBe(
       '/login?redirect=/activation',
     )
-    expect(wrapper.get('[data-testid="secondary-cta"]').attributes('data-to')).toBe('/home')
+    expect(wrapper.get('[data-testid="secondary-cta"]').attributes('data-to')).toBe('/')
   })
 
   it('fails closed when the public offer request is rejected', async () => {
@@ -201,7 +218,7 @@ describe('HvoyPartnerView', () => {
     expect(wrapper.get('[data-testid="primary-cta"]').attributes('data-to')).toBe(
       '/login?redirect=/activation',
     )
-    expect(wrapper.get('[data-testid="secondary-cta"]').attributes('data-to')).toBe('/home')
+    expect(wrapper.get('[data-testid="secondary-cta"]').attributes('data-to')).toBe('/')
   })
 
   it('keeps the layout fluid and leaves the next information band in normal document flow', () => {
@@ -215,23 +232,27 @@ describe('HvoyPartnerView', () => {
     expect(pageSource).toContain('data-testid="next-section"')
   })
 
-  it('registers the HVOY handoff as a public route', async () => {
+  it('registers the activation landing as the public homepage and redirects legacy paths', async () => {
     const { default: router } = await import('@/router')
-    const route = router.getRoutes().find((record) => record.name === 'HvoyPartner')
+    const homepage = router.getRoutes().find((record) => record.name === 'Home')
+    const legacyHome = router.getRoutes().find((record) => record.path === '/home')
+    const legacyHvoy = router.getRoutes().find((record) => record.path === '/partner/hvoy')
 
-    expect(route?.path).toBe('/partner/hvoy')
-    expect(route?.meta.requiresAuth).toBe(false)
+    expect(homepage?.path).toBe('/')
+    expect(homepage?.meta.requiresAuth).toBe(false)
+    expect(legacyHome?.redirect).toBe('/')
+    expect(legacyHvoy?.redirect).toBe('/')
   })
 
-  it('keeps the HVOY handoff public for unauthenticated visitors in backend mode', async () => {
+  it('keeps the homepage public for unauthenticated visitors in backend mode', async () => {
     const { default: router } = await import('@/router')
     appStore.backendModeEnabled = true
 
     try {
-      await router.push('/partner/hvoy')
+      await router.push('/')
       await router.isReady()
 
-      expect(router.currentRoute.value.path).toBe('/partner/hvoy')
+      expect(router.currentRoute.value.path).toBe('/')
     } finally {
       appStore.backendModeEnabled = false
       await router.replace('/login')

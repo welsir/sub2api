@@ -1,10 +1,19 @@
 /**
- * API Keys management endpoints
- * Handles CRUD operations for user API keys
+ * [INPUT]: Authenticated API-key CRUD parameters and optional request identity.
+ * [OUTPUT]: Typed API-key records and compatible CRUD endpoint calls.
+ * [POS]: Frontend API boundary for user API-key management.
+ *
+ * [PROTOCOL]:
+ * 1. Keep create positional parameters backward compatible; append new options only at the end.
+ * 2. Update this header and the containing folder documentation when request semantics change.
  */
 
 import { apiClient } from './client'
 import type { ApiKey, CreateApiKeyRequest, UpdateApiKeyRequest, PaginatedResponse } from '@/types'
+
+export interface CreateApiKeyOptions {
+  idempotencyKey?: string
+}
 
 /**
  * List all API keys for current user
@@ -56,6 +65,7 @@ export async function getById(id: number): Promise<ApiKey> {
  * @param expiresInDays - Optional days until expiry (undefined = never expires)
  * @param rateLimitData - Optional rate limit fields
  * @param groupIds - Optional selected group IDs for this API key
+ * @param options - Optional request identity without changing existing positional semantics
  * @returns Created API key
  */
 export async function create(
@@ -67,7 +77,8 @@ export async function create(
   quota?: number,
   expiresInDays?: number,
   rateLimitData?: { rate_limit_5h?: number; rate_limit_1d?: number; rate_limit_7d?: number },
-  groupIds?: number[]
+  groupIds?: number[],
+  options?: CreateApiKeyOptions
 ): Promise<ApiKey> {
   const payload: CreateApiKeyRequest = { name }
   if (groupId !== undefined) {
@@ -101,7 +112,15 @@ export async function create(
     payload.rate_limit_7d = rateLimitData.rate_limit_7d
   }
 
-  const { data } = await apiClient.post<ApiKey>('/keys', payload)
+  const idempotencyKey = options?.idempotencyKey?.trim()
+  const response = idempotencyKey
+    ? await apiClient.post<ApiKey>('/keys', payload, {
+        headers: {
+          'Idempotency-Key': idempotencyKey
+        }
+      })
+    : await apiClient.post<ApiKey>('/keys', payload)
+  const { data } = response
   return data
 }
 

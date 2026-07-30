@@ -522,13 +522,14 @@ func TestAuthService_RegisterWithVerificationContext_ActivationRequiresVerifiedC
 	}
 }
 
-func TestAuthService_RegisterWithVerificationContext_ActivationSkipsLegacyUnverifiedRegistration(t *testing.T) {
+func TestAuthService_RegisterWithVerificationContext_ActivationDoesNotControlRegistration(t *testing.T) {
 	repo := &userRepoStub{nextID: 75}
 	bootstrapper := &activationBootstrapperStub{}
 	service := newAuthService(repo, map[string]string{
 		SettingKeyRegistrationEnabled: "true",
 		SettingKeyEmailVerifyEnabled:  "false",
 	}, nil, nil)
+	service.cfg.UserActivation.Enabled = true
 	service.SetUserActivationBootstrapper(bootstrapper)
 
 	token, user, err := service.RegisterWithVerificationContext(
@@ -545,6 +546,7 @@ func TestAuthService_RegisterWithVerificationContext_ActivationSkipsLegacyUnveri
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 	require.NotNil(t, user)
+	require.Len(t, repo.created, 1)
 	require.Empty(t, bootstrapper.calls)
 }
 
