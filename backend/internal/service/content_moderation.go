@@ -427,6 +427,8 @@ type ContentModerationRuntimeStatus struct {
 	Enabled                      bool                            `json:"enabled"`
 	RiskControlEnabled           bool                            `json:"risk_control_enabled"`
 	Mode                         string                          `json:"mode"`
+	AllGroups                    bool                            `json:"all_groups"`
+	ExcludedGroupIDs             []int64                         `json:"excluded_group_ids"`
 	WorkerCount                  int                             `json:"worker_count"`
 	MaxWorkers                   int                             `json:"max_workers"`
 	ActiveWorkers                int                             `json:"active_workers"`
@@ -1382,6 +1384,8 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 		Enabled:                      cfg.Enabled,
 		RiskControlEnabled:           riskEnabled,
 		Mode:                         cfg.Mode,
+		AllGroups:                    cfg.AllGroups,
+		ExcludedGroupIDs:             append([]int64(nil), cfg.ExcludedGroupIDs...),
 		WorkerCount:                  cfg.WorkerCount,
 		MaxWorkers:                   maxContentModerationWorkerCount,
 		ActiveWorkers:                active,
@@ -1481,6 +1485,7 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	if cfg == nil {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_CONFIG", "内容审计配置不能为空")
 	}
+	submittedExcludedGroupIDs := normalizeInt64IDs(cfg.ExcludedGroupIDs)
 	cfg.normalize()
 	switch cfg.Mode {
 	case ContentModerationModeOff, ContentModerationModeObserve, ContentModerationModePreBlock:
@@ -1499,6 +1504,8 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	groupIDs := cfg.GroupIDs
 	if cfg.AllGroups {
 		groupIDs = cfg.ExcludedGroupIDs
+	} else {
+		groupIDs = normalizeInt64IDs(append(groupIDs, submittedExcludedGroupIDs...))
 	}
 	if len(groupIDs) > 0 && s.groupRepo != nil {
 		for _, groupID := range groupIDs {

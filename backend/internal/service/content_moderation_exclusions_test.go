@@ -95,6 +95,30 @@ func TestContentModerationGroupExclusion_InvalidIDRejectsUpdateWithoutActivation
 	require.NotContains(t, settingRepo.values, SettingKeyContentModerationConfig)
 }
 
+func TestContentModerationGroupExclusion_LegacyInvalidExclusionRejectsEntireUpdate(t *testing.T) {
+	settingRepo := &contentModerationTestSettingRepo{values: map[string]string{}}
+	groupRepo := &contentModerationExclusionGroupRepo{existing: map[int64]struct{}{
+		7: {},
+	}}
+	svc := NewContentModerationService(settingRepo, nil, nil, groupRepo, nil, nil, nil)
+	allGroups := false
+	enabled := true
+	groupIDs := []int64{7}
+	excludedGroupIDs := []int64{404}
+
+	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		Enabled:          &enabled,
+		AllGroups:        &allGroups,
+		GroupIDs:         &groupIDs,
+		ExcludedGroupIDs: &excludedGroupIDs,
+	})
+
+	require.Error(t, err)
+	require.Nil(t, view)
+	require.Equal(t, []int64{7, 404}, groupRepo.calls)
+	require.NotContains(t, settingRepo.values, SettingKeyContentModerationConfig)
+}
+
 func TestContentModerationGroupExclusion_LegacyAllowlistClearsExclusions(t *testing.T) {
 	cfg := defaultContentModerationConfig()
 	require.NoError(t, json.Unmarshal([]byte(`{
@@ -117,6 +141,39 @@ func TestContentModerationGroupExclusion_LegacyAllowlistClearsExclusions(t *test
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(raw, &normalizedJSON))
 	require.Empty(t, normalizedJSON.ExcludedGroupIDs, "allowlist mode must clear exclusions")
+}
+
+func TestContentModerationGroupExclusion_RuntimeStatusExposesNormalizedScope(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.AllGroups = true
+	cfg.ExcludedGroupIDs = []int64{7, 3, 7, 0, -1}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	status, err := svc.GetStatus(context.Background())
+
+	require.NoError(t, err)
+	var statusJSON struct {
+		AllGroups        bool    `json:"all_groups"`
+		ExcludedGroupIDs []int64 `json:"excluded_group_ids"`
+	}
+	rawStatus, err := json.Marshal(status)
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(rawStatus, &statusJSON))
+	require.True(t, statusJSON.AllGroups)
+	require.Equal(t, []int64{3, 7}, statusJSON.ExcludedGroupIDs)
 }
 
 func TestContentModerationGroupExclusion_SkipUsesExemptLogEvent(t *testing.T) {
