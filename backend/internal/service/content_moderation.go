@@ -1507,10 +1507,23 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	} else {
 		groupIDs = normalizeInt64IDs(append(groupIDs, submittedExcludedGroupIDs...))
 	}
-	if len(groupIDs) > 0 && s.groupRepo != nil {
+	if len(groupIDs) > 0 {
+		if s.groupRepo == nil {
+			return infraerrors.InternalServer(
+				"CONTENT_MODERATION_GROUP_VALIDATION_UNAVAILABLE",
+				"内容审计分组校验服务不可用",
+			)
+		}
 		for _, groupID := range groupIDs {
-			if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
+			group, err := s.groupRepo.GetByIDLite(ctx, groupID)
+			if errors.Is(err, ErrGroupNotFound) || (err == nil && group == nil) {
 				return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_GROUP", fmt.Sprintf("审计分组不存在: %d", groupID))
+			}
+			if err != nil {
+				return infraerrors.InternalServer(
+					"CONTENT_MODERATION_GROUP_VALIDATION_FAILED",
+					"内容审计分组校验失败",
+				).WithCause(err)
 			}
 		}
 	}

@@ -4,20 +4,27 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
+	"net/http"
 	"testing"
 
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/stretchr/testify/require"
 )
 
 type contentModerationExclusionGroupRepo struct {
 	GroupRepository
 	existing map[int64]struct{}
+	failures map[int64]error
 	calls    []int64
 }
 
 func (r *contentModerationExclusionGroupRepo) GetByIDLite(_ context.Context, id int64) (*Group, error) {
 	r.calls = append(r.calls, id)
+	if err := r.failures[id]; err != nil {
+		return nil, err
+	}
 	if _, ok := r.existing[id]; !ok {
 		return nil, ErrGroupNotFound
 	}
@@ -76,7 +83,7 @@ func TestContentModerationGroupExclusion_UpdateNormalizesValidatesAndPersists(t 
 	require.Equal(t, []int64{3, 7}, savedJSON.ExcludedGroupIDs)
 }
 
-func TestContentModerationGroupExclusion_InvalidIDRejectsUpdateWithoutActivation(t *testing.T) {
+func TestContentModerationGroupExclusion_NotFoundRejectsUpdateAsBadRequest(t *testing.T) {
 	settingRepo := &contentModerationTestSettingRepo{values: map[string]string{}}
 	groupRepo := &contentModerationExclusionGroupRepo{existing: map[int64]struct{}{}}
 	svc := NewContentModerationService(settingRepo, nil, nil, groupRepo, nil, nil, nil)
@@ -91,7 +98,45 @@ func TestContentModerationGroupExclusion_InvalidIDRejectsUpdateWithoutActivation
 
 	require.Error(t, err)
 	require.Nil(t, view)
+	require.Equal(t, http.StatusBadRequest, infraerrors.Code(err))
+	require.Equal(t, "INVALID_CONTENT_MODERATION_GROUP", infraerrors.Reason(err))
 	require.Equal(t, []int64{404}, groupRepo.calls)
+	require.NotContains(t, settingRepo.values, SettingKeyContentModerationConfig)
+}
+
+func TestContentModerationGroupExclusion_NilRepositoryRejectsNonemptyScope(t *testing.T) {
+	settingRepo := &contentModerationTestSettingRepo{values: map[string]string{}}
+	svc := NewContentModerationService(settingRepo, nil, nil, nil, nil, nil, nil)
+	excludedGroupIDs := []int64{17}
+
+	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		ExcludedGroupIDs: &excludedGroupIDs,
+	})
+
+	require.Error(t, err)
+	require.Nil(t, view)
+	require.Equal(t, http.StatusInternalServerError, infraerrors.Code(err))
+	require.NotContains(t, settingRepo.values, SettingKeyContentModerationConfig)
+}
+
+func TestContentModerationGroupExclusion_RepositoryFailureReturnsInternalError(t *testing.T) {
+	repositoryErr := errors.New("group repository unavailable")
+	settingRepo := &contentModerationTestSettingRepo{values: map[string]string{}}
+	groupRepo := &contentModerationExclusionGroupRepo{
+		existing: map[int64]struct{}{},
+		failures: map[int64]error{17: repositoryErr},
+	}
+	svc := NewContentModerationService(settingRepo, nil, nil, groupRepo, nil, nil, nil)
+	excludedGroupIDs := []int64{17}
+
+	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		ExcludedGroupIDs: &excludedGroupIDs,
+	})
+
+	require.Error(t, err)
+	require.Nil(t, view)
+	require.Equal(t, http.StatusInternalServerError, infraerrors.Code(err))
+	require.ErrorIs(t, err, repositoryErr)
 	require.NotContains(t, settingRepo.values, SettingKeyContentModerationConfig)
 }
 
