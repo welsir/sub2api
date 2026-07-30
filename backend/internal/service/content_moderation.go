@@ -144,6 +144,7 @@ type ContentModerationConfig struct {
 	SampleRate           int                          `json:"sample_rate"`
 	AllGroups            bool                         `json:"all_groups"`
 	GroupIDs             []int64                      `json:"group_ids"`
+	ExcludedGroupIDs     []int64                      `json:"excluded_group_ids"`
 	RecordNonHits        bool                         `json:"record_non_hits"`
 	Thresholds           map[string]float64           `json:"thresholds"`
 	WorkerCount          int                          `json:"worker_count"`
@@ -181,6 +182,7 @@ type ContentModerationConfigView struct {
 	SampleRate                     int                             `json:"sample_rate"`
 	AllGroups                      bool                            `json:"all_groups"`
 	GroupIDs                       []int64                         `json:"group_ids"`
+	ExcludedGroupIDs               []int64                         `json:"excluded_group_ids"`
 	RecordNonHits                  bool                            `json:"record_non_hits"`
 	Thresholds                     map[string]float64              `json:"thresholds"`
 	WorkerCount                    int                             `json:"worker_count"`
@@ -269,6 +271,7 @@ type UpdateContentModerationConfigInput struct {
 	SampleRate                     *int                          `json:"sample_rate"`
 	AllGroups                      *bool                         `json:"all_groups"`
 	GroupIDs                       *[]int64                      `json:"group_ids"`
+	ExcludedGroupIDs               *[]int64                      `json:"excluded_group_ids"`
 	RecordNonHits                  *bool                         `json:"record_non_hits"`
 	Thresholds                     *map[string]float64           `json:"thresholds"`
 	WorkerCount                    *int                          `json:"worker_count"`
@@ -657,6 +660,9 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.GroupIDs != nil {
 		cfg.GroupIDs = normalizeInt64IDs(*input.GroupIDs)
 	}
+	if input.ExcludedGroupIDs != nil {
+		cfg.ExcludedGroupIDs = normalizeInt64IDs(*input.ExcludedGroupIDs)
+	}
 	if input.RecordNonHits != nil {
 		cfg.RecordNonHits = *input.RecordNonHits
 	}
@@ -810,6 +816,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"mode", cfg.Mode,
 		"all_groups", cfg.AllGroups,
 		"configured_group_ids", cfg.GroupIDs,
+		"configured_excluded_group_ids", cfg.ExcludedGroupIDs,
 		"in_group_scope", inGroupScope,
 		"model_filter_type", cfg.ModelFilter.Type,
 		"configured_models", cfg.ModelFilter.Models,
@@ -837,7 +844,11 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 	if !inGroupScope {
-		slog.Info("content_moderation.skip_group_out_of_scope",
+		event := "content_moderation.skip_group_out_of_scope"
+		if cfg.excludesGroup(input.GroupID) {
+			event = "content_moderation.skip_group_exempt"
+		}
+		slog.Info(event,
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
@@ -845,7 +856,8 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol,
 			"all_groups", cfg.AllGroups,
-			"configured_group_ids", cfg.GroupIDs)
+			"configured_group_ids", cfg.GroupIDs,
+			"configured_excluded_group_ids", cfg.ExcludedGroupIDs)
 		return allow, nil
 	}
 	if !inModelScope {
@@ -1484,8 +1496,12 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	if cfg.ModelFilter.Type != ContentModerationModelFilterAll && len(cfg.ModelFilter.Models) == 0 {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_MODEL_FILTER", "指定或排除模型时至少需要配置 1 个模型")
 	}
-	if !cfg.AllGroups && len(cfg.GroupIDs) > 0 && s.groupRepo != nil {
-		for _, groupID := range cfg.GroupIDs {
+	groupIDs := cfg.GroupIDs
+	if cfg.AllGroups {
+		groupIDs = cfg.ExcludedGroupIDs
+	}
+	if len(groupIDs) > 0 && s.groupRepo != nil {
+		for _, groupID := range groupIDs {
 			if _, err := s.groupRepo.GetByIDLite(ctx, groupID); err != nil {
 				return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_GROUP", fmt.Sprintf("审计分组不存在: %d", groupID))
 			}
@@ -1831,6 +1847,7 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		SampleRate:           100,
 		AllGroups:            true,
 		GroupIDs:             []int64{},
+		ExcludedGroupIDs:     []int64{},
 		RecordNonHits:        false,
 		Thresholds:           ContentModerationDefaultThresholds(),
 		WorkerCount:          defaultContentModerationWorkerCount,
@@ -1862,6 +1879,7 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	clone := *cfg
 	clone.APIKeys = append([]string(nil), cfg.APIKeys...)
 	clone.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
+	clone.ExcludedGroupIDs = append([]int64(nil), cfg.ExcludedGroupIDs...)
 	clone.BlockedKeywords = append([]string(nil), cfg.BlockedKeywords...)
 	clone.Thresholds = cloneFloatMap(cfg.Thresholds)
 	clone.ModelFilter = ContentModerationModelFilter{
@@ -1945,6 +1963,10 @@ func (cfg *ContentModerationConfig) normalize() {
 		cfg.NonHitRetentionDays = maxContentModerationNonHitRetentionDays
 	}
 	cfg.GroupIDs = normalizeInt64IDs(cfg.GroupIDs)
+	cfg.ExcludedGroupIDs = normalizeInt64IDs(cfg.ExcludedGroupIDs)
+	if !cfg.AllGroups {
+		cfg.ExcludedGroupIDs = []int64{}
+	}
 	cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), cfg.Thresholds)
 	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
 	cfg.KeywordBlockingMode = normalizeKeywordBlockingMode(cfg.KeywordBlockingMode)
@@ -1953,12 +1975,24 @@ func (cfg *ContentModerationConfig) normalize() {
 
 func (cfg *ContentModerationConfig) includesGroup(groupID *int64) bool {
 	if cfg.AllGroups {
-		return true
+		return !cfg.excludesGroup(groupID)
 	}
 	if groupID == nil {
 		return false
 	}
 	for _, id := range cfg.GroupIDs {
+		if id == *groupID {
+			return true
+		}
+	}
+	return false
+}
+
+func (cfg *ContentModerationConfig) excludesGroup(groupID *int64) bool {
+	if cfg == nil || !cfg.AllGroups || groupID == nil {
+		return false
+	}
+	for _, id := range cfg.ExcludedGroupIDs {
 		if id == *groupID {
 			return true
 		}
@@ -2161,6 +2195,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		SampleRate:                     cfg.SampleRate,
 		AllGroups:                      cfg.AllGroups,
 		GroupIDs:                       append([]int64(nil), cfg.GroupIDs...),
+		ExcludedGroupIDs:               append([]int64(nil), cfg.ExcludedGroupIDs...),
 		RecordNonHits:                  cfg.RecordNonHits,
 		Thresholds:                     cloneFloatMap(cfg.Thresholds),
 		WorkerCount:                    cfg.WorkerCount,
