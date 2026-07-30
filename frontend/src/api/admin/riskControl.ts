@@ -23,6 +23,7 @@ export interface ContentModerationConfig {
   sample_rate: number
   all_groups: boolean
   group_ids: number[]
+  excluded_group_ids: number[]
   record_non_hits: boolean
   thresholds: Record<string, number>
   worker_count: number
@@ -99,6 +100,7 @@ export interface UpdateContentModerationConfig {
   sample_rate?: number
   all_groups?: boolean
   group_ids?: number[]
+  excluded_group_ids?: number[]
   record_non_hits?: boolean
   thresholds?: Record<string, number>
   worker_count?: number
@@ -123,6 +125,8 @@ export interface ContentModerationRuntimeStatus {
   enabled: boolean
   risk_control_enabled: boolean
   mode: ModerationMode
+  all_groups: boolean
+  excluded_group_ids: number[]
   worker_count: number
   max_workers: number
   active_workers: number

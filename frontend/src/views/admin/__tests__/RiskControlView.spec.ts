@@ -62,6 +62,9 @@ vi.mock('vue-i18n', async () => {
         if (key === 'admin.riskControl.preBlockAPIKeyLoadSummary') {
           return `同步并发 ${params?.active} / 可用 Key ${params?.available}，累计 ${params?.total} 次，worker：${params?.workerActive} / ${params?.workerTotal}`
         }
+        if (key === 'admin.riskControl.excludedGroupCount') {
+          return `已豁免 ${params?.count} 个分组`
+        }
         return key.replace(/\{(\w+)\}/g, (_, token) => String(params?.[token] ?? `{${token}}`))
       },
     }),
@@ -82,6 +85,7 @@ const baseConfig = (): ContentModerationConfig => ({
   sample_rate: 100,
   all_groups: true,
   group_ids: [],
+  excluded_group_ids: [],
   record_non_hits: false,
   worker_count: 4,
   queue_size: 32768,
@@ -111,6 +115,8 @@ const runtimeStatus = () => ({
   enabled: true,
   risk_control_enabled: true,
   mode: 'pre_block',
+  all_groups: true,
+  excluded_group_ids: [],
   worker_count: 4,
   max_workers: 32,
   active_workers: 0,
@@ -184,6 +190,22 @@ function findButtonByText(wrapper: VueWrapper, text: string): DOMWrapper<HTMLBut
   return button
 }
 
+function mountRiskControlView(): VueWrapper {
+  return mount(RiskControlView, {
+    global: {
+      stubs: {
+        AppLayout: AppLayoutStub,
+        BaseDialog: BaseDialogStub,
+        Icon: true,
+        Select: true,
+        Toggle: true,
+        Pagination: true,
+        ModelWhitelistSelector: ModelWhitelistSelectorStub,
+      },
+    },
+  })
+}
+
 describe('admin RiskControlView', () => {
   beforeEach(() => {
     getConfig.mockReset()
@@ -208,6 +230,102 @@ describe('admin RiskControlView', () => {
       api_key_masks: [],
       api_key_statuses: [],
     }))
+  })
+
+  it('normalizes a legacy config without excluded group IDs to an empty exclusion list', async () => {
+    const legacyConfig = baseConfig() as Partial<ContentModerationConfig>
+    delete legacyConfig.excluded_group_ids
+    getConfig.mockResolvedValue(legacyConfig)
+
+    const wrapper = mountRiskControlView()
+
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
+
+    expect(wrapper.get('[data-test="excluded-group-summary"]').text()).toContain('0')
+
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      all_groups: true,
+      group_ids: [],
+      excluded_group_ids: [],
+    }))
+  })
+
+  it('selects default-on exemptions by exact group ID even when names match', async () => {
+    getGroups.mockResolvedValue([
+      { id: 17, name: 'tml', platform: 'openai' },
+      { id: 18, name: 'tml', platform: 'openai' },
+    ])
+
+    const wrapper = mountRiskControlView()
+
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
+    await wrapper.get('[data-test="scope-group-17"]').trigger('click')
+
+    expect(wrapper.get('[data-test="excluded-group-summary"]').text()).toContain('1')
+    expect(wrapper.get('[data-test="selected-excluded-groups"]').text()).toContain('tml')
+    expect(wrapper.get('[data-test="selected-excluded-groups"]').text()).toContain('#17')
+    expect(wrapper.get('[data-test="scope-group-18"]').attributes('aria-pressed')).toBe('false')
+
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      all_groups: true,
+      group_ids: [],
+      excluded_group_ids: [17],
+    }))
+  })
+
+  it('keeps legacy include groups separate and clears exclusions in the save payload', async () => {
+    getConfig.mockResolvedValue({
+      ...baseConfig(),
+      all_groups: true,
+      excluded_group_ids: [17],
+    })
+    getGroups.mockResolvedValue([
+      { id: 17, name: 'tml', platform: 'openai' },
+      { id: 18, name: 'legacy', platform: 'anthropic' },
+    ])
+
+    const wrapper = mountRiskControlView()
+
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
+    await wrapper.get('[data-test="scope-mode-selected"]').trigger('click')
+    await wrapper.get('[data-test="scope-group-18"]').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      all_groups: false,
+      group_ids: [18],
+      excluded_group_ids: [],
+    }))
+  })
+
+  it('shows the active default-on runtime scope and exact excluded group IDs', async () => {
+    getStatus.mockResolvedValue({
+      ...runtimeStatus(),
+      all_groups: true,
+      excluded_group_ids: [17, 42],
+    })
+
+    const wrapper = mountRiskControlView()
+
+    await flushPromises()
+
+    const runtimeScope = wrapper.get('[data-test="runtime-group-scope"]')
+    expect(runtimeScope.text()).toContain('admin.riskControl.runtimeDefaultOn')
+    expect(runtimeScope.text()).toContain('#17')
+    expect(runtimeScope.text()).toContain('#42')
   })
 
   it('saves the selected model filter mode and models', async () => {

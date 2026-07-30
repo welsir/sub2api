@@ -27,6 +27,7 @@
           <div
             v-for="item in overviewItems"
             :key="item.key"
+            :data-test="item.key === 'scope' ? 'runtime-group-scope' : undefined"
             class="rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm dark:border-dark-700 dark:bg-dark-800"
           >
             <div class="flex min-w-0 items-center gap-3">
@@ -704,14 +705,16 @@
               <div class="inline-flex rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
                 <button
                   type="button"
+                  data-test="scope-mode-default-on"
                   class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
                   :class="configForm.all_groups ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
                   @click="configForm.all_groups = true"
                 >
-                  {{ t('admin.riskControl.allGroups') }}
+                  {{ t('admin.riskControl.defaultOnGroups') }}
                 </button>
                 <button
                   type="button"
+                  data-test="scope-mode-selected"
                   class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
                   :class="!configForm.all_groups ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
                   @click="configForm.all_groups = false"
@@ -721,7 +724,41 @@
               </div>
             </div>
 
-            <div v-if="!configForm.all_groups" class="space-y-4">
+            <div class="space-y-4">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h4 class="text-sm font-semibold text-gray-900 dark:text-white">
+                    {{ configForm.all_groups ? t('admin.riskControl.excludedGroups') : t('admin.riskControl.selectedGroups') }}
+                  </h4>
+                  <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                    {{ configForm.all_groups ? t('admin.riskControl.excludedGroupsHint') : t('admin.riskControl.selectedGroupsHint') }}
+                  </p>
+                </div>
+                <span
+                  :data-test="configForm.all_groups ? 'excluded-group-summary' : 'included-group-summary'"
+                  class="inline-flex w-fit flex-shrink-0 rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-600 dark:bg-dark-700 dark:text-gray-300"
+                >
+                  {{ configForm.all_groups
+                    ? t('admin.riskControl.excludedGroupCount', { count: configForm.excluded_group_ids.length })
+                    : t('admin.riskControl.includedGroupCount', { count: configForm.group_ids.length }) }}
+                </span>
+              </div>
+
+              <div
+                v-if="configForm.all_groups && selectedExcludedGroups.length > 0"
+                data-test="selected-excluded-groups"
+                class="flex flex-wrap gap-2"
+              >
+                <span
+                  v-for="group in selectedExcludedGroups"
+                  :key="group.id"
+                  class="inline-flex max-w-full items-center gap-1 rounded-md bg-amber-50 px-2.5 py-1 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
+                >
+                  <span class="truncate font-medium">{{ group.name }}</span>
+                  <span class="font-mono">#{{ group.id }}</span>
+                </span>
+              </div>
+
               <div class="relative">
                 <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input v-model.trim="groupSearch" type="search" class="input pl-9" :placeholder="t('admin.riskControl.searchGroups')" />
@@ -731,13 +768,19 @@
                   v-for="group in filteredGroups"
                   :key="group.id"
                   type="button"
+                  :data-test="`scope-group-${group.id}`"
+                  :aria-pressed="isGroupSelected(group.id)"
                   class="flex min-h-20 items-center justify-between rounded-lg border p-4 text-left transition-colors"
                   :class="isGroupSelected(group.id) ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20' : 'border-gray-100 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/60'"
                   @click="toggleGroup(group.id)"
                 >
                   <span class="min-w-0">
                     <span class="block truncate text-sm font-semibold text-gray-900 dark:text-white">{{ group.name }}</span>
-                    <span class="mt-1 inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-400">{{ group.platform }}</span>
+                    <span class="mt-1 inline-flex rounded-md bg-gray-100 px-2 py-0.5 text-xs text-gray-500 dark:bg-dark-700 dark:text-gray-400">
+                      <span class="font-mono">#{{ group.id }}</span>
+                      <span class="mx-1">·</span>
+                      <span>{{ group.platform }}</span>
+                    </span>
                   </span>
                   <span
                     class="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border"
@@ -1234,6 +1277,7 @@ const configForm = reactive({
   sample_rate: 100,
   all_groups: true,
   group_ids: [] as number[],
+  excluded_group_ids: [] as number[],
   record_non_hits: false,
   worker_count: 4,
   queue_size: 32768,
@@ -1402,7 +1446,13 @@ const groupFilterOptions = computed<SelectOption[]>(() => [
   })),
 ])
 
-const selectedGroupCount = computed(() => String(configForm.group_ids.length))
+const selectedExcludedGroups = computed(() => {
+  const groupsByID = new Map(groups.value.map((group) => [group.id, group]))
+  return configForm.excluded_group_ids.map((groupID) => ({
+    id: groupID,
+    name: groupsByID.get(groupID)?.name ?? t('admin.riskControl.unknownGroup'),
+  }))
+})
 
 const modelFilterModelCount = computed(() => configForm.model_filter_models.length)
 
@@ -1424,8 +1474,35 @@ const filteredGroups = computed(() => {
   const keyword = groupSearch.value.trim().toLowerCase()
   if (!keyword) return groups.value
   return groups.value.filter((group) => {
-    return group.name.toLowerCase().includes(keyword) || String(group.platform).toLowerCase().includes(keyword)
+    return group.name.toLowerCase().includes(keyword)
+      || String(group.platform).toLowerCase().includes(keyword)
+      || String(group.id).includes(keyword)
   })
+})
+
+const runtimeExcludedGroupIDs = computed(() => (
+  Array.isArray(status.value?.excluded_group_ids) ? status.value.excluded_group_ids : []
+))
+
+const runtimeAllGroups = computed(() => status.value?.all_groups ?? configForm.all_groups)
+
+const runtimeGroupScopeValue = computed(() => (
+  runtimeAllGroups.value
+    ? t('admin.riskControl.runtimeDefaultOn')
+    : t('admin.riskControl.runtimeSelectedGroups')
+))
+
+const runtimeGroupScopeMeta = computed(() => {
+  if (!runtimeAllGroups.value) {
+    return t('admin.riskControl.runtimeLegacyAllowlist')
+  }
+  if (runtimeExcludedGroupIDs.value.length === 0) {
+    return t('admin.riskControl.runtimeNoExcludedGroups')
+  }
+  return [
+    t('admin.riskControl.runtimeExcludedGroupCount', { count: runtimeExcludedGroupIDs.value.length }),
+    runtimeExcludedGroupIDs.value.map((groupID) => `#${groupID}`).join(', '),
+  ].join(' · ')
 })
 
 const inputApiKeyCount = computed(() => parseApiKeys(configForm.api_keys_text).length)
@@ -1537,8 +1614,8 @@ const overviewItems = computed<OverviewItem[]>(() => [
   {
     key: 'scope',
     label: t('admin.riskControl.overview.groupScope'),
-    value: configForm.all_groups ? t('admin.riskControl.allGroups') : selectedGroupCount.value,
-    meta: modelFilterSummary.value,
+    value: runtimeGroupScopeValue.value,
+    meta: runtimeGroupScopeMeta.value,
     icon: 'users',
     iconClass: 'bg-violet-50 text-violet-600 dark:bg-violet-900/20 dark:text-violet-300',
   },
@@ -1711,6 +1788,7 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.sample_rate = config.sample_rate ?? 100
   configForm.all_groups = config.all_groups
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
+  configForm.excluded_group_ids = Array.isArray(config.excluded_group_ids) ? [...config.excluded_group_ids] : []
   configForm.record_non_hits = config.record_non_hits
   configForm.worker_count = config.worker_count || 4
   configForm.queue_size = config.queue_size || 32768
@@ -1791,6 +1869,7 @@ async function saveConfig() {
       sample_rate: Number(configForm.sample_rate) || 0,
       all_groups: configForm.all_groups,
       group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
+      excluded_group_ids: configForm.all_groups ? [...configForm.excluded_group_ids] : [],
       record_non_hits: configForm.record_non_hits,
       clear_api_key: configForm.clear_api_key,
       worker_count: Number(configForm.worker_count) || 4,
@@ -2088,16 +2167,21 @@ function fileToDataURL(file: File): Promise<string> {
 }
 
 function toggleGroup(groupID: number) {
-  const index = configForm.group_ids.indexOf(groupID)
+  const selectedGroupIDs = configForm.all_groups
+    ? configForm.excluded_group_ids
+    : configForm.group_ids
+  const index = selectedGroupIDs.indexOf(groupID)
   if (index >= 0) {
-    configForm.group_ids.splice(index, 1)
+    selectedGroupIDs.splice(index, 1)
   } else {
-    configForm.group_ids.push(groupID)
+    selectedGroupIDs.push(groupID)
   }
 }
 
 function isGroupSelected(groupID: number): boolean {
-  return configForm.group_ids.includes(groupID)
+  return configForm.all_groups
+    ? configForm.excluded_group_ids.includes(groupID)
+    : configForm.group_ids.includes(groupID)
 }
 
 function modeLabel(mode: ModerationMode): string {
