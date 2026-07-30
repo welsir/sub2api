@@ -1,6 +1,8 @@
 ## Context
 
-Sub2API owns content-moderation policy. The inspected development branch already accepts an OpenAI-shaped `POST <base>/v1/moderations` provider, scopes checks by the authenticated API key's `GroupID`, and supports `off`, `observe`, and `pre_block`. Its current semantic-provider error path is fail-open. These are development-code facts; the deployed Sub2API version and active production configuration still require verification.
+Sub2API owns content-moderation policy. The inspected development branch already accepts an OpenAI-shaped `POST <base>/v1/moderations` provider, scopes checks by the authenticated API key's `GroupID`, and supports `off`, `observe`, and `pre_block`. Its current semantic-provider error path is fail-open.
+
+A read-only check of 43 V2 on 2026-07-30 verified the deployed image as `tml/sub2api:v0.1.156-omni-luna-first-text-20260728`, the independent database as `sub2api_v2`, and the active exact-name `tml` group as ID `18`. The live legacy moderation JSON is currently `enabled=true`, `mode=pre_block`, `all_groups=false`, `group_ids=[8,10,13,14,15]`, and `keyword_blocking_mode=keyword_only`; it has no `excluded_group_ids`, semantic-provider endpoint, or semantic-provider credential configured. These are point-in-time production facts and no live setting was changed.
 
 Qwen3Guard-Gen produces structured `Safe`, `Controversial`, or `Unsafe` labels plus Qwen-specific categories. Its vLLM/SGLang deployment surface is Chat Completions compatible, not a direct Moderations API. A compatibility adapter is therefore required. The intended Windows host is currently powered off, so GPU runtime, WSL2, Tailscale reachability, latency, and model quality are explicitly unverified.
 
@@ -102,7 +104,7 @@ Scope evaluation will follow these rules:
 The initial configuration will use:
 
 - `all_groups=true`.
-- Exactly the verified `tml` group ID in `excluded_group_ids`.
+- Exactly the verified 43 V2 `tml` group ID `18` in `excluded_group_ids`.
 - No other exempt group.
 - `observe` during evidence collection.
 - `keyword_and_api` so known hard keywords remain deterministic when the semantic service is unavailable.
@@ -128,7 +130,7 @@ No step automatically promotes the next one. The operator owns start, pause, gro
 - [Windows GPU stack for RTX 5070 Ti may require newer driver/CUDA/runtime builds] -> Record exact versions, prove cold and warm starts, and keep backend selection behind the compatibility gate.
 - [`tml` bypass can be misread as no safety policy anywhere] -> Document that `tml` skips only this local Sub2API moderation scope; upstream provider policy may still apply.
 - [A hand-maintained non-`tml` allowlist misses newly created groups] -> Use default-on `all_groups=true` plus one explicit exclusion and test a newly created group before rollout.
-- [Group display names are mutable or duplicated] -> Resolve and persist the exact `tml` group ID; never grant exemption through case-insensitive name matching at request time.
+- [Group display names are mutable or duplicated] -> Persist the verified 43 V2 `tml` group ID `18`; never grant exemption through case-insensitive name matching at request time.
 - [Inbound-only moderation may be mistaken for output moderation] -> Label every test and status surface with the audited direction and reject output-coverage claims.
 
 ## Migration Plan
@@ -136,7 +138,7 @@ No step automatically promotes the next one. The operator owns start, pause, gro
 1. Implement adapter contract tests, deterministic mapping fixtures, auth, health/readiness, bounded execution, and redacted logging without a live Windows dependency.
 2. On the powered-on Windows machine, record GPU/WSL2/runtime versions and prove Qwen3Guard-Gen 0.6B cold start, warm inference, and restart. Test 4B under the same bounded input and concurrency profile.
 3. Establish the Tailscale ACL and prove authenticated `/readyz` and safe/unsafe Moderations fixtures from the actual Sub2API runtime boundary.
-4. Implement and verify the Sub2API `excluded_group_ids` extension, then snapshot the deployed moderation configuration and resolve the exact `tml` group ID.
+4. Implement and verify the Sub2API `excluded_group_ids` extension, retain the verified `tml` group ID `18`, then capture the complete rollback-safe deployed configuration and prepare disposable scope-test keys.
 5. Configure `all_groups=true` with only `tml` excluded, begin in `observe` with `keyword_and_api`, and collect audited non-`tml` plus exempt-`tml` evidence without claiming blocking.
 6. Compare 0.6B and 4B on a representative labeled sample and measured peak load. Record the selected model revision, mapping revision, timeout, retry count, and operator decision.
 7. Run service-stop, Windows-reboot, tailnet-loss, overload, malformed-output, and recovery drills. Confirm fail-open and keyword fallback match the documented policy.
@@ -146,7 +148,7 @@ No step automatically promotes the next one. The operator owns start, pause, gro
 ## Open Questions
 
 - What are the measured peak RPS, P95/P99 input length, and acceptable moderation latency on the target traffic?
-- What is the exact stable `tml` group ID, and which disposable `tml`, existing non-`tml`, newly created, and ungrouped API keys will be used for scope proof?
+- Which disposable `tml`, existing non-`tml`, newly created, and ungrouped API keys will be used for scope proof?
 - What labeled-sample recall and false-positive thresholds will the operator require before `pre_block`?
 - Does vLLM or SGLang pass the RTX 5070 Ti WSL2 compatibility gate, or is the Transformers fallback required?
 - Is 0.6B sufficient, or does 4B provide enough quality improvement to justify its latency and memory cost?

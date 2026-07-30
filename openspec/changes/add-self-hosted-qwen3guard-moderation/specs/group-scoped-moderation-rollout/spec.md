@@ -20,7 +20,7 @@ Sub2API SHALL support an exclusion list that applies when `all_groups=true`, SHA
 - **THEN** Sub2API retains the existing `group_ids` allowlist behavior and does not combine it ambiguously with exclusion semantics
 
 ### Requirement: Only `tml` is exempt
-The rollout SHALL place exactly the verified stable `tml` group ID in `excluded_group_ids` and SHALL NOT exempt any other group.
+The 43 V2 rollout SHALL place exactly the verified active `tml` group ID `18` in `excluded_group_ids` and SHALL NOT exempt any other group.
 
 #### Scenario: Request uses the `tml` group ID
 - **WHEN** an inbound request authenticates with an API key bound to the explicitly exempt `tml` group ID

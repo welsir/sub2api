@@ -9,8 +9,8 @@
 
 ## Delivery Summary
 
-- Final outcome: In progress. The adapter and exact-ID exclusion slices are owned and accepted in Sub2API `dev/omni`; the mistaken TML placement is reverted. Windows and production gates remain pending.
-- Was the result acceptable: The two local implementation slices are accepted. Change-level acceptance remains blocked on powered-on Windows, deployed-version, connectivity, benchmark, observation, and production evidence.
+- Final outcome: In progress. The adapter and exact-ID exclusion slices are owned and accepted in Sub2API `dev/omni`; the mistaken TML placement is reverted. The 43 V2 version, database, active `tml` ID `18`, and redacted legacy moderation state are verified. Windows and rollout gates remain pending.
+- Was the result acceptable: The two local implementation slices and the read-only 43 V2 baseline are accepted. Change-level acceptance remains blocked on powered-on Windows, disposable scope-test keys, traffic sizing, connectivity, benchmark, observation, and production enforcement evidence.
 - Would this pattern be reused: Yes for cross-repository implementation with separate acceptance gates; the durable state prevented the resumed turn from treating local proof as production proof.
 
 ## Dispatch Decisions
@@ -36,6 +36,7 @@
 | 2 | execute | Qwen3Guard Moderations adapter | Standalone package owned by Sub2API | Migrated and reverified at `79b046f82aaeae392baa0ad79df9456f7a0a4839` |
 | 3 | verify | Actual-branch post-integration checks | Verify exact-ID behavior and the owned adapter package | Accepted; 72/72 adapter tests plus Sub2API backend/frontend gates |
 | 4 | repair | Correct repository ownership | Remove the unsupported Gateway ownership assumption | Sub2API commit `79b046f82`; TML revert `a74b1b2` |
+| 5 | evidence | Read 43 V2 deployment and moderation baseline | Resolve the real `tml` ID and separate code deployment from configuration activation | Active `tml` ID `18`; evidence in `evidence/live-43-v2-baseline.md` |
 
 ## Waste Signals
 
@@ -50,7 +51,7 @@
 - Spec gate result: OpenSpec strict validation passed before implementation.
 - Quality gate result: Sub2API backend/frontend and adapter specification/quality reviews passed; adapter ownership was corrected without changing reviewed runtime behavior.
 - Command gate result: The Sub2API-owned adapter passed 72/72, typecheck, 9 checked-in JS syntax checks, content-equivalence, diff check, and scoped secret scan. Sub2API exact-ID, ContentModeration regression, handler, race, frontend 15/15, typecheck, lint, build, and diff checks passed.
-- Remaining risks: Windows host is powered off; deployed Sub2API version, exact `tml` group ID, real traffic shape, model quality, Tailscale, and production enforcement remain unverified.
+- Remaining risks: Windows host is powered off; disposable scope-test keys, complete rollback-safe configuration capture, real traffic shape, model quality, Tailscale, observation, and production enforcement remain unverified.
 
 ## Retrospective
 

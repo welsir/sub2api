@@ -2,6 +2,7 @@
 
 - [x] 1.1 Verify the current Sub2API `dev/omni` source baseline, recording that the existing `all_groups` plus `group_ids` model cannot safely express "all groups except `tml`".
 - [ ] 1.2 Verify the deployed Sub2API version, resolve the exact stable `tml` group ID, and prepare disposable `tml`, existing non-`tml`, newly created, and ungrouped API keys for scope verification.
+  - Partial evidence (2026-07-30): 43 V2 runs `tml/sub2api:v0.1.156-omni-luna-first-text-20260728` against `sub2api_v2`, and active exact-name `tml` is group ID `18`; disposable scope-test keys remain pending.
 - [ ] 1.3 Measure current inbound request peak RPS, concurrency, P95/P99 text length, and acceptable moderation latency instead of sizing only from the 50,000-per-day average.
 - [ ] 1.4 Define operator-approved unsafe-recall, safe false-positive, latency, and availability gates for model selection and `pre_block`.
 - [ ] 1.5 Capture and redact the current Sub2API moderation configuration as the rollback baseline.
@@ -57,7 +58,7 @@
 
 ## 7. Run The Default-On Observation
 
-- [ ] 7.1 Configure Sub2API with the adapter origin, dedicated Bearer secret, selected model identifier, bounded timeout/retry values, `all_groups=true`, and exactly the verified `tml` group ID in `excluded_group_ids`.
+- [ ] 7.1 Configure Sub2API with the adapter origin, dedicated Bearer secret, selected model identifier, bounded timeout/retry values, `all_groups=true`, and exactly group ID `18` in `excluded_group_ids`.
 - [ ] 7.2 Set the rollout to `observe` plus `keyword_and_api` and verify no automatic promotion mechanism is active.
 - [ ] 7.3 Send equivalent safe and unsafe probes through disposable `tml`, existing non-`tml`, newly created, and ungrouped keys; record only `tml` bypassing local moderation.
 - [ ] 7.4 Confirm a same-name different-ID group is audited and deleting/recreating `tml` does not transfer the exemption automatically.
