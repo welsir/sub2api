@@ -1,0 +1,80 @@
+{
+  "change_id": "add-self-hosted-qwen3guard-moderation",
+  "version": 4,
+  "dispatches": [
+    {
+      "dispatch_id": "dispatch-001",
+      "slice_id": "slice-001",
+      "executor_profile": "backend-developer",
+      "assignee": "subagent-sub2api-exclusions",
+      "status": "accepted",
+      "expected_output": "Sub2API dev/omni exact-ID exemption backend implementation and tests",
+      "acceptance_checks": [
+        "write scope remains inside the isolated Sub2API worktree",
+        "test-first evidence is reported",
+        "focused backend and frontend tests pass",
+        "no company, team, main, or production state is changed"
+      ],
+      "dispatched_at": "2026-07-30T01:44:20Z",
+      "updated_at": "2026-07-30T02:45:00Z",
+      "result_summary": "Accepted backend commits 04e8f7354, 53d693d3d, and 111c6679f after specification and quality repair loops."
+    },
+    {
+      "dispatch_id": "dispatch-002",
+      "slice_id": "slice-001",
+      "executor_profile": "frontend-developer",
+      "assignee": "subagent-sub2api-exclusion-frontend",
+      "status": "accepted",
+      "expected_output": "Sub2API dev/omni management UI, API types, locales, and tests for exact-ID exemptions",
+      "acceptance_checks": [
+        "default-on exclusions and legacy allowlist state remain separate",
+        "same-name groups are selected only by exact ID",
+        "runtime status is not polluted by unsaved form state",
+        "focused frontend tests, typecheck, lint, and build pass",
+        "no company, team, main, or production state is changed"
+      ],
+      "dispatched_at": "2026-07-30T02:10:00Z",
+      "updated_at": "2026-07-30T02:45:00Z",
+      "result_summary": "Accepted frontend commits 633d0a5bb and 0f096ba4f after specification and quality review."
+    },
+    {
+      "dispatch_id": "dispatch-003",
+      "slice_id": "slice-002",
+      "executor_profile": "backend-developer",
+      "assignee": "subagent-qwen3guard-adapter",
+      "status": "accepted",
+      "expected_output": "Sub2API-owned standalone OpenAI-shaped Qwen3Guard Moderations adapter, checked-in TypeScript/JavaScript mirrors, tests, configuration examples, and local operator documentation",
+      "acceptance_checks": [
+        "Bearer-authenticated text-only POST /v1/moderations contract is implemented",
+        "Safe, Controversial, Unsafe, unknown-category fallback, and parse errors map deterministically",
+        "health, readiness, input, concurrency, queue, and timeout limits are covered",
+        "logs and metrics are redacted and contain no prompts or secrets",
+        "targeted adapter tests, typecheck, secret scan, and git diff checks pass",
+        "Omni northbound routing remains unchanged"
+      ],
+      "dispatched_at": "2026-07-30T03:00:00Z",
+      "updated_at": "2026-07-30T04:17:30Z",
+      "result_summary": "Accepted reviewed adapter behavior and corrected ownership in Sub2API commit 79b046f82 after content-equivalence proof and fresh 72/72 package verification; the mistaken TML placement was reverted by a74b1b2."
+    }
+  ],
+  "_meta": {
+    "ledger_name": "dispatch-ledger",
+    "schema_version": 1,
+    "previous_version": 3,
+    "previous_snapshot_hash": "sha256:90d402165411a91e023418fdd0724e2b20786390638f299b2be1244b7cc87f61",
+    "snapshot_hash": "sha256:c899f5322d8051787f34b6495291cc3a33ba34cc61d1e445931e97edc64f9fb2",
+    "reconciliation": {
+      "actor": "master",
+      "applied_at": "2026-07-30T05:35:00Z",
+      "reason": "correct adapter repository ownership and accepted result reference without changing dispatch lifecycle"
+    },
+    "applied_transition": {
+      "applied_at": "2026-07-30T04:17:30Z",
+      "entity_id": "dispatch-003",
+      "from": "returned",
+      "to": "accepted",
+      "actor": "master",
+      "reason": "integration review accepted the returned adapter against durable evidence"
+    }
+  }
+}

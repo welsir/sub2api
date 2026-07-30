@@ -27,7 +27,7 @@
 - [x] 3.5 Add admin API, runtime status, structured log, and management-UI support for selecting and displaying explicit exempt groups.
 - [x] 3.6 Add backend and frontend tests for the exact `tml` ID, same-name different-ID groups, existing non-`tml` groups, newly created groups, missing group IDs, nonexistent exclusions, empty exclusions, and legacy allowlist mode.
 - [x] 3.7 Update the Sub2API file headers and affected folder documentation required by its repository protocol.
-- [x] 3.8 Run focused Sub2API service, handler, admin API, frontend, type, and build gates and record the exact downstream commit/version required by Omni deployment.
+- [x] 3.8 Run focused Sub2API service, handler, admin API, frontend, type, and build gates and record the exact Sub2API commit/version required by Sub2API deployment.
 
 ## 4. Prepare The Windows Qwen3Guard Runtime
 
@@ -79,6 +79,6 @@
 
 - [ ] 9.1 Add operator documentation for installation, startup, health, secret rotation, model change, `tml` exemption management, observe/block promotion, failure semantics, and rollback.
 - [ ] 9.2 Update the repository README and affected documentation indexes only where the implemented runtime or documented operator entrypoints actually change.
-- [ ] 9.3 Record a governance run log that separates adapter proof, downstream exclusion proof, Windows proof, private-connectivity proof, Sub2API observation, and production blocking evidence.
+- [ ] 9.3 Record a governance run log that separates adapter proof, Sub2API exclusion proof, Windows proof, private-connectivity proof, Sub2API observation, and production blocking evidence.
 - [ ] 9.4 Run strict OpenSpec validation, targeted adapter and Sub2API tests, deployment-config validation, authenticated smoke probes, and rollback rehearsal.
 - [ ] 9.5 Leave any unverified Windows, deployed-version, exclusion, model-quality, or production gate unchecked and state the remaining blocker explicitly.

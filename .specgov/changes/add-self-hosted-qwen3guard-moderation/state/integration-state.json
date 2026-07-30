@@ -1,0 +1,57 @@
+{
+  "change_id": "add-self-hosted-qwen3guard-moderation",
+  "version": 3,
+  "pending": [],
+  "accepted": [
+    {
+      "slice_id": "slice-001",
+      "status": "accepted",
+      "accepted_at": "2026-07-30T02:45:00Z",
+      "evidence": [
+        "evidence/sub2api-exclusions.md",
+        "Sub2API exact-ID exclusions 66465aaac12141a874981d4816d1063d16591ad6"
+      ]
+    },
+    {
+      "slice_id": "slice-002",
+      "status": "accepted",
+      "accepted_at": "2026-07-30T04:17:00Z",
+      "evidence": [
+        "evidence/qwen3guard-adapter.md",
+        "Sub2API adapter ownership 79b046f82aaeae392baa0ad79df9456f7a0a4839"
+      ]
+    },
+    {
+      "slice_id": "slice-003",
+      "status": "accepted",
+      "accepted_at": "2026-07-30T04:20:30Z",
+      "evidence": [
+        "evidence/qwen3guard-adapter.md",
+        "evidence/sub2api-exclusions.md",
+        "Sub2API adapter ownership 79b046f82aaeae392baa0ad79df9456f7a0a4839",
+        "Sub2API exact-ID exclusions 66465aaac12141a874981d4816d1063d16591ad6"
+      ]
+    }
+  ],
+  "rejected": [],
+  "_meta": {
+    "ledger_name": "integration-state",
+    "schema_version": 1,
+    "previous_version": 2,
+    "previous_snapshot_hash": "sha256:9a4533846b2cc26d6b463e4a4776573d624bf005622d92476564564a6f74ea71",
+    "snapshot_hash": "sha256:51e59809d3e272ea73d743d237e9c58c5eb7fc121d398b3a730fef93e0d34f6d",
+    "reconciliation": {
+      "actor": "master",
+      "applied_at": "2026-07-30T05:35:00Z",
+      "reason": "correct accepted evidence ownership from TML Gateway to Sub2API without changing integration outcomes"
+    },
+    "applied_transition": {
+      "applied_at": "2026-07-30T04:20:30Z",
+      "entity_id": "slice-003",
+      "from": "awaiting_review",
+      "to": "accepted",
+      "actor": "master",
+      "reason": "accepted local cross-repository integration after fresh actual-branch verification and evidence reconciliation"
+    }
+  }
+}

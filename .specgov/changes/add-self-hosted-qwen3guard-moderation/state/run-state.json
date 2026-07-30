@@ -1,0 +1,29 @@
+{
+  "change_id": "add-self-hosted-qwen3guard-moderation",
+  "change_title": "Self-hosted Qwen3Guard moderation",
+  "phase": "blocked",
+  "version": 5,
+  "status": "blocked",
+  "current_focus": "Await powered-on Windows host and deployed Sub2API facts for slice-004",
+  "resume_from": "slice-ledger:slice-004",
+  "resume_anchor_version": 11,
+  "blocking_reason": "Windows host is powered off; deployed Sub2API version, stable tml group ID, traffic baseline, model benchmark, Tailscale connectivity, observation, and production gates remain unverified.",
+  "last_verified_at": "2026-07-30T04:22:00Z",
+  "started_at": "2026-07-30T01:44:20Z",
+  "updated_at": "2026-07-30T04:22:00Z",
+  "_meta": {
+    "ledger_name": "run-state",
+    "schema_version": 1,
+    "previous_version": 4,
+    "previous_snapshot_hash": "sha256:9e99430ddabcecd135b7221197d19eceed79df95316420c2ad22fd3d6e7636c0",
+    "snapshot_hash": "sha256:a1ef9c37e8fe30508d9e52134158db14832d1d8fd0fd2b52d04a72c26209c9f6",
+    "applied_transition": {
+      "applied_at": "2026-07-30T04:22:00Z",
+      "entity_id": "phase",
+      "from": "integrating",
+      "to": "blocked",
+      "actor": "master",
+      "reason": "local implementation and integration are accepted, but the powered-off Windows host and deployment facts block the next required slice"
+    }
+  }
+}

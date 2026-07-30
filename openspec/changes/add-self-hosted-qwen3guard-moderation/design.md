@@ -89,7 +89,7 @@ Alternatives considered:
 
 ### 6. Add default-on scope with one explicit `tml` exemption
 
-Sub2API remains the policy enforcement owner. The current `all_groups` plus `group_ids` model cannot safely express the approved rule. `all_groups=true` audits `tml`, while `all_groups=false` requires an allowlist that would silently omit future groups. The downstream configuration will therefore add normalized `excluded_group_ids`.
+Sub2API remains the policy enforcement owner. The current `all_groups` plus `group_ids` model cannot safely express the approved rule. `all_groups=true` audits `tml`, while `all_groups=false` requires an allowlist that would silently omit future groups. The Sub2API configuration will therefore add normalized `excluded_group_ids`.
 
 Scope evaluation will follow these rules:
 
@@ -150,4 +150,4 @@ No step automatically promotes the next one. The operator owns start, pause, gro
 - What labeled-sample recall and false-positive thresholds will the operator require before `pre_block`?
 - Does vLLM or SGLang pass the RTX 5070 Ti WSL2 compatibility gate, or is the Transformers fallback required?
 - Is 0.6B sufficient, or does 4B provide enough quality improvement to justify its latency and memory cost?
-- Should a future downstream change add per-group fail-close, independent provider/model settings, or model-output moderation?
+- Should a future Sub2API change add per-group fail-close, independent provider/model settings, or model-output moderation?

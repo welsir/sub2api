@@ -1,0 +1,118 @@
+{
+  "change_id": "add-self-hosted-qwen3guard-moderation",
+  "version": 11,
+  "items": [
+    {
+      "id": "slice-001",
+      "title": "Add exact-ID moderation exemptions to Sub2API dev/omni",
+      "status": "done",
+      "owner": "subagent-sub2api-exclusions",
+      "depends_on": [],
+      "acceptance_checks": [
+        "all_groups=true audits existing, new, and ungrouped traffic unless the exact group ID is excluded",
+        "all_groups=false legacy allowlist behavior remains compatible",
+        "admin API, status, logs, UI, and tests expose excluded_group_ids",
+        "focused backend and frontend tests pass"
+      ],
+      "evidence": [
+        "evidence/sub2api-exclusions.md",
+        "Sub2API exact-ID exclusions 66465aaac12141a874981d4816d1063d16591ad6"
+      ],
+      "updated_at": "2026-07-30T04:16:30Z"
+    },
+    {
+      "id": "slice-002",
+      "title": "Build the OpenAI-shaped Qwen3Guard Moderations adapter",
+      "status": "done",
+      "owner": "subagent-qwen3guard-adapter",
+      "depends_on": [],
+      "acceptance_checks": [
+        "Bearer-authenticated text-only POST /v1/moderations contract is implemented",
+        "Qwen Safe, Controversial, Unsafe, and parse failures map deterministically",
+        "health, readiness, deadlines, concurrency bounds, and redacted logs are covered",
+        "targeted adapter tests and typecheck pass"
+      ],
+      "evidence": [
+        "evidence/qwen3guard-adapter.md",
+        "Sub2API adapter ownership 79b046f82aaeae392baa0ad79df9456f7a0a4839"
+      ],
+      "updated_at": "2026-07-30T04:18:30Z"
+    },
+    {
+      "id": "slice-003",
+      "title": "Integrate accepted local implementation slices",
+      "status": "done",
+      "owner": "master",
+      "depends_on": [
+        "slice-001",
+        "slice-002"
+      ],
+      "acceptance_checks": [
+        "both slices pass spec and quality review",
+        "critical commands are rerun by the master",
+        "OpenSpec and repository documentation reflect only verified local completion"
+      ],
+      "evidence": [
+        "evidence/qwen3guard-adapter.md",
+        "evidence/sub2api-exclusions.md",
+        "Sub2API adapter ownership 79b046f82aaeae392baa0ad79df9456f7a0a4839",
+        "Sub2API exact-ID exclusions 66465aaac12141a874981d4816d1063d16591ad6"
+      ],
+      "updated_at": "2026-07-30T04:21:30Z"
+    },
+    {
+      "id": "slice-004",
+      "title": "Configure and verify the powered-on Windows Qwen3Guard runtime",
+      "status": "pending",
+      "owner": null,
+      "depends_on": [
+        "slice-002"
+      ],
+      "acceptance_checks": [
+        "Windows, WSL2, GPU, model, startup, and recovery evidence exists",
+        "0.6B and 4B benchmark evidence exists"
+      ],
+      "evidence": [],
+      "updated_at": "2026-07-30T01:44:20Z"
+    },
+    {
+      "id": "slice-005",
+      "title": "Run private-connectivity and production rollout gates",
+      "status": "pending",
+      "owner": null,
+      "depends_on": [
+        "slice-001",
+        "slice-004"
+      ],
+      "acceptance_checks": [
+        "Sub2API runtime-boundary Tailscale probes pass",
+        "only the stable tml group ID is exempt",
+        "observe, failure drills, human pre_block approval, and rollback evidence exist"
+      ],
+      "evidence": [],
+      "updated_at": "2026-07-30T01:44:20Z"
+    }
+  ],
+  "_meta": {
+    "ledger_name": "slice-ledger",
+    "schema_version": 1,
+    "previous_version": 10,
+    "previous_snapshot_hash": "sha256:19e0e9e5b66074a9798136ea4f5e6c8c2b4c24f1e1eddd33d083bbc8a14eff21",
+    "snapshot_hash": "sha256:a9d300498a30e32b1e6ba846ef90443c8c8a236c02fde2de7a38cb35233506d6",
+    "reconciliation": {
+      "actor": "master",
+      "applied_at": "2026-07-30T05:35:00Z",
+      "reason": "correct adapter repository ownership from TML Gateway to Sub2API without changing slice lifecycle"
+    },
+    "applied_transition": {
+      "applied_at": "2026-07-30T04:21:30Z",
+      "entity_id": "slice-003",
+      "from": "integrating",
+      "to": "done",
+      "owner_before": "master",
+      "owner_after": "master",
+      "actor": "master",
+      "reason": "completed local integration with both code slices, task evidence, and actual-branch checks aligned"
+    }
+  }
+}
