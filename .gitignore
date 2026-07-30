@@ -116,6 +116,8 @@ backend/.installed
 # 其他
 # ===================
 tests
+!services/qwen3guard-moderation-adapter/tests/
+!services/qwen3guard-moderation-adapter/tests/**
 CLAUDE.md
 .claude
 scripts

@@ -1,0 +1,63 @@
+## ADDED Requirements
+
+### Requirement: Moderations API compatibility
+The adapter SHALL expose a Bearer-authenticated `POST /v1/moderations` endpoint that accepts the model and text-input shape used by Sub2API and returns an OpenAI-shaped response containing `results[].flagged`, `results[].categories`, and `results[].category_scores`.
+
+#### Scenario: Sub2API-compatible unsafe response
+- **WHEN** an authenticated text request produces a valid Qwen3Guard `Unsafe` classification
+- **THEN** the adapter returns a successful Moderations response whose evaluated category score is sufficient for Sub2API to flag the request
+
+#### Scenario: Missing or invalid authentication
+- **WHEN** a request omits the configured Bearer secret or supplies the wrong value
+- **THEN** the adapter rejects the request without invoking the model backend or disclosing secret details
+
+#### Scenario: Unsupported multimodal input
+- **WHEN** a Moderations request contains an image or another unsupported non-text part
+- **THEN** the adapter returns a clear non-2xx error and does not silently classify the input as safe
+
+### Requirement: Deterministic classification mapping
+The adapter MUST translate Qwen3Guard safety labels and categories through a versioned deterministic mapping into Sub2API-evaluated moderation categories. `Safe`, `Controversial`, and `Unsafe` MUST use documented policy values rather than being described as calibrated probabilities.
+
+#### Scenario: Safe classification
+- **WHEN** Qwen3Guard returns `Safe`
+- **THEN** the adapter returns `flagged=false` and zero policy scores for evaluated categories
+
+#### Scenario: Controversial classification
+- **WHEN** Qwen3Guard returns `Controversial`
+- **THEN** the adapter returns `flagged=false`, records the raw label/category operationally, and emits the documented intermediate policy value
+
+#### Scenario: Unsafe category without a direct mapping
+- **WHEN** Qwen3Guard returns `Unsafe` with an absent, unknown, or non-equivalent category
+- **THEN** the adapter applies the documented unsafe fallback to a Sub2API-evaluated category so the taxonomy mismatch cannot produce an allowed score set
+
+### Requirement: Parse failures fail visibly
+The adapter MUST NOT convert malformed, empty, truncated, or unknown Qwen3Guard output into a safe moderation result.
+
+#### Scenario: Malformed model output
+- **WHEN** the model backend returns output that does not match the supported structured classification format
+- **THEN** the adapter returns a non-2xx error, records a redacted parse-error event, and leaves the caller's configured failure policy to decide request handling
+
+### Requirement: Bounded runtime behavior
+The adapter SHALL enforce configured input, concurrency, queue, and inference-time limits and SHALL return explicit overload or timeout errors instead of allowing unbounded work accumulation.
+
+#### Scenario: Concurrency limit reached
+- **WHEN** all inference slots and the bounded queue are occupied
+- **THEN** the adapter rejects excess work with a retryable service error and records an overload metric
+
+#### Scenario: Inference exceeds its deadline
+- **WHEN** Qwen3Guard does not complete within the configured inference deadline
+- **THEN** the adapter cancels or abandons the request, returns a timeout-class error, and does not retry indefinitely
+
+### Requirement: Health and model readiness
+The adapter SHALL expose separate liveness and readiness checks so operators can distinguish a running process from a loaded and callable model backend.
+
+#### Scenario: Process alive but model unavailable
+- **WHEN** the adapter process is running but the model backend is loading or unreachable
+- **THEN** `/healthz` reports liveness while `/readyz` reports not ready
+
+### Requirement: Redacted operational evidence
+The adapter MUST record model revision, mapping revision, request correlation, input size or hash, classification, latency, and error class without logging full prompts, Bearer secrets, or model-server credentials.
+
+#### Scenario: Successful moderation log
+- **WHEN** an authenticated moderation request completes
+- **THEN** the operational record contains enough metadata to correlate and reproduce the classifier version without containing the original prompt
