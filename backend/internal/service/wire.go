@@ -1,3 +1,10 @@
+// [INPUT]: Service repositories, configuration, caches, clients, and runtime dependencies.
+// [OUTPUT]: Wire provider constructors and the complete service provider set.
+// [POS]: Dependency-injection assembly boundary for the service layer.
+//
+// [PROTOCOL]:
+// 1. Update this header when provider constructors or service dependencies change.
+// 2. Keep runtime startup side effects explicit in named provider functions.
 package service
 
 import (
@@ -537,6 +544,84 @@ func ProvideSettingService(settingRepo SettingRepository, groupRepo GroupReposit
 	return svc
 }
 
+func ProvideUserActivationService(
+	cfg *config.Config,
+	journeys UserActivationJourneyRepository,
+	evidence UserActivationEvidenceRepository,
+	subscriptions *SubscriptionService,
+	settingService *SettingService,
+	entClient *dbent.Client,
+) *UserActivationService {
+	return NewUserActivationService(
+		cfg.UserActivation,
+		journeys,
+		evidence,
+		subscriptions,
+		settingService,
+		entClient,
+	)
+}
+
+func ProvideUserActivationWorker(
+	cfg *config.Config,
+	journeys UserActivationJourneyRepository,
+	evidence UserActivationEvidenceRepository,
+	activation *UserActivationService,
+	userRepo UserRepository,
+	notificationEmailService *NotificationEmailService,
+	settingService *SettingService,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *UserActivationWorker {
+	worker := NewUserActivationWorker(
+		cfg.UserActivation,
+		journeys,
+		evidence,
+		activation,
+		userRepo,
+		notificationEmailService,
+		settingService,
+	)
+	worker.SetLeaderLock(lockCache, db)
+	worker.Start()
+	return worker
+}
+
+func ProvideAuthService(
+	entClient *dbent.Client,
+	userRepo UserRepository,
+	redeemRepo RedeemCodeRepository,
+	refreshTokenCache RefreshTokenCache,
+	cfg *config.Config,
+	settingService *SettingService,
+	emailService *EmailService,
+	turnstileService *TurnstileService,
+	emailQueueService *EmailQueueService,
+	promoService *PromoService,
+	defaultSubAssigner DefaultSubscriptionAssigner,
+	affiliateService *AffiliateService,
+	userPlatformQuotaRepo UserPlatformQuotaRepository,
+	activationBootstrapper UserActivationBootstrapper,
+) *AuthService {
+	svc := NewAuthService(
+		entClient,
+		userRepo,
+		redeemRepo,
+		refreshTokenCache,
+		cfg,
+		settingService,
+		emailService,
+		turnstileService,
+		emailQueueService,
+		promoService,
+		defaultSubAssigner,
+		affiliateService,
+		userPlatformQuotaRepo,
+	)
+	svc.SetUserActivationBootstrapper(activationBootstrapper)
+	return svc
+}
+
 // ProvideBillingCacheService wires BillingCacheService with its RPM dependencies.
 func ProvideBillingCacheService(
 	cache BillingCache,
@@ -572,7 +657,7 @@ func ProvideAPIKeyService(
 // ProviderSet is the Wire provider set for all services
 var ProviderSet = wire.NewSet(
 	// Core services
-	NewAuthService,
+	ProvideAuthService,
 	NewUserService,
 	ProvideAPIKeyService,
 	ProvideAPIKeyAuthCacheInvalidator,
@@ -619,6 +704,9 @@ var ProviderSet = wire.NewSet(
 	NewAccountUsageService,
 	NewAccountTestService,
 	ProvideSettingService,
+	ProvideUserActivationService,
+	wire.Bind(new(UserActivationBootstrapper), new(*UserActivationService)),
+	ProvideUserActivationWorker,
 	NewDataManagementService,
 	ProvideBackupService,
 	ProvideOpsSystemLogSink,

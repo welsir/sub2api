@@ -1,3 +1,10 @@
+// [INPUT]: Settings persistence, email delivery, and notification template variables.
+// [OUTPUT]: Fail-closed optional mail and typed delivery-state outcomes after validated SMTP delivery.
+// [POS]: Service-layer notification template registry and delivery coordinator.
+//
+// [PROTOCOL]:
+// 1. Update this header when template validation, runtime URLs, or delivery semantics change.
+// 2. Keep business-stage selection in its owning application service.
 package service
 
 import (
@@ -20,19 +27,24 @@ import (
 )
 
 const (
-	NotificationEmailEventAuthVerifyCode              = "auth.verify_code"
-	NotificationEmailEventAuthPasswordReset           = "auth.password_reset"
-	NotificationEmailEventNotificationEmailVerifyCode = "notification_email.verify_code"
-	NotificationEmailEventSubscriptionPurchaseSuccess = "subscription.purchase_success"
-	NotificationEmailEventSubscriptionExpiryReminder  = "subscription.expiry_reminder"
-	NotificationEmailEventBalanceLow                  = "balance.low"
-	NotificationEmailEventBalanceRechargeSuccess      = "balance.recharge_success"
-	NotificationEmailEventAccountQuotaAlert           = "account.quota_alert"
-	NotificationEmailEventContentModerationViolation  = "content_moderation.violation_notice"
-	NotificationEmailEventContentModerationDisabled   = "content_moderation.account_disabled"
-	NotificationEmailEventCyberPolicyNotice           = "content_moderation.cyber_policy_notice"
-	NotificationEmailEventOpsAlert                    = "ops.alert"
-	NotificationEmailEventOpsScheduledReport          = "ops.scheduled_report"
+	NotificationEmailEventAuthVerifyCode                 = "auth.verify_code"
+	NotificationEmailEventAuthPasswordReset              = "auth.password_reset"
+	NotificationEmailEventNotificationEmailVerifyCode    = "notification_email.verify_code"
+	NotificationEmailEventSubscriptionPurchaseSuccess    = "subscription.purchase_success"
+	NotificationEmailEventSubscriptionExpiryReminder     = "subscription.expiry_reminder"
+	NotificationEmailEventBalanceLow                     = "balance.low"
+	NotificationEmailEventBalanceRechargeSuccess         = "balance.recharge_success"
+	NotificationEmailEventAccountQuotaAlert              = "account.quota_alert"
+	NotificationEmailEventContentModerationViolation     = "content_moderation.violation_notice"
+	NotificationEmailEventContentModerationDisabled      = "content_moderation.account_disabled"
+	NotificationEmailEventCyberPolicyNotice              = "content_moderation.cyber_policy_notice"
+	NotificationEmailEventOpsAlert                       = "ops.alert"
+	NotificationEmailEventOpsScheduledReport             = "ops.scheduled_report"
+	NotificationEmailEventActivationNoAttempt            = "activation.no_attempt"
+	NotificationEmailEventActivationAttemptedZeroSuccess = "activation.attempted_zero_success"
+	NotificationEmailEventActivationPaidZeroSuccess      = "activation.paid_zero_success"
+	NotificationEmailEventActivationRecallAvailable      = "activation.recall_available"
+	NotificationEmailEventActivationRecallExpired        = "activation.recall_expired"
 
 	notificationEmailTemplateKeyPrefix    = "notification_email_template:"
 	notificationEmailPreferenceKeyPrefix  = "notification_email_preference:"
@@ -156,6 +168,12 @@ func (e notificationEmailDeliveryError) Unwrap() error {
 	return e.Err
 }
 
+type notificationEmailPostDeliveryError struct{}
+
+func (notificationEmailPostDeliveryError) Error() string {
+	return "email delivered but delivery state was not persisted"
+}
+
 type notificationEmailUnsubscribeClaims struct {
 	Email string `json:"email"`
 	Event string `json:"event"`
@@ -206,6 +224,11 @@ func shouldFallbackNotificationEmail(err error) bool {
 func isNotificationEmailDeliveryError(err error) bool {
 	var deliveryErr notificationEmailDeliveryError
 	return errors.As(err, &deliveryErr)
+}
+
+func isNotificationEmailPostDeliveryError(err error) bool {
+	var postDeliveryErr notificationEmailPostDeliveryError
+	return errors.As(err, &postDeliveryErr)
 }
 
 func (s *NotificationEmailService) ListEventInfos() []NotificationEmailEventInfo {
@@ -375,7 +398,10 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 	if err != nil {
 		return notificationEmailTemplateErr(err)
 	}
-	variables := s.runtimeVariables(ctx, normalizedEvent, locale, input)
+	variables, err := s.runtimeVariables(ctx, normalizedEvent, locale, input)
+	if err != nil {
+		return notificationEmailConfigErr(errors.New("optional email unsubscribe URL is unavailable"))
+	}
 	rendered, err := renderNotificationEmail(normalizedEvent, tmpl.Subject, tmpl.HTML, variables, input.RawHTMLVariables)
 	if err != nil {
 		return notificationEmailTemplateErr(err)
@@ -400,7 +426,7 @@ func (s *NotificationEmailService) Send(ctx context.Context, input NotificationE
 	}
 	if deliveryKey != "" {
 		if err := s.settingRepo.Set(ctx, deliveryKey, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-			return err
+			return notificationEmailPostDeliveryError{}
 		}
 	}
 	return nil
@@ -499,7 +525,12 @@ func (s *NotificationEmailService) sampleVariables(ctx context.Context, event, l
 	return variables
 }
 
-func (s *NotificationEmailService) runtimeVariables(ctx context.Context, event, locale string, input NotificationEmailSendInput) map[string]string {
+func (s *NotificationEmailService) runtimeVariables(
+	ctx context.Context,
+	event string,
+	locale string,
+	input NotificationEmailSendInput,
+) (map[string]string, error) {
 	variables := s.sampleVariables(ctx, event, locale)
 	for key, value := range input.Variables {
 		variables[key] = value
@@ -510,11 +541,13 @@ func (s *NotificationEmailService) runtimeVariables(ctx context.Context, event, 
 		variables["recipient_name"] = input.RecipientName
 	}
 	if notificationEmailEventDefinitions[event].Optional {
-		if unsubscribeURL, err := s.buildUnsubscribeURL(ctx, input.RecipientEmail, event); err == nil {
-			variables["unsubscribe_url"] = unsubscribeURL
+		unsubscribeURL, err := s.buildUnsubscribeURL(ctx, input.RecipientEmail, event)
+		if err != nil {
+			return nil, err
 		}
+		variables["unsubscribe_url"] = unsubscribeURL
 	}
-	return variables
+	return variables, nil
 }
 
 func (s *NotificationEmailService) siteName(ctx context.Context) string {
@@ -542,16 +575,25 @@ func (s *NotificationEmailService) baseURL(ctx context.Context) string {
 }
 
 func (s *NotificationEmailService) buildUnsubscribeURL(ctx context.Context, email, event string) (string, error) {
+	baseURL := s.baseURL(ctx)
+	parsedBaseURL, err := url.Parse(baseURL)
+	if err != nil ||
+		!parsedBaseURL.IsAbs() ||
+		parsedBaseURL.Host == "" ||
+		(parsedBaseURL.Scheme != "http" && parsedBaseURL.Scheme != "https") {
+		return "", errors.New("unsubscribe base URL is unavailable")
+	}
 	token, err := s.createUnsubscribeToken(ctx, email, event)
 	if err != nil {
 		return "", err
 	}
-	path := "/api/v1/settings/email-unsubscribe?token=" + url.QueryEscape(token)
-	baseURL := s.baseURL(ctx)
-	if baseURL == "" {
-		return path, nil
+	unsubscribePath, err := url.Parse(
+		"/api/v1/settings/email-unsubscribe?token=" + url.QueryEscape(token),
+	)
+	if err != nil {
+		return "", errors.New("unsubscribe URL is unavailable")
 	}
-	return baseURL + path, nil
+	return parsedBaseURL.ResolveReference(unsubscribePath).String(), nil
 }
 
 func (s *NotificationEmailService) createUnsubscribeToken(ctx context.Context, email, event string) (string, error) {
@@ -661,6 +703,12 @@ func renderNotificationEmail(event, subject, htmlBody string, variables map[stri
 	if err := validateNotificationEmailTemplate(event, subject, htmlBody); err != nil {
 		return NotificationEmailPreview{}, err
 	}
+	if notificationEmailEventRequiresActivationURL(event) {
+		activationURL := strings.TrimSpace(variables["activation_url"])
+		if activationURL == "" || !isSafeNotificationEmailURL(activationURL) {
+			return NotificationEmailPreview{}, errors.New("activation URL is not configured")
+		}
+	}
 	renderedSubject, err := renderNotificationEmailString(event, subject, variables, nil, false)
 	if err != nil {
 		return NotificationEmailPreview{}, err
@@ -670,6 +718,12 @@ func renderNotificationEmail(event, subject, htmlBody string, variables map[stri
 		return NotificationEmailPreview{}, err
 	}
 	return NotificationEmailPreview{Subject: sanitizeEmailHeader(renderedSubject), HTML: renderedHTML}, nil
+}
+
+func notificationEmailEventRequiresActivationURL(event string) bool {
+	return event == NotificationEmailEventActivationNoAttempt ||
+		event == NotificationEmailEventActivationAttemptedZeroSuccess ||
+		event == NotificationEmailEventActivationRecallAvailable
 }
 
 func renderNotificationEmailString(event, raw string, variables map[string]string, rawHTMLVariables map[string]string, escapeHTML bool) (string, error) {
@@ -888,6 +942,8 @@ func notificationEmailSampleVariables(locale string) map[string]string {
 			"report_start_time":   "2026-05-19 12:00",
 			"report_end_time":     "2026-05-20 12:00",
 			"report_html":         "<h2>日报</h2><p>请求量：1024</p>",
+			"activation_url":      "https://example.com/activation",
+			"support_wechat":      "welsir02",
 		}
 	}
 	return map[string]string{
@@ -934,6 +990,8 @@ func notificationEmailSampleVariables(locale string) map[string]string {
 		"report_start_time":   "2026-05-19 12:00",
 		"report_end_time":     "2026-05-20 12:00",
 		"report_html":         "<h2>Daily summary</h2><p>Requests: 1024</p>",
+		"activation_url":      "https://example.com/activation",
+		"support_wechat":      "welsir02",
 	}
 }
 
@@ -951,6 +1009,11 @@ var notificationEmailEventOrder = []string{
 	NotificationEmailEventCyberPolicyNotice,
 	NotificationEmailEventOpsAlert,
 	NotificationEmailEventOpsScheduledReport,
+	NotificationEmailEventActivationNoAttempt,
+	NotificationEmailEventActivationAttemptedZeroSuccess,
+	NotificationEmailEventActivationPaidZeroSuccess,
+	NotificationEmailEventActivationRecallAvailable,
+	NotificationEmailEventActivationRecallExpired,
 }
 
 var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
@@ -1063,6 +1126,46 @@ var notificationEmailEventDefinitions = map[string]NotificationEmailEventInfo{
 		Optional:    false,
 		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...),
 			"report_name", "report_type", "report_start_time", "report_end_time", "report_html"),
+	},
+	NotificationEmailEventActivationNoAttempt: {
+		Event:        NotificationEmailEventActivationNoAttempt,
+		Label:        "Activation: no attempt",
+		Description:  "Optional onboarding help for verified users who have not created a key or made a request.",
+		Category:     "activation",
+		Optional:     true,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "activation_url", "support_wechat", "unsubscribe_url"),
+	},
+	NotificationEmailEventActivationAttemptedZeroSuccess: {
+		Event:        NotificationEmailEventActivationAttemptedZeroSuccess,
+		Label:        "Activation: attempted with zero success",
+		Description:  "Optional troubleshooting help after a key or failed request exists without a successful API call.",
+		Category:     "activation",
+		Optional:     true,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "activation_url", "support_wechat", "unsubscribe_url"),
+	},
+	NotificationEmailEventActivationPaidZeroSuccess: {
+		Event:        NotificationEmailEventActivationPaidZeroSuccess,
+		Label:        "Activation: paid with zero success",
+		Description:  "Optional configuration support after a completed recharge without a successful API call.",
+		Category:     "activation",
+		Optional:     true,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "support_wechat", "unsubscribe_url"),
+	},
+	NotificationEmailEventActivationRecallAvailable: {
+		Event:        NotificationEmailEventActivationRecallAvailable,
+		Label:        "Activation: recall available",
+		Description:  "Optional notice that a one-time recall trial can be actively claimed.",
+		Category:     "activation",
+		Optional:     true,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "activation_url", "support_wechat", "unsubscribe_url"),
+	},
+	NotificationEmailEventActivationRecallExpired: {
+		Event:        NotificationEmailEventActivationRecallExpired,
+		Label:        "Activation: recall expired",
+		Description:  "Optional final troubleshooting and support notice after the recall trial expires without success.",
+		Category:     "activation",
+		Optional:     true,
+		Placeholders: append(append([]string{}, notificationEmailCommonPlaceholders...), "support_wechat", "unsubscribe_url"),
 	},
 }
 
@@ -1354,6 +1457,112 @@ var notificationEmailOfficialTemplates = map[string]map[string]notificationEmail
 <p><strong>类型</strong>：{{report_type}}</p>
 <p><strong>时间范围</strong>：{{report_start_time}} - {{report_end_time}}</p>
 <div>{{report_html}}</div>`),
+		},
+	},
+	NotificationEmailEventActivationNoAttempt: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Your starter access is ready",
+			HTML: notificationEmailCard("#2563eb", "Make your first API request", `
+<p>Hello {{recipient_name}},</p>
+<p>Your account is ready, but we have not seen an API key or request yet.</p>
+<p>Open the activation guide to create a key and copy a working request example.</p>
+<p><a class="button" href="{{activation_url}}">Open activation guide</a></p>
+<p>If setup is still blocked, contact WeChat <strong>{{support_wechat}}</strong> for one-to-one configuration support.</p>
+<p class="muted"><a href="{{unsubscribe_url}}">Unsubscribe from optional activation help</a></p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 你的新手体验已经可以使用",
+			HTML: notificationEmailCard("#2563eb", "完成第一次 API 调用", `
+<p>{{recipient_name}}，您好：</p>
+<p>您的账号已准备好，但我们还没有看到 API Key 或调用记录。</p>
+<p>打开激活指引即可创建 Key，并复制可直接使用的请求示例。</p>
+<p><a class="button" href="{{activation_url}}">打开激活指引</a></p>
+<p>如果配置仍然受阻，可添加微信 <strong>{{support_wechat}}</strong> 获取一对一配置支持。</p>
+<p class="muted"><a href="{{unsubscribe_url}}">退订此类激活帮助邮件</a></p>`),
+		},
+	},
+	NotificationEmailEventActivationAttemptedZeroSuccess: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Let us get your first request working",
+			HTML: notificationEmailCard("#0891b2", "Troubleshoot your first request", `
+<p>Hello {{recipient_name}},</p>
+<p>We can see that you created a key or sent a request, but no successful API call has completed yet.</p>
+<p>Check the Base URL, API key, model name, and request format in the activation guide.</p>
+<p><a class="button" href="{{activation_url}}">Review configuration</a></p>
+<p>If you need help, contact WeChat <strong>{{support_wechat}}</strong> and we will troubleshoot the configuration with you.</p>
+<p class="muted"><a href="{{unsubscribe_url}}">Unsubscribe from optional activation help</a></p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 一起排查你的第一次调用",
+			HTML: notificationEmailCard("#0891b2", "排查第一次 API 调用", `
+<p>{{recipient_name}}，您好：</p>
+<p>我们看到您已经创建了 Key 或发起过请求，但目前还没有成功完成的 API 调用。</p>
+<p>请在激活指引中依次检查 Base URL、API Key、模型名称和请求格式。</p>
+<p><a class="button" href="{{activation_url}}">检查调用配置</a></p>
+<p>如需协助，可添加微信 <strong>{{support_wechat}}</strong>，我们会和您一起排查配置。</p>
+<p class="muted"><a href="{{unsubscribe_url}}">退订此类激活帮助邮件</a></p>`),
+		},
+	},
+	NotificationEmailEventActivationPaidZeroSuccess: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Recharge completed - let us check your API setup",
+			HTML: notificationEmailCard("#dc2626", "Configuration support after recharge", `
+<p>Hello {{recipient_name}},</p>
+<p>Your recharge is complete, but we have not seen a successful API request yet.</p>
+<p>Please verify your Base URL, API key, model name, and request payload. A mismatch in any one of these can prevent the first request from completing.</p>
+<p>For one-to-one troubleshooting, contact WeChat <strong>{{support_wechat}}</strong>. We will focus on getting your existing paid access working.</p>
+<p class="muted"><a href="{{unsubscribe_url}}">Unsubscribe from optional activation help</a></p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 充值已完成，请检查 API 调用配置",
+			HTML: notificationEmailCard("#dc2626", "充值后的配置排查", `
+<p>{{recipient_name}}，您好：</p>
+<p>您的充值已经完成，但目前还没有成功的 API 调用记录。</p>
+<p>请依次核对 Base URL、API Key、模型名称和请求参数，其中任意一项不匹配都可能导致首次调用失败。</p>
+<p>如需一对一排查，可添加微信 <strong>{{support_wechat}}</strong>。我们会优先协助您把现有付费额度正常使用起来。</p>
+<p class="muted"><a href="{{unsubscribe_url}}">退订此类激活帮助邮件</a></p>`),
+		},
+	},
+	NotificationEmailEventActivationRecallAvailable: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] A one-day recall trial is available",
+			HTML: notificationEmailCard("#16a34a", "Try one more guided request", `
+<p>Hello {{recipient_name}},</p>
+<p>Your starter period ended without a successful API request. A one-time $2 recall trial is available for you to claim and use within 24 hours.</p>
+<p>The trial is not added automatically. Open the activation page to review the terms and claim it when you are ready to test.</p>
+<p><a class="button" href="{{activation_url}}">Review and claim trial</a></p>
+<p>If configuration is the blocker, contact WeChat <strong>{{support_wechat}}</strong> for setup support.</p>
+<p class="muted"><a href="{{unsubscribe_url}}">Unsubscribe from optional activation help</a></p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 你有一次可主动领取的 24 小时召回体验",
+			HTML: notificationEmailCard("#16a34a", "再完成一次有指引的调用", `
+<p>{{recipient_name}}，您好：</p>
+<p>你的新手体验期已经结束，但仍未完成成功调用。现在有一次 $2、24 小时有效的召回体验可主动领取。</p>
+<p>系统不会自动发放，请在准备测试时打开激活页面，确认规则后再领取。</p>
+<p><a class="button" href="{{activation_url}}">查看并领取体验</a></p>
+<p>如果卡在配置环节，可添加微信 <strong>{{support_wechat}}</strong> 获取排查支持。</p>
+<p class="muted"><a href="{{unsubscribe_url}}">退订此类激活帮助邮件</a></p>`),
+		},
+	},
+	NotificationEmailEventActivationRecallExpired: {
+		notificationEmailDefaultLocale: {
+			Subject: "[{{site_name}}] Need help completing your first request?",
+			HTML: notificationEmailCard("#7c3aed", "Final setup check", `
+<p>Hello {{recipient_name}},</p>
+<p>Your recall trial has ended, and we still have not seen a successful API request.</p>
+<p>Please recheck the Base URL, API key, model name, and request payload before adding paid usage.</p>
+<p>If you would like us to diagnose the setup with you, contact WeChat <strong>{{support_wechat}}</strong>.</p>
+<p class="muted"><a href="{{unsubscribe_url}}">Unsubscribe from optional activation help</a></p>`),
+		},
+		notificationEmailLocaleChinese: {
+			Subject: "[{{site_name}}] 还需要协助完成第一次调用吗",
+			HTML: notificationEmailCard("#7c3aed", "最后一次配置检查", `
+<p>{{recipient_name}}，您好：</p>
+<p>你的召回体验已经结束，但目前仍没有成功的 API 调用记录。</p>
+<p>建议在继续付费使用前，再检查一次 Base URL、API Key、模型名称和请求参数。</p>
+<p>如希望我们一起定位问题，可添加微信 <strong>{{support_wechat}}</strong> 获取配置支持。</p>
+<p class="muted"><a href="{{unsubscribe_url}}">退订此类激活帮助邮件</a></p>`),
 		},
 	},
 }

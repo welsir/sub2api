@@ -3,6 +3,78 @@ export default {
     title: 'Batch Image Generation',
     description: 'Submit multiple prompts in one job and download the generated images when complete'
   },
+  hvoyPartner: {
+    pageTitle: 'Omni API',
+    brand: 'Omni API',
+    navLogin: 'Log in',
+    loading: 'Checking trial availability',
+    available: 'Free trial available for new users',
+    unavailable: 'Trial availability cannot be confirmed',
+    hero: {
+      enabledTitle: 'Try it free, recharge when you are ready',
+      enabledDescription: 'Trial credit arrives after registration. Create a key and start using it right away.',
+      unavailableTitle: 'Log in to review current services and available models',
+      unavailableDescription: 'We cannot confirm a new-user trial right now, so this page will not promise free credit. Existing users can still log in or review the service first.'
+    },
+    offer: {
+      label: 'New-user trial',
+      starterTitle: 'Credited after registration',
+      starterNote: 'No recharge needed. Create a key and start using it.',
+      unavailableLabel: 'Service access',
+      unavailableTitle: 'No unverified credit promise',
+      unavailableNote: 'Log in to review your account, models, and recharge status.'
+    },
+    pricing: {
+      paymentLabel: 'Payment options',
+      paymentChannels: 'Multiple payment methods supported',
+      refundLabel: 'Usage protection',
+      proportionalRefund: 'Not satisfied? Refunds are based on actual usage',
+      balanceLabel: 'Paid balance',
+      paidNoExpiry: 'Recharged credit does not expire'
+    },
+    support: {
+      withWechat: 'Need help with setup or a request? Add {wechat} on WeChat.',
+      generic: 'Need help with setup or a request? Contact us on WeChat.'
+    },
+    cta: {
+      register: 'Register and start trial',
+      existingUser: 'Existing user? Log in',
+      login: 'Log in to view services',
+      viewService: 'View service home'
+    },
+    facts: {
+      trialTitle: 'Free trial credit after registration',
+      trialDescription: 'It arrives after email verification. Nothing to claim manually.',
+      entryTitle: 'Existing accounts continue normally',
+      entryDescription: 'When trial eligibility is unavailable, existing account access remains unchanged.',
+      rechargeTitle: 'Flexible payment options',
+      rechargeDescription: 'Multiple payment methods are supported, with refunds based on actual usage.',
+      balanceTitle: 'Recharged credit does not expire',
+      balanceDescription: 'Use your recharged credit whenever you need it.',
+      supportTitle: 'Need help? Just ask',
+      supportDescription: 'For setup or request issues, contact us on WeChat.'
+    },
+    flow: {
+      eyebrow: 'Getting started',
+      title: 'Make your first request in three steps',
+      enabled: {
+        verifyTitle: 'Verify your email',
+        verifyDescription: 'Register with a common email address and enter the code you receive.',
+        creditTitle: 'Trial credit arrives automatically',
+        creditDescription: 'It is added after verification. Nothing to claim manually.',
+        useTitle: 'Create a key and send a request',
+        useDescription: 'Run the command on the activation page. A model reply means you are connected.'
+      },
+      unavailable: {
+        loginTitle: 'Log in to an existing account',
+        loginDescription: 'Existing users can sign in; current accounts and paid credit are unaffected.',
+        serviceTitle: 'Review available services',
+        serviceDescription: 'Check models, billing, and account status before choosing the next step.',
+        supportTitle: 'Contact support when needed',
+        supportDescription: 'Manual support covers setup and troubleshooting, not promotional credit promises.'
+      }
+    }
+  },
   // Home Page
   home: {
     viewOnGithub: 'View on GitHub',

@@ -22,6 +22,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/useractivationjourney"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -627,6 +628,25 @@ func (_u *UserUpdate) AddPlatformQuotas(v ...*UserPlatformQuota) *UserUpdate {
 	return _u.AddPlatformQuotaIDs(ids...)
 }
 
+// SetActivationJourneyID sets the "activation_journey" edge to the UserActivationJourney entity by ID.
+func (_u *UserUpdate) SetActivationJourneyID(id int64) *UserUpdate {
+	_u.mutation.SetActivationJourneyID(id)
+	return _u
+}
+
+// SetNillableActivationJourneyID sets the "activation_journey" edge to the UserActivationJourney entity by ID if the given value is not nil.
+func (_u *UserUpdate) SetNillableActivationJourneyID(id *int64) *UserUpdate {
+	if id != nil {
+		_u = _u.SetActivationJourneyID(*id)
+	}
+	return _u
+}
+
+// SetActivationJourney sets the "activation_journey" edge to the UserActivationJourney entity.
+func (_u *UserUpdate) SetActivationJourney(v *UserActivationJourney) *UserUpdate {
+	return _u.SetActivationJourneyID(v.ID)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdate) Mutation() *UserMutation {
 	return _u.mutation
@@ -903,6 +923,12 @@ func (_u *UserUpdate) RemovePlatformQuotas(v ...*UserPlatformQuota) *UserUpdate 
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePlatformQuotaIDs(ids...)
+}
+
+// ClearActivationJourney clears the "activation_journey" edge to the UserActivationJourney entity.
+func (_u *UserUpdate) ClearActivationJourney() *UserUpdate {
+	_u.mutation.ClearActivationJourney()
+	return _u
 }
 
 // Save executes the query and returns the number of nodes affected by the update operation.
@@ -1696,6 +1722,35 @@ func (_u *UserUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 		}
 		_spec.Edges.Add = append(_spec.Edges.Add, edge)
 	}
+	if _u.mutation.ActivationJourneyCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.ActivationJourneyTable,
+			Columns: []string{user.ActivationJourneyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useractivationjourney.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ActivationJourneyIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.ActivationJourneyTable,
+			Columns: []string{user.ActivationJourneyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useractivationjourney.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
 			err = &NotFoundError{user.Label}
@@ -2303,6 +2358,25 @@ func (_u *UserUpdateOne) AddPlatformQuotas(v ...*UserPlatformQuota) *UserUpdateO
 	return _u.AddPlatformQuotaIDs(ids...)
 }
 
+// SetActivationJourneyID sets the "activation_journey" edge to the UserActivationJourney entity by ID.
+func (_u *UserUpdateOne) SetActivationJourneyID(id int64) *UserUpdateOne {
+	_u.mutation.SetActivationJourneyID(id)
+	return _u
+}
+
+// SetNillableActivationJourneyID sets the "activation_journey" edge to the UserActivationJourney entity by ID if the given value is not nil.
+func (_u *UserUpdateOne) SetNillableActivationJourneyID(id *int64) *UserUpdateOne {
+	if id != nil {
+		_u = _u.SetActivationJourneyID(*id)
+	}
+	return _u
+}
+
+// SetActivationJourney sets the "activation_journey" edge to the UserActivationJourney entity.
+func (_u *UserUpdateOne) SetActivationJourney(v *UserActivationJourney) *UserUpdateOne {
+	return _u.SetActivationJourneyID(v.ID)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_u *UserUpdateOne) Mutation() *UserMutation {
 	return _u.mutation
@@ -2579,6 +2653,12 @@ func (_u *UserUpdateOne) RemovePlatformQuotas(v ...*UserPlatformQuota) *UserUpda
 		ids[i] = v[i].ID
 	}
 	return _u.RemovePlatformQuotaIDs(ids...)
+}
+
+// ClearActivationJourney clears the "activation_journey" edge to the UserActivationJourney entity.
+func (_u *UserUpdateOne) ClearActivationJourney() *UserUpdateOne {
+	_u.mutation.ClearActivationJourney()
+	return _u
 }
 
 // Where appends a list predicates to the UserUpdate builder.
@@ -3395,6 +3475,35 @@ func (_u *UserUpdateOne) sqlSave(ctx context.Context) (_node *User, err error) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userplatformquota.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges.Add = append(_spec.Edges.Add, edge)
+	}
+	if _u.mutation.ActivationJourneyCleared() {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.ActivationJourneyTable,
+			Columns: []string{user.ActivationJourneyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useractivationjourney.FieldID, field.TypeInt64),
+			},
+		}
+		_spec.Edges.Clear = append(_spec.Edges.Clear, edge)
+	}
+	if nodes := _u.mutation.ActivationJourneyIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.ActivationJourneyTable,
+			Columns: []string{user.ActivationJourneyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useractivationjourney.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

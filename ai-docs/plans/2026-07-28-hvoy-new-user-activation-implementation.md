@@ -1,6 +1,6 @@
 <!--
-[INPUT]: 已确认的 HVOY 新用户激活方案、Sub2API 现有邮箱验证/订阅/计费/邮件/幂等能力，以及 43 V2 的 Omni 运行约束。
-[OUTPUT]: 可按 TDD 执行的 HVOY 信任承接、新人体验、分层召回、邮件回访、指标验证与灰度发布计划。
+[INPUT]: 已确认的 Omni 全站新用户激活方案、页面内三步首次调用引导、Sub2API 现有邮箱验证/订阅/计费/邮件/幂等能力，以及 43 V2 的 Omni 运行约束。
+[OUTPUT]: 可按 TDD 执行的公开首页、新人体验、三步首次调用、分层召回、邮件回访、合同验证与灰度发布计划。
 [POS]: 位于 Omni 实施准备层，作为后续编码、测试、配置、发布和回滚的唯一执行清单。
 
 [PROTOCOL]:
@@ -8,11 +8,11 @@
 2. 更新后必须检查 `ai-docs/plans/.folder.md` 的描述是否仍然准确。
 -->
 
-# HVOY 新用户激活实施计划
+# Omni 新用户激活实施计划
 
 > **For Codex:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task.
 
-**Goal:** 在 `dev/omni` 上实现 HVOY 信任承接、验证后 `$1/24h` 新手订阅、零成功用户分层、一次性 `$2/24h` 主动召回、人工支持和可复盘漏斗。
+**Goal:** 在 `dev/omni` 上实现全站公开首页、验证后 `$1/24h` 新手订阅、零成功用户分层、一次性 `$2/24h` 主动召回、人工支持和可复盘漏斗。
 
 **Architecture:** 使用独立的 `user_activation_journeys` 记录激活状态，不把内部流程塞进用户属性。两个试用阶段分别使用独立订阅分组，额度上限由分组 `daily_limit_usd` 控制，时效由一天订阅控制；用户状态由使用记录、Key 和真实支付订单证据实时推导。注册同步尝试发放新手订阅，后台单实例扫描负责失败修复、状态收敛和邮件触达。
 
@@ -57,9 +57,9 @@ SUCCESS
 - 新手和召回使用两个不同分组，均复用 Pro 账号池和 `0.2x` 计费。
 - 发放调用 `SubscriptionService.AssignSubscription`，禁止调用会累加天数的 `AssignOrExtendSubscription`。
 - 已充值但零成功的用户永远不进入 `$2` 领取分支。
-- `USER_ACTIVATION_ENABLED` 默认关闭；迁移、代码、分组和邮件全部就绪后才能开启。
+- `USER_ACTIVATION_ENABLED` 仅在预发布准备阶段关闭；迁移、代码、分组和邮件全部就绪后开启，上线后长期保持开启，只用于紧急止损。
 - 第一版只覆盖邮箱验证码注册；OAuth 注册不自动领取试用。
-- `eligible_after` 之后所有完成验证码的邮箱注册都适用，新手资格不依赖 HVOY 来源；`campaign_source` 只用于归因，不能成为可伪造的授权条件。
+- `eligible_after` 之后所有完成验证码的邮箱注册都适用；本迭代不做渠道归因，`campaign_source` 保持兼容字段并默认 `direct`，且永远不能影响领取资格。
 - 不对启用时间之前的历史账号补发，资格下界由 `eligible_after` 控制。
 - 不在本计划中同步、rebase 或部署其他分支。
 
@@ -252,8 +252,9 @@ type UserActivationJourneyRepository interface {
     GetByUserID(ctx context.Context, userID int64) (*UserActivationJourney, error)
     GetByUserIDForUpdate(ctx context.Context, userID int64) (*UserActivationJourney, error)
     Update(ctx context.Context, journey *UserActivationJourney) error
-    ListDue(ctx context.Context, now time.Time, limit int) ([]UserActivationJourney, error)
-    ListEligibleUsersWithoutJourney(ctx context.Context, eligibleAfter time.Time, limit int) ([]User, error)
+    MarkEmailSent(ctx context.Context, journeyID int64, stage UserActivationEmailStage, sentAt time.Time) error
+    ListDue(ctx context.Context, now time.Time, afterID int64, limit int) ([]UserActivationJourney, error)
+    ListEligibleUsersWithoutJourney(ctx context.Context, eligibleAfter time.Time, afterID int64, limit int) ([]User, error)
 }
 
 type UserActivationEvidenceRepository interface {
@@ -264,6 +265,7 @@ type UserActivationEvidence struct {
     FirstSuccessfulUsageAt *time.Time
     FirstCompletedPaymentAt *time.Time
     LastAttemptAt          *time.Time
+    FirstAPIKeyAt          *time.Time
     UsageCount             int64
     APIKeyCount            int64
 }
@@ -276,6 +278,9 @@ type UserActivationEvidence struct {
 - 失败/零费用记录计入尝试，但不计入成功；
 - 支付证据使用余额订单的 `completed_at` 和正 `pay_amount`，不使用 `users.total_recharged`；
 - Key 数使用现有未删除 Key 口径；
+- Key 首次出现时间使用未删除 Key 的 `MIN(created_at)`，用于证明 30 分钟等待窗口；
+- 两个扫描列表都使用 `afterID` 稳定 keyset 游标，单用户失败不能饿死后续用户；
+- `MarkEmailSent` 只更新对应阶段邮件字段和 `last_email_sent_at`，不能覆盖并发变化的 starter/recall 状态；
 - SQL 参数化，不拼接用户输入。
 
 **Step 2: 验证 RED**
@@ -296,7 +301,7 @@ Expected: FAIL，新接口与实现不存在。
   - `signup_source = 'email'`；
   - 未软删除；
   - 不存在 journey。
-- 修复扫描创建的 journey 使用 `campaign_source='unknown'`；正常注册同步创建时保留 `hvoy_partner` 或 `direct`。
+- 修复扫描创建的 journey 使用 `campaign_source='unknown'`；当前公开注册同步创建时使用默认 `direct`。
 
 **Step 4: 验证 GREEN**
 
@@ -430,7 +435,7 @@ git add backend/internal/service/user_activation_service.go backend/internal/ser
 git commit -m "feat(activation): grant starter and recall subscriptions"
 ```
 
-## Task 5: 接入邮箱验证注册和 HVOY 来源
+## Task 5: 接入邮箱验证注册和自动发放
 
 **Files:**
 - Modify: `backend/internal/handler/auth_handler.go`
@@ -463,7 +468,7 @@ func (s *AuthService) RegisterWithVerificationContext(
 
 测试：
 
-- `hvoy_partner` 被规范化并传给 bootstrapper；
+- 兼容上下文中的已知来源可以被规范化并传给 bootstrapper，但当前公开首页不主动提供渠道来源；
 - 未知来源降级为 `direct`，不能让注册失败；
 - 没有验证码、邮箱后缀不允许、用户创建失败时不调用 bootstrapper；
 - 激活 bootstrap 暂时失败时注册仍成功并显式记录错误，后续 worker 可修复；
@@ -481,9 +486,10 @@ Expected: FAIL，新字段和依赖尚不存在。
 
 **Step 3: 最小后端接入**
 
-- `RegisterRequest` 增加 `campaign_source`。
+- `RegisterRequest` 保留可选 `campaign_source` 兼容字段，缺省按 `direct` 处理。
 - `AuthService` 构造函数注入 `UserActivationBootstrapper`。
 - `UserActivationService` 不依赖 `AuthService`，因此 Wire 不形成依赖环。
+- 激活开关和发放条件不得改变站点原有注册可用性；不符合体验资格时只跳过权益发放。
 - 仅在用户成功创建并通过邮箱验证码后调用 bootstrapper。
 - bootstrap 失败不删除账号、不伪装成功发放；记录 `user_id/source/error`，等待 worker 修复。
 
@@ -491,9 +497,9 @@ Expected: FAIL，新字段和依赖尚不存在。
 
 证明：
 
-- `/register?source=hvoy_partner&redirect=/activation` 只接受允许的来源和站内路径；
-- `campaign_source` 与 redirect 在跳转 `/email-verify` 时写入 `register_data`；
-- EmailVerify 提交时带上 `campaign_source`；
+- `/register?redirect=/activation` 只接受站内路径；
+- redirect 在跳转 `/email-verify` 时写入 `register_data`；
+- 当前公开首页不生成或传递渠道来源；
 - 成功后跳转 `/activation`；
 - 恶意外链 redirect 和未知 source 被丢弃。
 
@@ -636,6 +642,13 @@ git commit -m "feat(api): expose activation status and recall claim"
 - Modify: `backend/internal/service/wire.go`
 - Modify: `backend/cmd/server/wire.go`
 - Generate: `backend/cmd/server/wire_gen.go`
+- Modify: `backend/cmd/server/wire_gen_test.go`
+- Modify: `backend/internal/service/user_activation.go`
+- Modify: `backend/internal/repository/user_activation_evidence_repo.go`
+- Modify: `backend/internal/repository/user_activation_evidence_repo_test.go`
+- Modify: `backend/internal/repository/user_activation_repo.go`
+- Modify: `backend/internal/repository/user_activation_repo_test.go`
+- Modify: `ai-docs/plans/2026-07-28-hvoy-new-user-activation-implementation.md`
 
 **Step 1: 写邮件事件 RED 测试**
 
@@ -671,16 +684,20 @@ paid_zero_success
 时间规则：
 
 - Key/失败请求出现后至少 30 分钟仍零成功：attempted 邮件；
+- Key 年龄由 `FirstAPIKeyAt` 证明；同时存在 Key 和失败请求时，从两者较晚时间开始计算 30 分钟；
 - 注册满 2 小时且没有 Key/调用/支付：no-attempt 邮件；
 - 完成充值后下一轮扫描：paid-support 邮件；
 - 新手订阅到期、零成功、零充值且仍在 7 天窗口：recall-available 邮件；
+- 7 天窗口只限制 recall-available；attempted/no-attempt 超过 7 天仍可发送；
 - `$2` 到期仍零成功：recall-expired 最终支持邮件；
 - 除 paid-support 外，任意两封激活邮件至少间隔 12 小时；
 - paid-support 发现已完成充值时绕过冷却，下一轮立即发送；
 - 一轮最多发送一个阶段；
 - 每次发送前再次读取成功证据；
 - 成功用户不再发送任何激活邮件；
-- paid/no-success 邮件不得包含领取链接。
+- paid/no-success 邮件不得包含领取链接；
+- frontend URL 未配置时，依赖 `activation_url` 的阶段不发送、不写发送时间，留待配置恢复后重试；不依赖该 URL 的 paid-support 等阶段不受影响。
+- optional 邮件运行时必须由合法绝对 `http(s)` API/frontend base URL 生成真实退订链接；缺失、相对或危险 scheme 时 fail-closed，不得继承 preview 示例、投递 SMTP或写发送时间。
 
 还要证明：
 
@@ -700,11 +717,16 @@ Expected: FAIL，新事件和 worker 不存在。
 
 **Step 4: 实现 worker**
 
-- 复用 `SubscriptionExpiryService` 的 leader lock/DB advisory lock 模式。
+- activation worker 在配置 PostgreSQL 时始终持有同一个 advisory lock；Redis 仅作为附加锁，Redis 失败时可凭 PG 工作，Redis 恢复的另一实例仍受 PG 互斥。
 - lock key 使用 `user_activation:worker:leader`，TTL 必须大于一轮最大超时。
 - 每轮先分页修复 `eligible_after` 之后无 journey 的邮箱注册用户，再分页评估 due journey。
+- 两类分页均使用 `afterID` 稳定游标；due 列表使用本轮固定 cutoff，避免 `Evaluate` 写入新时间后在同一轮再次入选。
+- 已有 journey 但 `StarterSubscriptionID=nil` 时也调用同一 bootstrap 路径重试 `$1`。
 - 发送成功或被退订/去重后写相应 `*_email_sent_at` 和 `last_email_sent_at`。
-- 失败只记录阶段、journey ID、user ID 和错误，不记录完整邮箱或邮件正文。
+- SMTP 已投递但 delivery-key 落库失败时返回固定 typed outcome，worker 仍写 journey 发送时间，避免下一轮重复投递；不得把底层错误带入 worker 日志。
+- 邮件写回使用仓储窄更新，只修改对应阶段邮件字段和 `last_email_sent_at`。
+- 失败只记录安全的有限类别、阶段、journey ID 和 user ID，不拼接下游错误正文、完整邮箱、邮件正文或凭据。
+- `Start()` 与 `Stop()` 共享同一生命周期 mutex/state，确保 `wg.Add` 不会与 `Wait` 并发。
 
 **Step 5: Wire、cleanup 和 GREEN**
 
@@ -726,7 +748,7 @@ git add backend/internal/service/notification_email_service.go backend/internal/
 git commit -m "feat(activation): send segmented recovery emails"
 ```
 
-## Task 8: 构建 HVOY 信任承接页
+## Task 8: 构建 Omni 公开首页
 
 **Files:**
 - Create: `frontend/src/views/public/HvoyPartnerView.vue`
@@ -738,19 +760,22 @@ git commit -m "feat(activation): send segmented recovery emails"
 
 **Step 1: 写 RED 测试**
 
-页面路由为：
+页面主路由与兼容入口为：
 
 ```text
-/partner/hvoy
+/
+/home            -> /
+/partner/hvoy    -> /
 ```
 
 测试：
 
 - 页面读取公共 Offer，不自行硬编码仍可领取的承诺；
-- `enabled=false` 时隐藏“注册送 `$1`”CTA，改为登录/查看服务；
-- enabled 时主 CTA 为 `/register?source=hvoy_partner&redirect=/activation`；
+- `enabled=false` 时隐藏“注册送免费体验额度”CTA，改为登录/查看服务；
+- enabled 时主 CTA 为 `/register?redirect=/activation`；
 - 次 CTA 为 `/login?redirect=/activation`；
-- 首屏明确显示 `$1/24h`、`¥1=$1`、`0.2x`、付费额度不过期和微信支持；
+- 首屏明确显示“注册送免费体验额度”、多支付渠道、按实际使用比例退款、付费额度不过期和微信支持；
+- 首屏不显示体验额度金额、计价倍率、最低充值金额或“HVOY 合作入口”；
 - 不出现“加微信领钱”；
 - mobile/desktop 文字不溢出，下一段内容在首屏底部可见。
 
@@ -766,9 +791,11 @@ Expected: FAIL，页面和 API 不存在。
 
 - 这是信任承接页，不是第二个营销首页。
 - 使用现有全局 token、按钮、图标和响应式布局。
-- 不创建嵌套卡片；用清晰的全宽信息带表达价格、时效、支持和流程。
+- 不创建嵌套卡片；用清晰的全宽信息带表达支付、退款、时效、支持和流程。
 - 支持链接只复制/展示 `welsir02`，不与额度绑定。
-- HVOY 后台最终只填写这个 URL，不直跳充值或通用 Dashboard。
+- 根地址直接展示本页；旧 `/home` 和 `/partner/hvoy` 只做兼容跳转。
+- 当前迭代不接入 Umami、UTM、注册来源透传或用户级渠道归因。
+- 文件和公共 Offer 接口暂时保留已有 HVOY 内部命名，后续独立重命名，不在首页归位时扩大重构范围。
 
 **Step 4: GREEN**
 
@@ -818,7 +845,15 @@ git commit -m "feat(web): add Hvoy trust handoff page"
 覆盖四个分层和两个订阅阶段：
 
 - 新手 active：显示剩余额度/到期时间和“创建体验 Key”；
-- 已有 Key：允许直接打开现有 `UseKeyModal`；
+- 已有 Key：直接显示页面内三步进度和可复制的真实 `/v1/responses` 请求；
+- 页面正文不重复 AppLayout 已经展示的标题和说明；
+- 到期时间只读取 status 返回的 `active_group.expires_at`，本地预览时间仅是 mock 数据；
+- macOS/Linux 使用 `curl`，Windows 使用 `curl.exe`，两者均包含公共 Base URL、真实 Key、`gpt-5.6` 和最小输入；
+- 每种系统显示三步小白指引：打开 Terminal/PowerShell、复制粘贴并回车、识别成功响应后刷新状态；
+- 页面内请求不依赖 `jq` 或安装脚本，复制后可以直接运行；
+- “配置 Codex”作为次操作打开现有 `UseKeyModal`；
+- 创建 Key 成功后留在页面内展开 `curl`，不自动弹出客户端配置；
+- “刷新调用状态”仍读取服务端状态，不以复制命令或点击按钮冒充成功；
 - attempted/no-success：显示 Base URL、模型、Key、请求格式排查，不再只提示充值；
 - paid/no-success：微信支持是主操作，隐藏 `$2`；
 - recall claimable：主动确认后领取，不自动请求；
@@ -840,8 +875,23 @@ Expected: FAIL，store 和页面不存在。
 
 - 新增鉴权路由 `/activation`。
 - 扩展现有 `keysAPI.create`，允许调用方传 `idempotencyKey` 并设置请求头；不改变 KeysView 的其他参数语义。
-- 创建 Key 时直接调用 `keysAPI.create`，固定名称可为 `HVOY Trial`，group ID 使用 status 返回的 active trial group。
-- 创建成功后立即用真实 Key、公共 Base URL、group platform 打开现有 `UseKeyModal`。
+- 创建 Key 时直接调用 `keysAPI.create`，固定名称可为 `Omni Trial`，group ID 使用 status 返回的 active trial group。
+- 页面显示 `体验额度 -> 创建 Key -> 首次调用` 三步进度；只使用服务端状态和实际 Key 加载结果决定完成态。
+- 创建成功后直接展开页面内快速调用区，不自动打开弹窗。
+- 快速调用区生成以下等价命令，并提供系统 Tab 与复制操作：
+
+```bash
+curl "https://ai.welsir.com/v1/responses" \
+  -H "Authorization: Bearer <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-5.6","input":"Reply exactly: connection successful"}'
+```
+
+```powershell
+curl.exe "https://ai.welsir.com/v1/responses" -H "Authorization: Bearer <API_KEY>" -H "Content-Type: application/json" -d '{"model":"gpt-5.6","input":"Reply exactly: connection successful"}'
+```
+
+- `UseKeyModal` 仅由“配置 Codex”打开，继续承载 Codex、OpenCode 等客户端配置；移动端标签必须完整可见且不能撑宽页面。
 - 不复制 `KeysView` 的完整高级编辑表单。
 - 页面提供“刷新调用状态”，不伪造测试成功。
 - 成功后指向默认就是充值 Tab 的 `/purchase`。
@@ -860,14 +910,11 @@ pnpm --dir frontend run typecheck
 
 Expected: PASS。
 
-**Step 6: Commit**
+**Step 6: Checkpoint**
 
-```bash
-git add frontend/src/views/user/ActivationView.vue frontend/src/views/user/__tests__/ActivationView.spec.ts frontend/src/stores/activation.ts frontend/src/stores/__tests__/activation.spec.ts frontend/src/api/activation.ts frontend/src/api/keys.ts frontend/src/api/__tests__/keysActivation.spec.ts frontend/src/types/index.ts frontend/src/router/index.ts frontend/src/i18n/locales/zh/dashboard.ts frontend/src/i18n/locales/en/dashboard.ts
-git commit -m "feat(web): guide activated users to first success"
-```
+保留隔离 worktree 中的未提交改动，完成页面测试、类型检查、目标 ESLint、生产构建和桌面/移动端浏览器验收后交给用户确认；未经单独指令不提交、不推送。
 
-## Task 10: 完成全链路测试和指标基线
+## Task 10: 完成全链路测试和激活合同验证
 
 **Files:**
 - Create: `backend/internal/integration/user_activation_flow_test.go`
@@ -879,7 +926,7 @@ git commit -m "feat(web): guide activated users to first success"
 用真实 PostgreSQL 测试以下链路：
 
 ```text
-HVOY 来源
+全站邮箱新注册
 -> 邮箱验证码注册
 -> journey + $1 一天订阅
 -> 创建 Key
@@ -971,26 +1018,25 @@ Expected: 全部 PASS。
 
 在桌面 `1440x900` 和移动 `390x844` 验收：
 
-- `/partner/hvoy` 首屏可见真实 Offer 和主操作；
+- `/` 首屏可见真实 Offer 和主操作；
+- `/home` 与 `/partner/hvoy` 均回到 `/`；
 - 注册、验证码页和 `/activation` 无跳转断层；
 - Key 创建后配置 Modal 可用；
 - recall/paid/success 状态不会出现互相冲突的 CTA；
 - 长邮箱、长错误文本、中英文不溢出或遮挡；
 - 网络面板没有重复 claim 或无限轮询。
 
-**Step 5: 建立上线前零样本基线**
+**Step 5: 记录上线前激活事实基线**
 
-代码上线前保存以下 cohort 数据，时间统一使用 UTC：
+代码上线前只保存站内可直接验证的激活事实，时间统一使用 UTC：
 
-- HVOY 后台有效点击；
-- `/partner/hvoy` Nginx 去重访问；
-- `campaign_source=hvoy_partner` 注册数；
 - 邮箱验证完成注册数；
+- Starter 发放成功与失败数；
 - 24 小时内首次成功数；
 - 首次充值数；
 - 已充值但零成功数。
 
-点击数据来自 HVOY，站内漏斗来自 journey/usage/payment；不能把两个不同来源的样本强行当成同一张精确用户表。
+Umami、UTM、来源渠道和用户级归因属于下一迭代；本轮不新增埋点，也不按 `campaign_source` 计算渠道漏斗。
 
 **Step 6: Commit**
 
@@ -1042,7 +1088,7 @@ git commit -m "test(activation): verify Hvoy conversion journey"
 6. 配置两个试用 group ID、`eligible_after`、微信和扫描周期。
 7. 在后台确认强制邮箱验证已开启，邮箱后缀白名单已配置。
 8. 用内部测试邮箱走完整链路。
-9. 将 HVOY 跳转地址改为 `/partner/hvoy`。
+9. 确认根地址展示公开首页，`/home` 与 `/partner/hvoy` 兼容跳转正常。
 10. 开启 feature flag，先观察小样本，再扩大。
 
 ### 12.2 邮箱白名单起始配置
@@ -1064,7 +1110,7 @@ icloud.com
 
 ### 12.3 每日漏斗
 
-按 `campaign_source` 和注册日期 cohort 计算：
+按注册日期 cohort 计算，不做渠道归因：
 
 ```text
 landing visit
@@ -1125,7 +1171,7 @@ starter expired with zero success
 ### 12.6 回滚
 
 1. 关闭 feature flag，停止新 journey、新发放和激活邮件。
-2. HVOY 跳转回稳定页面或保留 trust page 但隐藏赠送 CTA。
+2. 根首页隐藏赠送 CTA 或回退到稳定公开页面。
 3. 已发的一天订阅不删除，让其自然到期。
 4. 不删除 journey 和邮件记录，保留审计与复盘数据。
 5. 代码回滚到旧镜像；数据库迁移保留，因为是新增表且旧代码不会读取。
@@ -1141,6 +1187,6 @@ starter expired with zero success
 - 成功使用后停止所有激活邮件；
 - 两个试用分组不改变付费 Pro 行为；
 - 注册、发放、claim、邮件均可重试且不重复产生价值；
-- HVOY 点击后的页面、注册、验证和首次调用没有跳转断层；
+- 公开首页、注册、验证和首次调用没有跳转断层；
 - 能按 cohort 回答“卡在哪一步”，而不是只看注册数；
 - `dev/omni` 以外的任何分支、V1 和其他服务器均未被修改。

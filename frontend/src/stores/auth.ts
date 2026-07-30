@@ -1,11 +1,17 @@
 /**
- * Authentication Store
- * Manages user authentication state, login/logout, token refresh, and token persistence
+ * [INPUT]: Authentication APIs, persisted browser tokens, and account-scoped store reset hooks.
+ * [OUTPUT]: Authenticated user/session state with login, logout, refresh, and token lifecycle actions.
+ * [POS]: Browser authentication boundary and owner of account identity transitions.
+ *
+ * [PROTOCOL]:
+ * 1. Reset account-scoped stores before a new identity starts and whenever auth state clears.
+ * 2. Update this header and the containing folder documentation when auth lifecycle changes.
  */
 
 import { defineStore } from 'pinia'
 import { ref, computed, readonly } from 'vue'
 import { authAPI, isTotp2FARequired, type LoginResponse } from '@/api'
+import { useActivationStore } from '@/stores/activation'
 import type { User, LoginRequest, RegisterRequest, AuthResponse } from '@/types'
 
 const AUTH_TOKEN_KEY = 'auth_token'
@@ -280,6 +286,8 @@ export const useAuthStore = defineStore('auth', () => {
    * Internal helper function
    */
   function setAuthFromResponse(response: AuthResponse): void {
+    useActivationStore().reset()
+
     // Store token and user
     token.value = response.access_token
 
@@ -338,6 +346,8 @@ export const useAuthStore = defineStore('auth', () => {
    * @param newToken - 后端签发的 JWT access token
    */
   async function setToken(newToken: string): Promise<User> {
+    useActivationStore().reset()
+
     // Clear any previous state first (avoid mixing sessions)
     // Note: Don't clear localStorage here as OAuth callback may have set refresh_token
     stopAutoRefresh()
@@ -446,6 +456,8 @@ export const useAuthStore = defineStore('auth', () => {
    * Internal helper function
    */
   function clearAuth(options?: { preservePendingAuthSession?: boolean }): void {
+    useActivationStore().reset()
+
     // Stop auto-refresh
     stopAutoRefresh()
     // Stop token refresh

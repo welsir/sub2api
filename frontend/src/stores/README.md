@@ -25,7 +25,34 @@ Manages user authentication state, login/logout, and token persistence.
 - `checkAuth()` - Restore session from localStorage
 - `refreshUser()` - Fetch latest user data from server
 
-### 2. App Store (`app.ts`)
+Authentication boundaries reset the activation store before installing a new account response or
+token and whenever authentication is cleared. Existing activation requests therefore cannot publish
+status, errors, or loading state into the next account session.
+
+### 2. Activation Store (`activation.ts`)
+
+Owns the authenticated account's verified-user activation state and recall claim lifecycle.
+
+**State:**
+
+- `status: UserActivationStatus | null` - Explicit activation status returned by the backend
+- `loading: boolean` - Status request state
+- `claiming: boolean` - Recall claim request state
+- `statusError: string | null` - Initial-load or refresh failure
+- `claimError: string | null` - Recall mutation failure
+
+**Actions:**
+
+- `loadStatus()` - Load activation status for the current account
+- `refreshStatus()` - Force-refresh the current account's status
+- `claimRecall()` - Claim an explicitly eligible recall trial with stable retry identity
+- `reset()` - Supersede in-flight work and clear all account-scoped activation state
+
+Status-refresh failures and recall-claim failures have separate ownership. A successful claim remains
+available when its follow-up refresh fails, while the status error exposes the non-blocking refresh
+warning.
+
+### 3. App Store (`app.ts`)
 
 Manages global UI state including sidebar, loading indicators, and toast notifications.
 

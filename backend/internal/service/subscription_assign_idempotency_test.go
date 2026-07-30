@@ -1,3 +1,10 @@
+// [INPUT]: Subscription assignment requests, repository stubs, and L1 cache fixtures.
+// [OUTPUT]: Unit proof for idempotent assignment and transaction-aware cache invalidation.
+// [POS]: Regression contract for non-extending subscription assignment semantics.
+//
+// [PROTOCOL]:
+// 1. Update this header when assignment idempotency or cache ownership behavior changes.
+// 2. Keep activation lifecycle policy in user_activation_service_test.go.
 package service
 
 import (
@@ -47,6 +54,45 @@ func TestMaybeInvalidateAssignmentCaches_DefersForOuterTransactionOwner(t *testi
 	cache.Wait()
 	_, cachedAfterCommit := cache.Get(key)
 	require.False(t, cachedAfterCommit, "post-commit invalidation must remove the cached subscription")
+}
+
+func TestAssignSubscriptionWithReuseDefersCacheInvalidationForOuterTransaction(t *testing.T) {
+	cache, err := ristretto.NewCache(&ristretto.Config{NumCounters: 1_000, MaxCost: 100, BufferItems: 64})
+	require.NoError(t, err)
+	t.Cleanup(cache.Close)
+
+	groupRepo := &subscriptionGroupRepoStub{
+		group: &Group{ID: 9, SubscriptionType: SubscriptionTypeSubscription},
+	}
+	subRepo := newSubscriptionUserSubRepoStub()
+	svc := &SubscriptionService{
+		groupRepo:   groupRepo,
+		userSubRepo: subRepo,
+		subCacheL1:  cache,
+	}
+	key := subCacheKey(7, 9)
+	require.True(t, cache.Set(key, &UserSubscription{ID: 42}, 1))
+	cache.Wait()
+
+	subscription, reused, err := svc.assignSubscriptionWithReuse(
+		context.Background(),
+		&AssignSubscriptionInput{
+			UserID:       7,
+			GroupID:      9,
+			ValidityDays: 1,
+			Notes:        "user_activation:starter",
+		},
+		true,
+	)
+	require.NoError(t, err)
+	require.False(t, reused)
+	require.NotNil(t, subscription)
+	_, cachedBeforeCommit := cache.Get(key)
+	require.True(t, cachedBeforeCommit, "outer transaction must retain L1 until commit")
+
+	require.NoError(t, svc.invalidateSubscriptionCaches(7, 9))
+	_, cachedAfterCommit := cache.Get(key)
+	require.False(t, cachedAfterCommit, "transaction owner must synchronously invalidate after commit")
 }
 
 type groupRepoNoop struct{}

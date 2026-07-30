@@ -1,3 +1,6 @@
+// [INPUT]: Viper environment configuration and the config package loader.
+// [OUTPUT]: Regression coverage for configuration defaults, parsing, and validation.
+// [POS]: Verifies the config package contracts before application bootstrap.
 package config
 
 import (
@@ -15,6 +18,118 @@ func resetViperWithJWTSecret(t *testing.T) {
 	t.Helper()
 	viper.Reset()
 	t.Setenv("JWT_SECRET", strings.Repeat("x", 32))
+}
+
+func setValidUserActivationEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("USER_ACTIVATION_ENABLED", "true")
+	t.Setenv("USER_ACTIVATION_ELIGIBLE_AFTER", "2026-08-01T00:00:00Z")
+	t.Setenv("USER_ACTIVATION_STARTER_GROUP_ID", "101")
+	t.Setenv("USER_ACTIVATION_RECALL_GROUP_ID", "202")
+	t.Setenv("USER_ACTIVATION_RECALL_WINDOW_DAYS", "7")
+	t.Setenv("USER_ACTIVATION_WORKER_INTERVAL_SECONDS", "60")
+	t.Setenv("USER_ACTIVATION_SUPPORT_WECHAT", " welsir02 ")
+}
+
+func TestLoadUserActivationDefaultsDisabled(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.False(t, cfg.UserActivation.Enabled)
+	require.True(t, cfg.UserActivation.EligibleAfter.IsZero())
+	require.Zero(t, cfg.UserActivation.StarterGroupID)
+	require.Zero(t, cfg.UserActivation.RecallGroupID)
+	require.Equal(t, 7, cfg.UserActivation.RecallWindowDays)
+	require.Equal(t, 10*time.Minute, cfg.UserActivation.WorkerInterval)
+	require.Empty(t, cfg.UserActivation.SupportWeChat)
+}
+
+func TestLoadUserActivationRejectsInvalidEnabledConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		envKey     string
+		envValue   string
+		errMessage string
+	}{
+		{
+			name:       "missing starter group",
+			envKey:     "USER_ACTIVATION_STARTER_GROUP_ID",
+			envValue:   "0",
+			errMessage: "user_activation.starter_group_id must be positive when enabled",
+		},
+		{
+			name:       "missing recall group",
+			envKey:     "USER_ACTIVATION_RECALL_GROUP_ID",
+			envValue:   "0",
+			errMessage: "user_activation.recall_group_id must be positive when enabled",
+		},
+		{
+			name:       "same groups",
+			envKey:     "USER_ACTIVATION_RECALL_GROUP_ID",
+			envValue:   "101",
+			errMessage: "user_activation starter and recall group ids must be different",
+		},
+		{
+			name:       "missing eligibility time",
+			envKey:     "USER_ACTIVATION_ELIGIBLE_AFTER",
+			envValue:   "",
+			errMessage: "user_activation.eligible_after is required when enabled",
+		},
+		{
+			name:       "missing support wechat",
+			envKey:     "USER_ACTIVATION_SUPPORT_WECHAT",
+			envValue:   " ",
+			errMessage: "user_activation.support_wechat is required when enabled",
+		},
+		{
+			name:       "unsafe worker interval",
+			envKey:     "USER_ACTIVATION_WORKER_INTERVAL_SECONDS",
+			envValue:   "59",
+			errMessage: "user_activation.worker_interval_seconds must be at least 60 when enabled",
+		},
+		{
+			name:       "mutable recall window",
+			envKey:     "USER_ACTIVATION_RECALL_WINDOW_DAYS",
+			envValue:   "99",
+			errMessage: "user_activation.recall_window_days must be 7 when enabled",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resetViperWithJWTSecret(t)
+			setValidUserActivationEnv(t)
+			t.Setenv(tt.envKey, tt.envValue)
+
+			_, err := Load()
+			require.ErrorContains(t, err, tt.errMessage)
+		})
+	}
+}
+
+func TestLoadUserActivationRejectsInvalidEligibleAfter(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	setValidUserActivationEnv(t)
+	t.Setenv("USER_ACTIVATION_ELIGIBLE_AFTER", "not-rfc3339")
+
+	_, err := Load()
+	require.ErrorContains(t, err, "parse user_activation.eligible_after as RFC3339")
+}
+
+func TestLoadUserActivationEnabledConfig(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	setValidUserActivationEnv(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.UserActivation.Enabled)
+	require.Equal(t, time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC), cfg.UserActivation.EligibleAfter)
+	require.EqualValues(t, 101, cfg.UserActivation.StarterGroupID)
+	require.EqualValues(t, 202, cfg.UserActivation.RecallGroupID)
+	require.Equal(t, 7, cfg.UserActivation.RecallWindowDays)
+	require.Equal(t, time.Minute, cfg.UserActivation.WorkerInterval)
+	require.Equal(t, "welsir02", cfg.UserActivation.SupportWeChat)
 }
 
 func TestLoadProviderPricingDefaultsDisabled(t *testing.T) {

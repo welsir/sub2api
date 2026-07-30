@@ -17,6 +17,40 @@ vi.mock('@/composables/useClipboard', () => ({
 import UseKeyModal from '../UseKeyModal.vue'
 
 describe('UseKeyModal', () => {
+  it('contains wide client tabs inside their own horizontal scroller', () => {
+    const wrapper = mount(UseKeyModal, {
+      props: {
+        show: true,
+        apiKey: 'sk-test',
+        baseUrl: 'https://example.com/v1',
+        platform: 'openai'
+      },
+      global: {
+        stubs: {
+          BaseDialog: {
+            template: '<div><slot /><slot name="footer" /></div>'
+          },
+          Icon: {
+            template: '<span />'
+          }
+        }
+      }
+    })
+
+    const clientTabs = wrapper.get('nav[aria-label="Client"]')
+    const clientIcons = clientTabs.findAll('svg')
+
+    expect(clientTabs.element.parentElement?.classList.contains('overflow-x-auto')).toBe(true)
+    expect(clientTabs.classes()).toContain('min-w-max')
+    expect(clientTabs.classes()).toContain('gap-2')
+    expect(clientTabs.classes()).toContain('sm:gap-6')
+    expect(clientIcons).not.toHaveLength(0)
+    for (const icon of clientIcons) {
+      expect(icon.classes()).toContain('hidden')
+      expect(icon.classes()).toContain('sm:block')
+    }
+  })
+
   it('renders GPT-5.5 and goals feature in OpenAI Codex config', () => {
     const wrapper = mount(UseKeyModal, {
       props: {

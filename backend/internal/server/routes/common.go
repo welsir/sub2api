@@ -8,7 +8,7 @@ import (
 )
 
 // RegisterCommonRoutes 注册通用路由（健康检查、状态等）
-func RegisterCommonRoutes(r *gin.Engine) {
+func RegisterCommonRoutes(r *gin.Engine, activation *handler.ActivationHandler) {
 	// 健康检查
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -30,6 +30,10 @@ func RegisterCommonRoutes(r *gin.Engine) {
 			},
 		})
 	})
+
+	if activation != nil {
+		r.GET("/api/v1/public/activation/hvoy", activation.GetPublicOffer)
+	}
 }
 
 func RegisterProviderPricingRoutes(r *gin.Engine, h *handler.ProviderPricingHandler) {

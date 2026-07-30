@@ -1,3 +1,10 @@
+// [INPUT]: Notification template registry, settings fixtures, and local SMTP test delivery.
+// [OUTPUT]: Proof of URL fail-closed behavior, localization, opt-out, SMTP, and delivery deduplication.
+// [POS]: Service contract suite for the notification email coordinator.
+//
+// [PROTOCOL]:
+// 1. Update this header when notification email test coverage changes.
+// 2. Keep event-specific policy assertions close to their official templates.
 package service
 
 import (
@@ -5,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -156,6 +164,159 @@ func TestNotificationEmailAdditionalEventsAreListedAndPreviewable(t *testing.T) 
 		require.NotEmpty(t, preview.Subject)
 		require.NotEmpty(t, preview.HTML)
 	}
+}
+
+func TestNotificationEmailActivationEventsAreOptionalAndPreviewable(t *testing.T) {
+	ctx := context.Background()
+	svc := NewNotificationEmailService(newNotificationEmailMemorySettingRepo(), nil)
+
+	infos := make(map[string]NotificationEmailEventInfo)
+	for _, info := range svc.ListEventInfos() {
+		infos[info.Event] = info
+	}
+
+	checks := []struct {
+		event        string
+		placeholders []string
+	}{
+		{
+			event: NotificationEmailEventActivationNoAttempt,
+			placeholders: []string{
+				"site_name", "recipient_name", "recipient_email",
+				"activation_url", "support_wechat", "unsubscribe_url",
+			},
+		},
+		{
+			event: NotificationEmailEventActivationAttemptedZeroSuccess,
+			placeholders: []string{
+				"site_name", "recipient_name", "recipient_email",
+				"activation_url", "support_wechat", "unsubscribe_url",
+			},
+		},
+		{
+			event: NotificationEmailEventActivationPaidZeroSuccess,
+			placeholders: []string{
+				"site_name", "recipient_name", "recipient_email",
+				"support_wechat", "unsubscribe_url",
+			},
+		},
+		{
+			event: NotificationEmailEventActivationRecallAvailable,
+			placeholders: []string{
+				"site_name", "recipient_name", "recipient_email",
+				"activation_url", "support_wechat", "unsubscribe_url",
+			},
+		},
+		{
+			event: NotificationEmailEventActivationRecallExpired,
+			placeholders: []string{
+				"site_name", "recipient_name", "recipient_email",
+				"support_wechat", "unsubscribe_url",
+			},
+		},
+	}
+
+	for _, check := range checks {
+		info, ok := infos[check.event]
+		require.Truef(t, ok, "expected %s to be listed", check.event)
+		require.True(t, info.Optional)
+		require.ElementsMatch(t, check.placeholders, info.Placeholders)
+
+		for _, locale := range []string{"zh", "en"} {
+			tmpl, err := svc.GetTemplate(ctx, check.event, locale)
+			require.NoError(t, err)
+			require.Contains(t, tmpl.HTML, "{{unsubscribe_url}}")
+			require.NoError(t, validateNotificationEmailTemplate(check.event, tmpl.Subject, tmpl.HTML))
+
+			preview, err := svc.PreviewTemplate(ctx, NotificationEmailPreviewInput{
+				Event:  check.event,
+				Locale: locale,
+				Variables: map[string]string{
+					"activation_url": "https://example.com/activation",
+					"support_wechat": "welsir02",
+				},
+			})
+			require.NoError(t, err)
+			require.NotEmpty(t, preview.Subject)
+			require.NotEmpty(t, preview.HTML)
+			require.NotContains(t, preview.HTML, "{{")
+		}
+	}
+}
+
+func TestNotificationEmailActivationPaidZeroSuccessHasNoRecallOffer(t *testing.T) {
+	svc := NewNotificationEmailService(newNotificationEmailMemorySettingRepo(), nil)
+
+	for _, locale := range []string{"zh", "en"} {
+		tmpl, err := svc.GetTemplate(
+			context.Background(),
+			NotificationEmailEventActivationPaidZeroSuccess,
+			locale,
+		)
+		require.NoError(t, err)
+
+		content := strings.ToLower(tmpl.Subject + "\n" + tmpl.HTML)
+		require.NotContains(t, content, "{{activation_url}}")
+		require.NotContains(t, content, "/activation")
+		require.NotContains(t, content, "$2")
+		require.NotContains(t, content, "2 usd")
+		require.NotContains(t, content, "2 美元")
+		require.NotContains(t, content, "领取")
+		require.Contains(t, content, "{{support_wechat}}")
+	}
+}
+
+func TestNotificationEmailActivationURLCTARejectsEmptyRuntimeURL(t *testing.T) {
+	svc := NewNotificationEmailService(newNotificationEmailMemorySettingRepo(), nil)
+
+	for _, event := range []string{
+		NotificationEmailEventActivationNoAttempt,
+		NotificationEmailEventActivationAttemptedZeroSuccess,
+		NotificationEmailEventActivationRecallAvailable,
+	} {
+		t.Run(event, func(t *testing.T) {
+			preview, err := svc.PreviewTemplate(context.Background(), NotificationEmailPreviewInput{
+				Event:  event,
+				Locale: "zh",
+				Variables: map[string]string{
+					"activation_url": "",
+					"support_wechat": "welsir02",
+				},
+			})
+
+			require.Error(t, err)
+			require.NotContains(t, preview.HTML, "example.com")
+			require.NotContains(t, preview.HTML, `href=""`)
+		})
+	}
+}
+
+func TestNotificationEmailActivationDeliveryKeyUsesJourneyAndStage(t *testing.T) {
+	first := notificationEmailDeliveryKey(
+		NotificationEmailEventActivationNoAttempt,
+		"user_activation_journey",
+		"42",
+		"user@example.com",
+		"no_attempt",
+	)
+	replay := notificationEmailDeliveryKey(
+		NotificationEmailEventActivationNoAttempt,
+		"user_activation_journey",
+		"42",
+		"user@example.com",
+		"no_attempt",
+	)
+	otherStage := notificationEmailDeliveryKey(
+		NotificationEmailEventActivationAttemptedZeroSuccess,
+		"user_activation_journey",
+		"42",
+		"user@example.com",
+		"attempted_zero_success",
+	)
+
+	require.NotEmpty(t, first)
+	require.Equal(t, first, replay)
+	require.NotEqual(t, first, otherStage)
 }
 
 func TestNotificationEmailRawHTMLVariablesAreTrustedOnlyForHTMLPlaceholders(t *testing.T) {
@@ -326,7 +487,9 @@ func TestNotificationEmailSendDeduplicatesSubscriptionExpiryReminder(t *testing.
 	ctx := context.Background()
 	repo := newNotificationEmailMemorySettingRepo()
 	smtpServer := startNotificationEmailTestSMTPServer(t)
-	require.NoError(t, repo.SetMultiple(ctx, smtpServer.settings()))
+	settings := smtpServer.settings()
+	settings[SettingKeyAPIBaseURL] = "https://api.example.test"
+	require.NoError(t, repo.SetMultiple(ctx, settings))
 
 	emailSvc := NewEmailService(repo, nil)
 	svc := NewNotificationEmailService(repo, emailSvc)
@@ -357,9 +520,114 @@ func TestNotificationEmailSendDeduplicatesSubscriptionExpiryReminder(t *testing.
 	require.Equal(t, int64(1), smtpServer.messageCount())
 }
 
+func TestNotificationEmailSendFailsClosedWhenUnsubscribeSecretCannotPersist(t *testing.T) {
+	ctx := context.Background()
+	baseRepo := newNotificationEmailMemorySettingRepo()
+	repo := &notificationEmailFailingSetRepo{
+		notificationEmailMemorySettingRepo: baseRepo,
+		failKey:                            notificationEmailUnsubscribeSecretKey,
+	}
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	settings := smtpServer.settings()
+	settings[SettingKeyAPIBaseURL] = "https://api.example.test"
+	require.NoError(t, repo.SetMultiple(ctx, settings))
+	svc := NewNotificationEmailService(repo, NewEmailService(repo, nil))
+
+	err := svc.Send(ctx, NotificationEmailSendInput{
+		Event:          NotificationEmailEventActivationPaidZeroSuccess,
+		RecipientEmail: "user@example.com",
+		UserID:         42,
+		SourceType:     "user_activation_journey",
+		SourceID:       "42",
+		ReminderKey:    string(UserActivationEmailStagePaidSupport),
+	})
+
+	require.Error(t, err)
+	require.Equal(t, int64(0), smtpServer.messageCount())
+	require.NotContains(t, smtpServer.joinedMessages(), "example.com/unsubscribe")
+}
+
+func TestNotificationEmailSendFailsClosedWhenUnsubscribeBaseURLUnavailable(t *testing.T) {
+	ctx := context.Background()
+	repo := newNotificationEmailMemorySettingRepo()
+	smtpServer := startNotificationEmailTestSMTPServer(t)
+	require.NoError(t, repo.SetMultiple(ctx, smtpServer.settings()))
+	require.NoError(t, repo.Set(ctx, notificationEmailUnsubscribeSecretKey, "fixed-test-secret"))
+	svc := NewNotificationEmailService(repo, NewEmailService(repo, nil))
+
+	err := svc.Send(ctx, NotificationEmailSendInput{
+		Event:          NotificationEmailEventActivationPaidZeroSuccess,
+		RecipientEmail: "user@example.com",
+		UserID:         42,
+		SourceType:     "user_activation_journey",
+		SourceID:       "42",
+		ReminderKey:    string(UserActivationEmailStagePaidSupport),
+	})
+
+	require.EqualError(t, err, "optional email unsubscribe URL is unavailable")
+	require.Equal(t, int64(0), smtpServer.messageCount())
+	require.NotContains(t, smtpServer.joinedMessages(), "example.com/unsubscribe")
+	require.NotContains(t, smtpServer.joinedMessages(), "/api/v1/settings/email-unsubscribe")
+}
+
+func TestNotificationEmailBuildUnsubscribeURLRejectsNonAbsoluteHTTPBase(t *testing.T) {
+	for name, baseURL := range map[string]string{
+		"empty":            "",
+		"relative":         "/console",
+		"dangerous_scheme": "javascript://evil.example",
+	} {
+		t.Run(name, func(t *testing.T) {
+			repo := newNotificationEmailMemorySettingRepo()
+			require.NoError(t, repo.Set(context.Background(), notificationEmailUnsubscribeSecretKey, "fixed-test-secret"))
+			if baseURL != "" {
+				require.NoError(t, repo.Set(context.Background(), SettingKeyAPIBaseURL, baseURL))
+			}
+			svc := NewNotificationEmailService(repo, nil)
+
+			unsubscribeURL, err := svc.buildUnsubscribeURL(
+				context.Background(),
+				"user@example.com",
+				NotificationEmailEventActivationPaidZeroSuccess,
+			)
+
+			require.Error(t, err)
+			require.Empty(t, unsubscribeURL)
+		})
+	}
+}
+
+func TestNotificationEmailBuildUnsubscribeURLUsesAbsoluteHTTPBaseAndValidToken(t *testing.T) {
+	ctx := context.Background()
+	repo := newNotificationEmailMemorySettingRepo()
+	require.NoError(t, repo.Set(ctx, SettingKeyAPIBaseURL, "https://api.example.test/console"))
+	require.NoError(t, repo.Set(ctx, notificationEmailUnsubscribeSecretKey, "fixed-test-secret"))
+	svc := NewNotificationEmailService(repo, nil)
+
+	unsubscribeURL, err := svc.buildUnsubscribeURL(
+		ctx,
+		"user@example.com",
+		NotificationEmailEventActivationPaidZeroSuccess,
+	)
+	require.NoError(t, err)
+
+	parsed, err := url.Parse(unsubscribeURL)
+	require.NoError(t, err)
+	require.Equal(t, "https", parsed.Scheme)
+	require.Equal(t, "api.example.test", parsed.Host)
+	require.Equal(t, "/api/v1/settings/email-unsubscribe", parsed.Path)
+	token := parsed.Query().Get("token")
+	require.NotEmpty(t, token)
+
+	claims, err := svc.parseUnsubscribeToken(ctx, token)
+	require.NoError(t, err)
+	require.Equal(t, "user@example.com", claims.Email)
+	require.Equal(t, NotificationEmailEventActivationPaidZeroSuccess, claims.Event)
+}
+
 func TestNotificationEmailSendRespectsLegacyDeliveryKey(t *testing.T) {
 	ctx := context.Background()
 	repo := newNotificationEmailMemorySettingRepo()
+	require.NoError(t, repo.Set(ctx, SettingKeyAPIBaseURL, "https://api.example.test"))
 	svc := NewNotificationEmailService(repo, nil)
 	input := NotificationEmailSendInput{
 		Event:          NotificationEmailEventSubscriptionExpiryReminder,
@@ -377,6 +645,19 @@ func TestNotificationEmailSendRespectsLegacyDeliveryKey(t *testing.T) {
 type notificationEmailMemorySettingRepo struct {
 	mu     sync.RWMutex
 	values map[string]string
+}
+
+type notificationEmailFailingSetRepo struct {
+	*notificationEmailMemorySettingRepo
+	failKey    string
+	failPrefix string
+}
+
+func (r *notificationEmailFailingSetRepo) Set(ctx context.Context, key, value string) error {
+	if key == r.failKey || (r.failPrefix != "" && strings.HasPrefix(key, r.failPrefix)) {
+		return errors.New("setting write failed")
+	}
+	return r.notificationEmailMemorySettingRepo.Set(ctx, key, value)
 }
 
 func newNotificationEmailMemorySettingRepo() *notificationEmailMemorySettingRepo {
@@ -458,6 +739,8 @@ type notificationEmailTestSMTPServer struct {
 	listener net.Listener
 	wg       sync.WaitGroup
 	messages atomic.Int64
+	mu       sync.Mutex
+	bodies   []string
 }
 
 func startNotificationEmailTestSMTPServer(t *testing.T) *notificationEmailTestSMTPServer {
@@ -487,6 +770,12 @@ func (s *notificationEmailTestSMTPServer) settings() map[string]string {
 
 func (s *notificationEmailTestSMTPServer) messageCount() int64 {
 	return s.messages.Load()
+}
+
+func (s *notificationEmailTestSMTPServer) joinedMessages() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return strings.Join(s.bodies, "\n")
 }
 
 func (s *notificationEmailTestSMTPServer) close() {
@@ -547,6 +836,7 @@ func (s *notificationEmailTestSMTPServer) handleConn(conn net.Conn) {
 			if !writeLine("354 End data with <CR><LF>.<CR><LF>") {
 				return
 			}
+			var data strings.Builder
 			for {
 				dataLine, err := rw.ReadString('\n')
 				if err != nil {
@@ -555,8 +845,12 @@ func (s *notificationEmailTestSMTPServer) handleConn(conn net.Conn) {
 				if strings.TrimRight(dataLine, "\r\n") == "." {
 					break
 				}
+				data.WriteString(dataLine)
 			}
 			s.messages.Add(1)
+			s.mu.Lock()
+			s.bodies = append(s.bodies, data.String())
+			s.mu.Unlock()
 			if !writeLine("250 2.0.0 OK") {
 				return
 			}

@@ -327,6 +327,7 @@ import {
   loadAffiliateReferralCode,
   resolveAffiliateReferralCode
 } from '@/utils/oauthAffiliate'
+import { sanitizeRegistrationContext } from '@/utils/registrationContext'
 import type { LoginAgreementDocument } from '@/types'
 
 const { t, locale } = useI18n()
@@ -857,6 +858,10 @@ async function handleRegister(): Promise<void> {
 
   try {
     const affCode = formData.aff_code.trim() || loadAffiliateReferralCode()
+    const registrationContext = sanitizeRegistrationContext(
+      route.query.source,
+      route.query.redirect
+    )
     if (affCode) {
       formData.aff_code = affCode
     }
@@ -872,7 +877,8 @@ async function handleRegister(): Promise<void> {
           turnstile_token: turnstileToken.value,
           promo_code: formData.promo_code || undefined,
           invitation_code: formData.invitation_code || undefined,
-          ...(affCode ? { aff_code: affCode } : {})
+          ...(affCode ? { aff_code: affCode } : {}),
+          ...registrationContext
         })
       )
 

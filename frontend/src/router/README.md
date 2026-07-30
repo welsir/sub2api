@@ -13,16 +13,18 @@ This directory contains the Vue Router configuration for the Sub2API frontend ap
 
 ### Public Routes (No Authentication Required)
 
-| Path        | Component    | Description            |
-| ----------- | ------------ | ---------------------- |
-| `/login`    | LoginView    | User login page        |
-| `/register` | RegisterView | User registration page |
+| Path            | Component             | Description                            |
+| --------------- | --------------------- | -------------------------------------- |
+| `/`             | HvoyPartnerView       | Omni API public activation homepage    |
+| `/home`         | -                     | Redirects to `/`                       |
+| `/partner/hvoy` | -                     | Legacy partner entry; redirects to `/` |
+| `/login`        | LoginView             | User login page                        |
+| `/register`     | RegisterView          | User registration page                 |
 
 ### User Routes (Authentication Required)
 
 | Path         | Component     | Description                  |
 | ------------ | ------------- | ---------------------------- |
-| `/`          | -             | Redirects to `/dashboard`    |
 | `/dashboard` | DashboardView | User dashboard with stats    |
 | `/keys`      | KeysView      | API key management           |
 | `/usage`     | UsageView     | Usage records and statistics |

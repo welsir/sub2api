@@ -417,6 +417,18 @@ func (f UserFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error)
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserMutation", m)
 }
 
+// The UserActivationJourneyFunc type is an adapter to allow the use of ordinary
+// function as UserActivationJourney mutator.
+type UserActivationJourneyFunc func(context.Context, *ent.UserActivationJourneyMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f UserActivationJourneyFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.UserActivationJourneyMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.UserActivationJourneyMutation", m)
+}
+
 // The UserAllowedGroupFunc type is an adapter to allow the use of ordinary
 // function as UserAllowedGroup mutator.
 type UserAllowedGroupFunc func(context.Context, *ent.UserAllowedGroupMutation) (ent.Value, error)

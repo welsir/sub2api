@@ -71,6 +71,28 @@ type defaultSubscriptionAssignerStub struct {
 	err   error
 }
 
+type activationBootstrapperStub struct {
+	calls []activationBootstrapCall
+	err   error
+}
+
+type activationBootstrapCall struct {
+	userID         int64
+	campaignSource string
+}
+
+func (s *activationBootstrapperStub) BootstrapVerifiedRegistration(
+	_ context.Context,
+	user *User,
+	campaignSource string,
+) error {
+	s.calls = append(s.calls, activationBootstrapCall{
+		userID:         user.ID,
+		campaignSource: campaignSource,
+	})
+	return s.err
+}
+
 type refreshTokenCacheStub struct{}
 
 type userPlatformQuotaRepoStub struct {
@@ -353,6 +375,239 @@ func TestAuthService_Register_EmailVerifyInvalid(t *testing.T) {
 	_, _, err := service.RegisterWithVerification(context.Background(), "user@test.com", "password", "wrong", "", "", "")
 	require.ErrorIs(t, err, ErrInvalidVerifyCode)
 	require.ErrorContains(t, err, "verify code")
+}
+
+func TestAuthService_RegisterWithVerificationContext_ActivationNormalizesCampaignSource(t *testing.T) {
+	tests := []struct {
+		name       string
+		source     string
+		wantSource string
+	}{
+		{name: "hvoy partner", source: "hvoy_partner", wantSource: "hvoy_partner"},
+		{name: "unknown", source: "other_partner", wantSource: "direct"},
+		{name: "blank", source: "", wantSource: "direct"},
+		{name: "case mismatch", source: "HVOY_PARTNER", wantSource: "direct"},
+		{name: "surrounding whitespace", source: " hvoy_partner ", wantSource: "direct"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := &userRepoStub{nextID: 71}
+			cache := &emailCacheStub{data: &VerificationCodeData{Code: "123456"}}
+			bootstrapper := &activationBootstrapperStub{}
+			service := newAuthService(repo, map[string]string{
+				SettingKeyRegistrationEnabled: "true",
+				SettingKeyEmailVerifyEnabled:  "true",
+			}, cache, nil)
+			service.SetUserActivationBootstrapper(bootstrapper)
+
+			token, user, err := service.RegisterWithVerificationContext(
+				context.Background(),
+				"user@test.com",
+				"password",
+				"123456",
+				"",
+				"",
+				"",
+				RegistrationContext{CampaignSource: tt.source},
+			)
+
+			require.NoError(t, err)
+			require.NotEmpty(t, token)
+			require.NotNil(t, user)
+			require.Equal(t, []activationBootstrapCall{{
+				userID:         71,
+				campaignSource: tt.wantSource,
+			}}, bootstrapper.calls)
+		})
+	}
+}
+
+func TestAuthService_RegisterWithVerificationContext_ActivationRequiresVerifiedCreatedUser(t *testing.T) {
+	tests := []struct {
+		name       string
+		email      string
+		verifyCode string
+		settings   map[string]string
+		cache      *emailCacheStub
+		repo       *userRepoStub
+		wantErr    error
+	}{
+		{
+			name:       "missing verification code",
+			email:      "user@test.com",
+			verifyCode: "",
+			settings: map[string]string{
+				SettingKeyRegistrationEnabled: "true",
+				SettingKeyEmailVerifyEnabled:  "true",
+			},
+			cache:   &emailCacheStub{data: &VerificationCodeData{Code: "123456"}},
+			repo:    &userRepoStub{nextID: 72},
+			wantErr: ErrEmailVerifyRequired,
+		},
+		{
+			name:       "email suffix rejected",
+			email:      "user@other.com",
+			verifyCode: "123456",
+			settings: map[string]string{
+				SettingKeyRegistrationEnabled:              "true",
+				SettingKeyEmailVerifyEnabled:               "true",
+				SettingKeyRegistrationEmailSuffixWhitelist: `["example.com"]`,
+			},
+			cache:   &emailCacheStub{data: &VerificationCodeData{Code: "123456"}},
+			repo:    &userRepoStub{nextID: 73},
+			wantErr: ErrEmailSuffixNotAllowed,
+		},
+		{
+			name:       "verification code rejected",
+			email:      "user@test.com",
+			verifyCode: "wrong",
+			settings: map[string]string{
+				SettingKeyRegistrationEnabled: "true",
+				SettingKeyEmailVerifyEnabled:  "true",
+			},
+			cache: &emailCacheStub{data: &VerificationCodeData{
+				Code:      "123456",
+				ExpiresAt: time.Now().Add(time.Minute),
+			}},
+			repo:    &userRepoStub{nextID: 74},
+			wantErr: ErrInvalidVerifyCode,
+		},
+		{
+			name:       "user already exists",
+			email:      "user@test.com",
+			verifyCode: "123456",
+			settings: map[string]string{
+				SettingKeyRegistrationEnabled: "true",
+				SettingKeyEmailVerifyEnabled:  "true",
+			},
+			cache:   &emailCacheStub{data: &VerificationCodeData{Code: "123456"}},
+			repo:    &userRepoStub{exists: true},
+			wantErr: ErrEmailExists,
+		},
+		{
+			name:       "user create failed",
+			email:      "user@test.com",
+			verifyCode: "123456",
+			settings: map[string]string{
+				SettingKeyRegistrationEnabled: "true",
+				SettingKeyEmailVerifyEnabled:  "true",
+			},
+			cache:   &emailCacheStub{data: &VerificationCodeData{Code: "123456"}},
+			repo:    &userRepoStub{createErr: errors.New("create failed")},
+			wantErr: ErrServiceUnavailable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bootstrapper := &activationBootstrapperStub{}
+			service := newAuthService(tt.repo, tt.settings, tt.cache, nil)
+			service.SetUserActivationBootstrapper(bootstrapper)
+
+			_, _, err := service.RegisterWithVerificationContext(
+				context.Background(),
+				tt.email,
+				"password",
+				tt.verifyCode,
+				"",
+				"",
+				"",
+				RegistrationContext{CampaignSource: "hvoy_partner"},
+			)
+
+			require.ErrorIs(t, err, tt.wantErr)
+			require.Empty(t, bootstrapper.calls)
+		})
+	}
+}
+
+func TestAuthService_RegisterWithVerificationContext_ActivationDoesNotControlRegistration(t *testing.T) {
+	repo := &userRepoStub{nextID: 75}
+	bootstrapper := &activationBootstrapperStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+		SettingKeyEmailVerifyEnabled:  "false",
+	}, nil, nil)
+	service.cfg.UserActivation.Enabled = true
+	service.SetUserActivationBootstrapper(bootstrapper)
+
+	token, user, err := service.RegisterWithVerificationContext(
+		context.Background(),
+		"user@test.com",
+		"password",
+		"",
+		"",
+		"",
+		"",
+		RegistrationContext{CampaignSource: "hvoy_partner"},
+	)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+	require.NotNil(t, user)
+	require.Len(t, repo.created, 1)
+	require.Empty(t, bootstrapper.calls)
+}
+
+func TestAuthService_RegisterWithVerification_ActivationLegacyMethodDelegatesDirect(t *testing.T) {
+	repo := &userRepoStub{nextID: 76}
+	cache := &emailCacheStub{data: &VerificationCodeData{Code: "123456"}}
+	bootstrapper := &activationBootstrapperStub{}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+		SettingKeyEmailVerifyEnabled:  "true",
+	}, cache, nil)
+	service.SetUserActivationBootstrapper(bootstrapper)
+
+	token, user, err := service.RegisterWithVerification(
+		context.Background(),
+		"user@test.com",
+		"password",
+		"123456",
+		"",
+		"",
+		"",
+	)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+	require.NotNil(t, user)
+	require.Equal(t, []activationBootstrapCall{{
+		userID:         76,
+		campaignSource: "direct",
+	}}, bootstrapper.calls)
+}
+
+func TestAuthService_RegisterWithVerificationContext_ActivationBootstrapFailureIsObservableAndFailOpen(t *testing.T) {
+	repo := &userRepoStub{nextID: 77}
+	cache := &emailCacheStub{data: &VerificationCodeData{Code: "123456"}}
+	bootstrapper := &activationBootstrapperStub{err: errors.New("starter unavailable")}
+	service := newAuthService(repo, map[string]string{
+		SettingKeyRegistrationEnabled: "true",
+		SettingKeyEmailVerifyEnabled:  "true",
+	}, cache, nil)
+	service.SetUserActivationBootstrapper(bootstrapper)
+	logOutput := captureStdLog(t)
+
+	token, user, err := service.RegisterWithVerificationContext(
+		context.Background(),
+		"user@test.com",
+		"password",
+		"123456",
+		"",
+		"",
+		"",
+		RegistrationContext{CampaignSource: "hvoy_partner"},
+	)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, token)
+	require.NotNil(t, user)
+	require.Len(t, repo.created, 1)
+	require.Contains(t, logOutput.String(), "user_id=77")
+	require.Contains(t, logOutput.String(), "source=hvoy_partner")
+	require.Contains(t, logOutput.String(), "starter unavailable")
 }
 
 func TestAuthService_Register_EmailExists(t *testing.T) {

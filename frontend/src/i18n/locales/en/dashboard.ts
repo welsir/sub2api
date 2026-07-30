@@ -1,3 +1,13 @@
+/**
+ * [INPUT]: User-dashboard product copy and shared interpolation parameters.
+ * [OUTPUT]: English translations for dashboard and authenticated user workflows.
+ * [POS]: English locale module for user-facing dashboard features.
+ *
+ * [PROTOCOL]:
+ * 1. Keep activation copy free of exact promotional or minimum-payment amounts.
+ * 2. Update this header and the containing folder documentation when locale structure changes.
+ */
+
 export default {
   dashboard: {
     title: 'Dashboard',
@@ -57,6 +67,85 @@ export default {
     checkDetailedLogs: 'Check detailed usage logs',
     redeemCode: 'Redeem Code',
     addBalanceWithCode: 'Add balance with a code'
+  },
+
+  activation: {
+    eyebrow: 'Get started',
+    title: 'Complete your first API call',
+    description: 'Configure a trial key, send a real request, and verify the first successful call here.',
+    loading: 'Loading activation status',
+    unavailable: 'Activation status is temporarily unavailable',
+    initialLoadFailed: 'Activation status failed to load',
+    retryLoad: 'Retry status load',
+    starterActive: 'Free trial credit was granted automatically',
+    recallActive: 'Follow-up trial is active',
+    expiresAt: 'Trial access expires {time} and then ends automatically',
+    keySetupDescription: 'The system creates a key for the current trial automatically. No advanced options are required.',
+    useExistingKey: 'View setup',
+    createTrialKey: 'Create trial key',
+    creatingKey: 'Creating key',
+    loadingKeys: 'Loading trial keys',
+    retryKeyLoad: 'Retry key load',
+    steps: {
+      label: 'First-call progress',
+      credit: 'Trial credit ready',
+      key: 'Create trial key',
+      call: 'Complete first call'
+    },
+    quickStart: {
+      title: 'Run your first request',
+      description: 'Choose your computer, then follow these three steps. No extra tools are required.',
+      shellLabel: 'Choose a command environment',
+      macos: 'macOS / Linux',
+      windows: 'Windows',
+      guideLabel: 'Steps for running the test command',
+      guide: {
+        macosOpen: 'Open Terminal: on Mac, press Command + Space and search for Terminal; on Linux, open Terminal from the application menu.',
+        windowsOpen: 'Open PowerShell: press the Windows key, search for PowerShell, and open it.',
+        paste: 'Select Copy command, paste it into the terminal, and press Enter.',
+        success: 'After connection successful appears, select I ran it, refresh status below.'
+      },
+      copy: 'Copy command',
+      copied: 'Copied',
+      configure: 'Configure Codex',
+      refresh: 'I ran it, refresh status'
+    },
+    troubleshooting: {
+      title: 'Troubleshoot the first call',
+      baseUrl: 'Base URL',
+      model: 'Model availability',
+      modelHelp: 'Request /v1/models first and use a model name returned by that endpoint.',
+      key: 'API key',
+      keyHelp: 'Confirm that the request uses the currently active trial key.',
+      request: 'Request format',
+      requestHelp: 'Check the request endpoint, Authorization header, and JSON payload.'
+    },
+    refresh: 'Refresh call status',
+    refreshing: 'Refreshing',
+    paidSupportTitle: 'Manual configuration support',
+    paidSupportDescription: 'Payment succeeded, but the first call still needs setup. Add the operator on WeChat for a configuration review.',
+    supportWechat: 'WeChat: {wechat}',
+    copyWechat: 'Copy WeChat',
+    recallTitle: 'A follow-up trial is available',
+    recallDescription: 'Confirm before claiming this one-time trial access.',
+    claimRecall: 'Claim follow-up trial',
+    claimConfirmTitle: 'Confirm follow-up trial',
+    claimConfirmDescription: 'Use the access period to finish configuration and the first call. Claim it now?',
+    confirmClaim: 'Confirm claim',
+    cancel: 'Cancel',
+    claiming: 'Claiming',
+    successTitle: 'First call verified',
+    successDescription: 'Activation guidance is complete. Continue with a recharge when needed.',
+    purchase: 'Recharge',
+    expiredTitle: 'Trial access has ended',
+    expiredDescription: 'Continue with the checks below, then contact the operator if the call still does not work.',
+    noActiveGroup: 'No active trial access is available',
+    loadFailed: 'Failed to load activation status. Please try again.',
+    keyLoadFailed: 'Failed to load the trial key. Please try again.',
+    keyCreateFailed: 'Failed to create the trial key. Please try again.',
+    claimFailed: 'Failed to claim the follow-up trial. Please try again.',
+    refreshWarning: 'The latest refresh failed. The most recently confirmed status is still shown.',
+    retryRefresh: 'Retry status refresh'
   },
 
   // Groups (shared)

@@ -21,6 +21,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	"github.com/Wei-Shaw/sub2api/ent/usagelog"
 	"github.com/Wei-Shaw/sub2api/ent/user"
+	"github.com/Wei-Shaw/sub2api/ent/useractivationjourney"
 	"github.com/Wei-Shaw/sub2api/ent/userattributevalue"
 	"github.com/Wei-Shaw/sub2api/ent/userplatformquota"
 	"github.com/Wei-Shaw/sub2api/ent/usersubscription"
@@ -549,6 +550,25 @@ func (_c *UserCreate) AddPlatformQuotas(v ...*UserPlatformQuota) *UserCreate {
 	return _c.AddPlatformQuotaIDs(ids...)
 }
 
+// SetActivationJourneyID sets the "activation_journey" edge to the UserActivationJourney entity by ID.
+func (_c *UserCreate) SetActivationJourneyID(id int64) *UserCreate {
+	_c.mutation.SetActivationJourneyID(id)
+	return _c
+}
+
+// SetNillableActivationJourneyID sets the "activation_journey" edge to the UserActivationJourney entity by ID if the given value is not nil.
+func (_c *UserCreate) SetNillableActivationJourneyID(id *int64) *UserCreate {
+	if id != nil {
+		_c = _c.SetActivationJourneyID(*id)
+	}
+	return _c
+}
+
+// SetActivationJourney sets the "activation_journey" edge to the UserActivationJourney entity.
+func (_c *UserCreate) SetActivationJourney(v *UserActivationJourney) *UserCreate {
+	return _c.SetActivationJourneyID(v.ID)
+}
+
 // Mutation returns the UserMutation object of the builder.
 func (_c *UserCreate) Mutation() *UserMutation {
 	return _c.mutation
@@ -1073,6 +1093,22 @@ func (_c *UserCreate) createSpec() (*User, *sqlgraph.CreateSpec) {
 			Bidi:    false,
 			Target: &sqlgraph.EdgeTarget{
 				IDSpec: sqlgraph.NewFieldSpec(userplatformquota.FieldID, field.TypeInt64),
+			},
+		}
+		for _, k := range nodes {
+			edge.Target.Nodes = append(edge.Target.Nodes, k)
+		}
+		_spec.Edges = append(_spec.Edges, edge)
+	}
+	if nodes := _c.mutation.ActivationJourneyIDs(); len(nodes) > 0 {
+		edge := &sqlgraph.EdgeSpec{
+			Rel:     sqlgraph.O2O,
+			Inverse: false,
+			Table:   user.ActivationJourneyTable,
+			Columns: []string{user.ActivationJourneyColumn},
+			Bidi:    false,
+			Target: &sqlgraph.EdgeTarget{
+				IDSpec: sqlgraph.NewFieldSpec(useractivationjourney.FieldID, field.TypeInt64),
 			},
 		}
 		for _, k := range nodes {

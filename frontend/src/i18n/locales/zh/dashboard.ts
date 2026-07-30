@@ -1,3 +1,13 @@
+/**
+ * [INPUT]: User-dashboard product copy and shared interpolation parameters.
+ * [OUTPUT]: Simplified Chinese translations for dashboard and authenticated user workflows.
+ * [POS]: Chinese locale module for user-facing dashboard features.
+ *
+ * [PROTOCOL]:
+ * 1. Keep activation copy free of exact promotional or minimum-payment amounts.
+ * 2. Update this header and the containing folder documentation when locale structure changes.
+ */
+
 export default {
   dashboard: {
     title: '仪表盘',
@@ -57,6 +67,85 @@ export default {
     checkDetailedLogs: '查看详细的使用日志',
     redeemCode: '兑换码',
     addBalanceWithCode: '使用兑换码充值'
+  },
+
+  activation: {
+    eyebrow: '开始使用',
+    title: '完成首次 API 调用',
+    description: '配置体验密钥，发起真实请求，并在这里确认首次调用是否成功。',
+    loading: '正在加载激活状态',
+    unavailable: '暂时无法获取激活状态',
+    initialLoadFailed: '激活状态加载失败',
+    retryLoad: '重新加载',
+    starterActive: '免费体验额度已自动发放',
+    recallActive: '补充体验已开启',
+    expiresAt: '体验有效期至 {time}，到期后自动失效',
+    keySetupDescription: '系统会自动创建当前体验可用的密钥，无需填写高级选项。',
+    useExistingKey: '查看使用配置',
+    createTrialKey: '创建体验密钥',
+    creatingKey: '正在创建',
+    loadingKeys: '正在加载体验密钥',
+    retryKeyLoad: '重新加载密钥',
+    steps: {
+      label: '首次调用进度',
+      credit: '体验额度已到账',
+      key: '创建体验 Key',
+      call: '完成首次调用'
+    },
+    quickStart: {
+      title: '直接运行第一条请求',
+      description: '先选择你的电脑，再按下面 3 步操作，不需要安装额外工具。',
+      shellLabel: '选择命令运行环境',
+      macos: 'macOS / Linux',
+      windows: 'Windows',
+      guideLabel: '运行测试命令的操作步骤',
+      guide: {
+        macosOpen: '打开终端：Mac 按 Command + 空格，搜索“终端”并打开；Linux 从应用菜单打开 Terminal。',
+        windowsOpen: '打开 PowerShell：按 Windows 键，搜索“PowerShell”并打开。',
+        paste: '点击“复制命令”，在终端中粘贴后按回车。',
+        success: '看到 connection successful 后，点击下方“我已运行，刷新状态”。'
+      },
+      copy: '复制命令',
+      copied: '已复制',
+      configure: '配置 Codex',
+      refresh: '我已运行，刷新状态'
+    },
+    troubleshooting: {
+      title: '排查首次调用',
+      baseUrl: 'Base URL',
+      model: '模型可用性',
+      modelHelp: '先请求 /v1/models，并使用返回列表中的模型名称。',
+      key: 'API Key',
+      keyHelp: '确认请求使用的是当前有效的体验密钥。',
+      request: '请求格式',
+      requestHelp: '核对请求端点、Authorization 头和 JSON 参数格式。'
+    },
+    refresh: '刷新调用状态',
+    refreshing: '正在刷新',
+    paidSupportTitle: '专人配置支持',
+    paidSupportDescription: '充值已经完成，但首次调用仍未跑通。添加站主微信，我们帮你核对配置。',
+    supportWechat: '微信：{wechat}',
+    copyWechat: '复制微信',
+    recallTitle: '可领取一次补充体验',
+    recallDescription: '为避免误领，请确认后再领取本次体验资格。',
+    claimRecall: '领取补充体验',
+    claimConfirmTitle: '确认领取补充体验',
+    claimConfirmDescription: '领取后请在有效期内完成配置和首次调用，是否现在领取？',
+    confirmClaim: '确认领取',
+    cancel: '取消',
+    claiming: '正在领取',
+    successTitle: '首次调用已验证',
+    successDescription: '激活引导已经完成，可以继续按实际需要充值使用。',
+    purchase: '前往充值',
+    expiredTitle: '体验资格已结束',
+    expiredDescription: '继续按照下方项目排查，仍未跑通可联系站主进行人工协助。',
+    noActiveGroup: '当前没有可用的体验资格',
+    loadFailed: '加载激活状态失败，请稍后重试',
+    keyLoadFailed: '加载体验密钥失败，请稍后重试',
+    keyCreateFailed: '创建体验密钥失败，请重试',
+    claimFailed: '领取补充体验失败，请重试',
+    refreshWarning: '最新状态刷新失败，当前显示的是最近一次已确认状态。',
+    retryRefresh: '重新刷新状态'
   },
 
   // Groups (shared)

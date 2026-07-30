@@ -1,3 +1,10 @@
+// [INPUT]: Ent schema primitives, shared mixins, domain defaults, and related entities.
+// [OUTPUT]: User persistence model with profile, billing, authentication, and lifecycle edges.
+// [POS]: Root account entity referenced by user-owned records across the application.
+//
+// [PROTOCOL]:
+// 1. Update this header when user fields or relationships change.
+// 2. Keep generated Ent code aligned with this schema.
 package schema
 
 import (
@@ -135,6 +142,9 @@ func (User) Edges() []ent.Edge {
 			Annotations(entsql.OnDelete(entsql.Cascade)),
 		edge.To("pending_auth_sessions", PendingAuthSession.Type),
 		edge.To("platform_quotas", UserPlatformQuota.Type),
+		edge.To("activation_journey", UserActivationJourney.Type).
+			Annotations(entsql.OnDelete(entsql.Cascade)).
+			Unique(),
 	}
 }
 

@@ -1,3 +1,7 @@
+// [INPUT]: YAML files, environment variables, and bootstrap security requirements.
+// [OUTPUT]: Typed application configuration with normalized defaults and validation.
+// [POS]: Central configuration boundary used by all backend runtime components.
+//
 // Package config provides configuration loading, defaults, and validation.
 package config
 
@@ -81,6 +85,7 @@ type Config struct {
 	RateLimit               RateLimitConfig               `mapstructure:"rate_limit"`
 	Pricing                 PricingConfig                 `mapstructure:"pricing"`
 	ProviderPricing         ProviderPricingConfig         `mapstructure:"provider_pricing"`
+	UserActivation          UserActivationConfig          `mapstructure:"user_activation"`
 	Gateway                 GatewayConfig                 `mapstructure:"gateway"`
 	APIKeyAuth              APIKeyAuthCacheConfig         `mapstructure:"api_key_auth_cache"`
 	SubscriptionCache       SubscriptionCacheConfig       `mapstructure:"subscription_cache"`
@@ -607,6 +612,16 @@ type ProviderPricingConfig struct {
 	HMACSecret        string            `mapstructure:"hmac_secret"`
 	MaxSkewSeconds    int               `mapstructure:"max_skew_seconds"`
 	GroupNameMappings map[string]string `mapstructure:"-"`
+}
+
+type UserActivationConfig struct {
+	Enabled          bool          `mapstructure:"enabled"`
+	EligibleAfter    time.Time     `mapstructure:"-"`
+	StarterGroupID   int64         `mapstructure:"starter_group_id"`
+	RecallGroupID    int64         `mapstructure:"recall_group_id"`
+	RecallWindowDays int           `mapstructure:"recall_window_days"`
+	WorkerInterval   time.Duration `mapstructure:"-"`
+	SupportWeChat    string        `mapstructure:"support_wechat"`
 }
 
 func parseProviderPricingGroupNameMappings(raw string) (map[string]string, error) {
@@ -1562,6 +1577,16 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	cfg.ProviderPricing.SiteName = strings.TrimSpace(cfg.ProviderPricing.SiteName)
 	cfg.ProviderPricing.SiteDomain = strings.TrimSpace(cfg.ProviderPricing.SiteDomain)
 	cfg.ProviderPricing.HMACSecret = strings.TrimSpace(cfg.ProviderPricing.HMACSecret)
+	cfg.UserActivation.SupportWeChat = strings.TrimSpace(cfg.UserActivation.SupportWeChat)
+	userActivationEligibleAfter := strings.TrimSpace(viper.GetString("user_activation.eligible_after"))
+	if userActivationEligibleAfter != "" {
+		eligibleAfter, err := time.Parse(time.RFC3339, userActivationEligibleAfter)
+		if err != nil {
+			return nil, fmt.Errorf("parse user_activation.eligible_after as RFC3339: %w", err)
+		}
+		cfg.UserActivation.EligibleAfter = eligibleAfter
+	}
+	cfg.UserActivation.WorkerInterval = time.Duration(viper.GetInt("user_activation.worker_interval_seconds")) * time.Second
 	providerPricingGroupNameMappings, err := parseProviderPricingGroupNameMappings(viper.GetString("provider_pricing.group_name_mappings"))
 	if err != nil {
 		return nil, err
@@ -1933,6 +1958,15 @@ func setDefaults() {
 	viper.SetDefault("provider_pricing.max_skew_seconds", 60)
 	viper.SetDefault("provider_pricing.group_name_mappings", `{"gpt01":"pro专属"}`)
 
+	// New-user activation rollout (disabled until all dependent resources are ready).
+	viper.SetDefault("user_activation.enabled", false)
+	viper.SetDefault("user_activation.eligible_after", "")
+	viper.SetDefault("user_activation.starter_group_id", 0)
+	viper.SetDefault("user_activation.recall_group_id", 0)
+	viper.SetDefault("user_activation.recall_window_days", 7)
+	viper.SetDefault("user_activation.worker_interval_seconds", 600)
+	viper.SetDefault("user_activation.support_wechat", "")
+
 	// Timezone (default to Asia/Shanghai for Chinese users)
 	viper.SetDefault("timezone", "Asia/Shanghai")
 
@@ -2180,6 +2214,29 @@ func (c *Config) Validate() error {
 		}
 		if strings.TrimSpace(c.ProviderPricing.SiteDomain) == "" {
 			return fmt.Errorf("provider_pricing.site_domain is required when enabled")
+		}
+	}
+	if c.UserActivation.Enabled {
+		if c.UserActivation.StarterGroupID <= 0 {
+			return fmt.Errorf("user_activation.starter_group_id must be positive when enabled")
+		}
+		if c.UserActivation.RecallGroupID <= 0 {
+			return fmt.Errorf("user_activation.recall_group_id must be positive when enabled")
+		}
+		if c.UserActivation.StarterGroupID == c.UserActivation.RecallGroupID {
+			return fmt.Errorf("user_activation starter and recall group ids must be different")
+		}
+		if c.UserActivation.RecallWindowDays != 7 {
+			return fmt.Errorf("user_activation.recall_window_days must be 7 when enabled")
+		}
+		if c.UserActivation.EligibleAfter.IsZero() {
+			return fmt.Errorf("user_activation.eligible_after is required when enabled")
+		}
+		if strings.TrimSpace(c.UserActivation.SupportWeChat) == "" {
+			return fmt.Errorf("user_activation.support_wechat is required when enabled")
+		}
+		if c.UserActivation.WorkerInterval < 60*time.Second {
+			return fmt.Errorf("user_activation.worker_interval_seconds must be at least 60 when enabled")
 		}
 	}
 	switch c.Log.Level {

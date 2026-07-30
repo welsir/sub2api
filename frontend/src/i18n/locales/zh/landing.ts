@@ -3,6 +3,78 @@ export default {
     title: '图片批量生成',
     description: '一次提交多条提示词，任务完成后可统一下载图片结果'
   },
+  hvoyPartner: {
+    pageTitle: 'Omni API',
+    brand: 'Omni API',
+    navLogin: '登录',
+    loading: '正在核对体验资格',
+    available: '新用户免费体验已开放',
+    unavailable: '当前体验资格暂不可确认',
+    hero: {
+      enabledTitle: '免费体验，满意再充值',
+      enabledDescription: '注册后体验额度自动到账，创建密钥就能直接用。',
+      unavailableTitle: '登录查看当前服务与可用模型',
+      unavailableDescription: '当前无法确认新用户体验资格，因此页面不会承诺赠送额度。已有账号可以继续登录，或先查看服务信息。'
+    },
+    offer: {
+      label: '新用户体验',
+      starterTitle: '注册后自动到账',
+      starterNote: '不用先充值，创建密钥就能开始用。',
+      unavailableLabel: '服务入口',
+      unavailableTitle: '不展示未经确认的赠送承诺',
+      unavailableNote: '登录后可查看当前账户、模型与充值状态。'
+    },
+    pricing: {
+      paymentLabel: '支付方式',
+      paymentChannels: '支持多种支付渠道',
+      refundLabel: '使用保障',
+      proportionalRefund: '使用不满意可按实际使用比例退款',
+      balanceLabel: '充值余额',
+      paidNoExpiry: '正常充值不会过期'
+    },
+    support: {
+      withWechat: '配置或调用遇到问题，可以加微信 {wechat} 找人排查。',
+      generic: '配置或调用遇到问题，可以加页面上的微信找人排查。'
+    },
+    cta: {
+      register: '注册并开始体验',
+      existingUser: '已有账号，直接登录',
+      login: '登录查看服务',
+      viewService: '查看服务首页'
+    },
+    facts: {
+      trialTitle: '注册即送免费体验额度',
+      trialDescription: '完成邮箱验证后自动到账，不用手动领取。',
+      entryTitle: '已有账号正常使用',
+      entryDescription: '体验资格不可确认时，登录与现有账户使用不受影响。',
+      rechargeTitle: '支付方式灵活',
+      rechargeDescription: '支持多种支付渠道；使用不满意可按实际使用比例退款。',
+      balanceTitle: '正常充值不会过期',
+      balanceDescription: '充值后的额度可以一直使用。',
+      supportTitle: '不会配置？直接问',
+      supportDescription: '配置或调用遇到问题，可以加页面上的微信找人排查。'
+    },
+    flow: {
+      eyebrow: '注册后怎么开始',
+      title: '三步跑通第一次调用',
+      enabled: {
+        verifyTitle: '完成邮箱验证',
+        verifyDescription: '用常用邮箱注册，填入收到的验证码。',
+        creditTitle: '体验额度自动到账',
+        creditDescription: '验证完成后自动发放，不用手动领取。',
+        useTitle: '创建密钥，发起请求',
+        useDescription: '跟着激活页的命令跑一次，看到回复就算接通。'
+      },
+      unavailable: {
+        loginTitle: '登录现有账号',
+        loginDescription: '已有用户直接登录，现有账户与付费额度不受影响。',
+        serviceTitle: '查看可用服务',
+        serviceDescription: '核对模型、计价与账户状态后再决定下一步。',
+        supportTitle: '需要时联系支持',
+        supportDescription: '人工支持只处理配置与排障，不承诺赠送额度。'
+      }
+    }
+  },
   // Home Page
   home: {
     viewOnGithub: '在 GitHub 上查看',

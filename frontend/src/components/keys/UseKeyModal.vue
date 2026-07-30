@@ -5,7 +5,7 @@
     width="wide"
     @close="emit('close')"
   >
-    <div class="space-y-4">
+    <div class="min-w-0 space-y-4">
       <!-- No Group Assigned Warning -->
       <div v-if="!platform" class="flex items-start gap-3 p-4 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
         <svg class="w-5 h-5 text-yellow-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -29,8 +29,11 @@
         </p>
 
         <!-- Client Tabs -->
-        <div v-if="clientTabs.length" class="border-b border-gray-200 dark:border-dark-700">
-          <nav class="-mb-px flex space-x-6" aria-label="Client">
+        <div
+          v-if="clientTabs.length"
+          class="min-w-0 overflow-x-auto border-b border-gray-200 dark:border-dark-700"
+        >
+          <nav class="-mb-px flex min-w-max gap-2 sm:gap-6" aria-label="Client">
             <button
               v-for="tab in clientTabs"
               :key="tab.id"
@@ -43,7 +46,7 @@
               ]"
             >
               <span class="flex items-center gap-2">
-                <component :is="tab.icon" class="w-4 h-4" />
+                <component :is="tab.icon" class="hidden h-4 w-4 sm:block" />
                 {{ tab.label }}
               </span>
             </button>
@@ -51,8 +54,11 @@
         </div>
 
         <!-- OS/Shell Tabs -->
-        <div v-if="showShellTabs" class="border-b border-gray-200 dark:border-dark-700">
-          <nav class="-mb-px flex space-x-4" aria-label="Tabs">
+        <div
+          v-if="showShellTabs"
+          class="min-w-0 overflow-x-auto border-b border-gray-200 dark:border-dark-700"
+        >
+          <nav class="-mb-px flex min-w-max space-x-4" aria-label="Tabs">
             <button
               v-for="tab in currentTabs"
               :key="tab.id"

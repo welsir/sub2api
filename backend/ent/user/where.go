@@ -1684,6 +1684,29 @@ func HasPlatformQuotasWith(preds ...predicate.UserPlatformQuota) predicate.User 
 	})
 }
 
+// HasActivationJourney applies the HasEdge predicate on the "activation_journey" edge.
+func HasActivationJourney() predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := sqlgraph.NewStep(
+			sqlgraph.From(Table, FieldID),
+			sqlgraph.Edge(sqlgraph.O2O, false, ActivationJourneyTable, ActivationJourneyColumn),
+		)
+		sqlgraph.HasNeighbors(s, step)
+	})
+}
+
+// HasActivationJourneyWith applies the HasEdge predicate on the "activation_journey" edge with a given conditions (other predicates).
+func HasActivationJourneyWith(preds ...predicate.UserActivationJourney) predicate.User {
+	return predicate.User(func(s *sql.Selector) {
+		step := newActivationJourneyStep()
+		sqlgraph.HasNeighborsWith(s, step, func(s *sql.Selector) {
+			for _, p := range preds {
+				p(s)
+			}
+		})
+	})
+}
+
 // HasUserAllowedGroups applies the HasEdge predicate on the "user_allowed_groups" edge.
 func HasUserAllowedGroups() predicate.User {
 	return predicate.User(func(s *sql.Selector) {
