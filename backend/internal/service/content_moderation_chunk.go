@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"sort"
@@ -21,6 +22,16 @@ const (
 type contentModerationChunk struct {
 	Text string
 	Hash string
+}
+
+type ContentModerationChunkVerdict struct {
+	Flagged        bool               `json:"flagged"`
+	CategoryScores map[string]float64 `json:"category_scores"`
+}
+
+type ContentModerationChunkCache interface {
+	GetContentModerationChunkVerdicts(ctx context.Context, namespace string, chunkHashes []string) (map[string]ContentModerationChunkVerdict, error)
+	StoreContentModerationChunkVerdicts(ctx context.Context, namespace string, verdicts map[string]ContentModerationChunkVerdict, safeTTL time.Duration, blockTTL time.Duration) error
 }
 
 func splitContentModerationChunks(text string) []contentModerationChunk {
