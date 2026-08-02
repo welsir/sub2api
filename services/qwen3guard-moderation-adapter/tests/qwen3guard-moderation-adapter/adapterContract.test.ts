@@ -39,6 +39,12 @@ interface FakeBackend {
   releaseHeld(): void;
 }
 
+interface FakeMiniMaxBackend {
+  server: Server;
+  baseUrl: string;
+  requests: Array<Record<string, unknown>>;
+}
+
 const openServers: Server[] = [];
 
 afterEach(async () => {
@@ -236,6 +242,64 @@ async function startFakeBackend(pathPrefix = ""): Promise<FakeBackend> {
   };
 }
 
+async function startFakeMiniMaxBackend(): Promise<FakeMiniMaxBackend> {
+  const requests: Array<Record<string, unknown>> = [];
+  const server = createServer(async (request, response) => {
+    if (request.url === "/v1/models" && request.method === "GET") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ data: [{ id: "MiniMax-M2.7" }] }));
+      return;
+    }
+    if (request.url !== "/v1/chat/completions" || request.method !== "POST") {
+      response.writeHead(404).end();
+      return;
+    }
+    const body = await readJsonRequest(request);
+    requests.push({ ...body, authorization: request.headers.authorization });
+    const messages = body.messages as Array<{ content?: string }>;
+    const input = messages?.[1]?.content ?? "";
+    if (input === "auth") {
+      response.writeHead(401, { "content-type": "application/json" });
+      response.end(JSON.stringify({ base_resp: { status_code: 1004, status_msg: "unauthorized" } }));
+      return;
+    }
+    if (input === "billing") {
+      response.writeHead(402, { "content-type": "application/json" });
+      response.end(JSON.stringify({ base_resp: { status_code: 1008, status_msg: "insufficient" } }));
+      return;
+    }
+    if (input === "transient") {
+      response.writeHead(429, { "content-type": "application/json" });
+      response.end(JSON.stringify({ base_resp: { status_code: 1002, status_msg: "rate limited" } }));
+      return;
+    }
+    const sensitive = input === "sensitive";
+    const decision = input === "block" ? "block" : "allow";
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({
+      choices: [{
+        finish_reason: "stop",
+        message: {
+          role: "assistant",
+          content: sensitive ? "" : JSON.stringify({
+            decision,
+            category: decision === "allow" ? "none" : "cyber_abuse",
+            confidence: 0.99,
+            reason_code: decision === "allow" ? "safe" : "actionable_abuse"
+          })
+        }
+      }],
+      input_sensitive: sensitive,
+      output_sensitive: false,
+      base_resp: {
+        status_code: sensitive ? 1026 : 0,
+        status_msg: sensitive ? "sensitive input" : "success"
+      }
+    }));
+  });
+  return { server, baseUrl: await listen(server), requests };
+}
+
 function configFor(backendBaseUrl: string, overrides: Record<string, string> = {}): AdapterConfig {
   return resolveAdapterConfig({
     QWEN3GUARD_ADAPTER_BEARER_TOKEN: adapterToken,
@@ -244,6 +308,17 @@ function configFor(backendBaseUrl: string, overrides: Record<string, string> = {
     QWEN3GUARD_BACKEND_BEARER_TOKEN: backendToken,
     QWEN3GUARD_MODEL_REVISION: "qwen3guard-test-revision",
     ...overrides
+  });
+}
+
+function miniMaxConfigFor(backendBaseUrl: string): AdapterConfig {
+  return resolveAdapterConfig({
+    QWEN3GUARD_ADAPTER_BEARER_TOKEN: adapterToken,
+    QWEN3GUARD_BACKEND_PROVIDER: "minimax",
+    QWEN3GUARD_BACKEND_BASE_URL: backendBaseUrl,
+    QWEN3GUARD_BACKEND_MODEL: "MiniMax-M2.7",
+    QWEN3GUARD_BACKEND_BEARER_TOKEN: backendToken,
+    QWEN3GUARD_MODEL_REVISION: "minimax-test-revision"
   });
 }
 
@@ -357,6 +432,41 @@ describe("Qwen3Guard moderation adapter HTTP contract", () => {
     expect(backend.requests[0].model).toBe("Qwen/Qwen3Guard-Gen-0.6B");
     expect(backend.requests[0].authorization).toBe(`Bearer ${backendToken}`);
     expect(backend.requests[0].messages).toEqual([{ role: "user", content: "first\nsecond" }]);
+  });
+
+  it.each([
+    ["allow", false],
+    ["block", true],
+    ["sensitive", true]
+  ])("normalizes MiniMax %s into a Moderations decision", async (input, flagged) => {
+    const backend = await startFakeMiniMaxBackend();
+    const { baseUrl } = await startAdapter(miniMaxConfigFor(backend.baseUrl));
+
+    const response = await moderate(baseUrl, input);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.results[0].flagged).toBe(flagged);
+    expect(backend.requests[0].authorization).toBe(`Bearer ${backendToken}`);
+    expect(backend.requests[0].messages).toEqual([
+      expect.objectContaining({ role: "system" }),
+      { role: "user", content: input }
+    ]);
+  });
+
+  it.each([
+    ["auth", 401, "backend_auth_failed"],
+    ["billing", 402, "backend_billing_failed"],
+    ["transient", 502, "moderation_backend_error"]
+  ])("exposes MiniMax %s failure with deterministic retry semantics", async (input, status, code) => {
+    const backend = await startFakeMiniMaxBackend();
+    const { baseUrl } = await startAdapter(miniMaxConfigFor(backend.baseUrl));
+
+    const response = await moderate(baseUrl, input);
+    const body = await response.json();
+
+    expect(response.status).toBe(status);
+    expect(body.error.code).toBe(code);
   });
 
   it("accepts a bounded gzip-encoded full-context request", async () => {

@@ -1,6 +1,6 @@
 /**
- * [INPUT]: Process environment variables for adapter and Qwen backend settings.
- * [OUTPUT]: Validated bounded configuration with contained backend URL paths and externalized secrets.
+ * [INPUT]: Process environment variables for adapter and provider backend settings.
+ * [OUTPUT]: Validated provider-aware configuration with contained backend paths and externalized secrets.
  * [POS]: Startup configuration boundary for the standalone moderation adapter.
  *
  * [PROTOCOL]:
@@ -8,10 +8,13 @@
  * 2. Update this folder's .folder.md when this file changes.
  */
 
+export type BackendProvider = "qwen" | "minimax";
+
 export interface AdapterConfig {
   host: string;
   port: number;
   adapterBearerToken: string;
+  backendProvider: BackendProvider;
   backendBaseUrl: string;
   backendModel: string;
   backendBearerToken?: string;
@@ -135,11 +138,21 @@ function backendUrl(env: Env): string {
   return normalizeBackendBaseUrl(raw, "QWEN3GUARD_BACKEND_BASE_URL");
 }
 
+function backendProvider(env: Env): BackendProvider {
+  const value = env.QWEN3GUARD_BACKEND_PROVIDER?.trim().toLowerCase() || "qwen";
+  if (value !== "qwen" && value !== "minimax") {
+    throw new Error("QWEN3GUARD_BACKEND_PROVIDER must be qwen or minimax");
+  }
+  return value;
+}
+
 export function resolveAdapterConfig(env: Env = process.env): AdapterConfig {
   const adapterBearerToken = requiredText(env, "QWEN3GUARD_ADAPTER_BEARER_TOKEN");
+  const resolvedBackendProvider = backendProvider(env);
   const resolvedBackendUrl = backendUrl(env);
   const backendModel = requiredText(env, "QWEN3GUARD_BACKEND_MODEL");
-  const readinessPath = env.QWEN3GUARD_BACKEND_READINESS_PATH?.trim() || "/health";
+  const readinessPath = env.QWEN3GUARD_BACKEND_READINESS_PATH?.trim() ||
+    (resolvedBackendProvider === "minimax" ? "/v1/models" : "/health");
   validateBackendEndpointPath(readinessPath, "QWEN3GUARD_BACKEND_READINESS_PATH");
   const requestTimeoutMs = integerSetting(
     env,
@@ -165,6 +178,7 @@ export function resolveAdapterConfig(env: Env = process.env): AdapterConfig {
     host: env.QWEN3GUARD_ADAPTER_HOST?.trim() || "127.0.0.1",
     port: integerSetting(env, "QWEN3GUARD_ADAPTER_PORT", 8090, 1, 65_535),
     adapterBearerToken,
+    backendProvider: resolvedBackendProvider,
     backendBaseUrl: resolvedBackendUrl,
     backendModel,
     backendBearerToken: env.QWEN3GUARD_BACKEND_BEARER_TOKEN?.trim() || undefined,

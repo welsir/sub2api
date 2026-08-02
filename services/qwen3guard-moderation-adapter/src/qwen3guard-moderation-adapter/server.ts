@@ -1,5 +1,5 @@
 /**
- * [INPUT]: Validated adapter config, authenticated HTTP requests, and Qwen backend responses.
+ * [INPUT]: Validated adapter config, authenticated HTTP requests, and provider backend responses.
  * [OUTPUT]: Raw-target-safe bounded HTTP/gzip surfaces plus cancellable hard-deadline shutdown.
  * [POS]: Standalone moderation process boundary, separate from Omni northbound routing.
  *
@@ -14,12 +14,13 @@ import { gunzipSync } from "node:zlib";
 
 import {
   BackendClientError,
-  QwenBackendClient,
+  createBackendClient,
   type FetchImplementation
 } from "./backend";
 import { MAPPING_REVISION, type MappedClassification } from "./classification";
 import type { AdapterConfig } from "./config";
 import { AdapterMetrics, type RequestOutcome } from "./metrics";
+import { MINIMAX_MAPPING_REVISION } from "./minimax";
 
 export interface AdapterLogRecord {
   event: string;
@@ -508,7 +509,10 @@ export function createModerationAdapterServer(
   dependencies: AdapterServerDependencies = {}
 ): Server {
   const metrics = new AdapterMetrics();
-  const backend = new QwenBackendClient(config, dependencies.fetch ?? fetch);
+  const backend = createBackendClient(config, dependencies.fetch ?? fetch);
+  const configuredMappingRevision = config.backendProvider === "minimax"
+    ? MINIMAX_MAPPING_REVISION
+    : MAPPING_REVISION;
   const scheduler = new InferenceScheduler(config.maxConcurrency, config.maxQueue, metrics);
   const log = dependencies.log ?? ((record: AdapterLogRecord) => console.info(JSON.stringify(record)));
   const emit = (record: { event: string; [key: string]: unknown }) =>
@@ -705,8 +709,9 @@ export function createModerationAdapterServer(
       emit({
         event: "qwen3guard_moderation.completed",
         request_id: correlationId,
+        backend_provider: config.backendProvider,
         model_revision: config.modelRevision,
-        mapping_revision: MAPPING_REVISION,
+        mapping_revision: result.mappingRevision,
         input_chars: normalized.input.length,
         input_hash: inputHash,
         label: result.label,
@@ -738,8 +743,9 @@ export function createModerationAdapterServer(
         emit({
           event: "qwen3guard_moderation.overload",
           request_id: correlationId,
+          backend_provider: config.backendProvider,
           model_revision: config.modelRevision,
-          mapping_revision: MAPPING_REVISION,
+          mapping_revision: configuredMappingRevision,
           input_chars: normalized.input.length,
           input_hash: inputHash,
           latency_ms: latencyMs
@@ -779,8 +785,9 @@ export function createModerationAdapterServer(
       emit({
         event: "qwen3guard_moderation.error",
         request_id: correlationId,
+        backend_provider: config.backendProvider,
         model_revision: config.modelRevision,
-        mapping_revision: MAPPING_REVISION,
+        mapping_revision: configuredMappingRevision,
         input_chars: normalized.input.length,
         input_hash: inputHash,
         latency_ms: latencyMs,
@@ -810,11 +817,31 @@ export function createModerationAdapterServer(
         );
         return;
       }
+      if (backendError.kind === "auth") {
+        writeError(
+          response,
+          401,
+          "backend_auth_failed",
+          "moderation backend authentication failed",
+          correlationId
+        );
+        return;
+      }
+      if (backendError.kind === "billing") {
+        writeError(
+          response,
+          402,
+          "backend_billing_failed",
+          "moderation backend billing is unavailable",
+          correlationId
+        );
+        return;
+      }
       if (backendError.kind === "parse") {
         writeError(
           response,
           502,
-          "qwen_output_parse_error",
+          config.backendProvider === "qwen" ? "qwen_output_parse_error" : "model_output_parse_error",
           "model output could not be parsed",
           correlationId
         );
@@ -823,7 +850,7 @@ export function createModerationAdapterServer(
       writeError(
         response,
         502,
-        "qwen_backend_error",
+        "moderation_backend_error",
         "model backend request failed",
         correlationId
       );

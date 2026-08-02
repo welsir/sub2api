@@ -61,8 +61,9 @@ provider reasoning wrappers.
 ## Scope And User Impact
 
 The rollout uses existing `group_ids`/`excluded_group_ids` scope with
-`mode=pre_block` and `keyword_blocking_mode=keyword_and_api`. `pre_block` checks
-every in-scope request regardless of `sample_rate`.
+`mode=pre_block`, `keyword_blocking_mode=keyword_and_api`, and
+`auto_ban_enabled=false`. `pre_block` checks every in-scope request regardless
+of `sample_rate`.
 
 The first release blocks only the current request. It does not automatically ban
 users, disable API keys, add permanent hashes, or create a long-lived session

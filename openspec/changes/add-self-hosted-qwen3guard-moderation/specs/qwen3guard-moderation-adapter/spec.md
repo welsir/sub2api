@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Moderations API compatibility
-The adapter SHALL expose a Bearer-authenticated `POST /v1/moderations` endpoint that accepts the model and text-input shape used by Sub2API and returns an OpenAI-shaped response containing `results[].flagged`, `results[].categories`, and `results[].category_scores`.
+The adapter SHALL expose a Bearer-authenticated `POST /v1/moderations` endpoint that accepts the model and text-input shape used by Sub2API, selects a configured Qwen or MiniMax backend, and returns an OpenAI-shaped response containing `results[].flagged`, `results[].categories`, and `results[].category_scores`.
 
 #### Scenario: Sub2API-compatible unsafe response
 - **WHEN** an authenticated text request produces a valid Qwen3Guard `Unsafe` classification
@@ -10,6 +10,22 @@ The adapter SHALL expose a Bearer-authenticated `POST /v1/moderations` endpoint 
 #### Scenario: Missing or invalid authentication
 - **WHEN** a request omits the configured Bearer secret or supplies the wrong value
 - **THEN** the adapter rejects the request without invoking the model backend or disclosing secret details
+
+#### Scenario: MiniMax strict allow response
+- **WHEN** MiniMax returns a complete strict final JSON decision of `allow` without provider-sensitive flags
+- **THEN** the adapter returns a successful Moderations response with zero evaluated policy scores
+
+#### Scenario: MiniMax block, review, or sensitive response
+- **WHEN** MiniMax returns `block`, `review`, `input_sensitive`, `output_sensitive`, provider code `1026`, or provider code `1027`
+- **THEN** the adapter returns a successful flagged Moderations response and never treats the provider refusal as safe
+
+#### Scenario: MiniMax deterministic account failure
+- **WHEN** MiniMax reports invalid authentication or insufficient balance
+- **THEN** the adapter returns a deterministic 401 or 402 so Sub2API terminates without consuming transient retry attempts
+
+#### Scenario: MiniMax transient or malformed response
+- **WHEN** MiniMax times out, throttles, returns a transient provider error, or emits an invalid final decision
+- **THEN** the adapter returns a visible retryable non-2xx result and never synthesizes an allow response
 
 #### Scenario: Unsupported multimodal input
 - **WHEN** a Moderations request contains an image or another unsupported non-text part

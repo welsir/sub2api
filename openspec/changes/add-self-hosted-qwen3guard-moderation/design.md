@@ -1,5 +1,22 @@
 ## Context
 
+### 2026-08-02 MiniMax-first amendment
+
+The operator approved a hosted MiniMax first rollout instead of requiring the
+Windows Qwen runtime. This amendment supersedes the earlier external-provider
+non-goal and default-on group rollout: the initial enforcement scope is only the
+explicitly configured high-risk `group_ids`. False positives are acceptable, but
+the rollout configuration MUST set `auto_ban_enabled=false`; MiniMax decisions do
+not automatically ban users, disable API keys, or create a permanent session
+block.
+
+The adapter remains the stable `POST /v1/moderations` boundary and now selects a
+`qwen` or `minimax` Chat Completions backend. MiniMax sensitive flags and provider
+codes `1026`/`1027` are successful blocked classifications. Auth and billing
+failures are deterministic; transient, timeout, and parse failures remain visible
+for Sub2API's bounded fail-closed policy. Windows, Tailscale, and local-model tasks
+remain optional future work and are not production prerequisites for this rollout.
+
 Sub2API owns content-moderation policy. The inspected development branch already accepts an OpenAI-shaped `POST <base>/v1/moderations` provider, scopes checks by the authenticated API key's `GroupID`, and supports `off`, `observe`, and `pre_block`. The prior implementation audited only the last user message, silently truncated normalized text at 12,000 characters, and allowed scoped requests after semantic-provider failure.
 
 A read-only check of 43 V2 on 2026-07-30 verified the deployed image as `tml/sub2api:v0.1.156-omni-luna-first-text-20260728`, the independent database as `sub2api_v2`, and the active exact-name `tml` group as ID `18`. The live legacy moderation JSON is currently `enabled=true`, `mode=pre_block`, `all_groups=false`, `group_ids=[8,10,13,14,15]`, and `keyword_blocking_mode=keyword_only`; it has no `excluded_group_ids`, semantic-provider endpoint, or semantic-provider credential configured. These are point-in-time production facts and no live setting was changed.
@@ -15,7 +32,7 @@ The expected volume is about 50,000 inbound requests per day, or roughly 0.58 re
 - Provide the exact authenticated Moderations API contract Sub2API consumes.
 - Translate Qwen3Guard output deterministically without presenting synthetic policy scores as calibrated probabilities.
 - Keep the Windows inference endpoint private to the Sub2API host.
-- Make moderation default-on for every Sub2API group while exempting only the resolved `tml` group ID.
+- Apply strict moderation only to explicitly approved high-risk groups in the MiniMax-first rollout.
 - Make model unavailability, parse failure, overload, and network failure visible, bounded, and fail closed for scoped `pre_block` requests.
 - Audit the complete ordered outbound semantic context, including tool traffic, without silent text truncation.
 - Reduce repeated-context transfer with gzip and preserve stable prefixes for model-server prefix caching.
@@ -24,7 +41,7 @@ The expected volume is about 50,000 inbound requests per day, or roughly 0.58 re
 
 **Non-Goals:**
 
-- Introducing an external gateway dependency for content moderation.
+- Automatically banning users or disabling API keys from a MiniMax decision.
 - Changing Sub2API billing or account scheduling.
 - Claiming that 0.6B or 4B is production-quality before a representative local benchmark.
 - Auditing model output, image pixels, audio, or arbitrary multimodal content in the first slice.

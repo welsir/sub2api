@@ -33,6 +33,8 @@ describe("resolveAdapterConfig", () => {
   it("applies bounded loopback defaults", () => {
     const config = resolveAdapterConfig(requiredEnv);
 
+    expect(config.backendProvider).toBe("qwen");
+    expect(config.backendReadinessPath).toBe("/health");
     expect(config.host).toBe("127.0.0.1");
     expect(config.port).toBe(8090);
     expect(config.maxInputChars).toBeGreaterThan(0);
@@ -45,6 +47,26 @@ describe("resolveAdapterConfig", () => {
     expect(config.headersTimeoutMs).toBeLessThanOrEqual(config.requestTimeoutMs);
     expect(config.shutdownTimeoutMs).toBeGreaterThan(0);
     expect(config.backendBaseUrl).toBe("http://127.0.0.1:8101");
+  });
+
+  it("accepts MiniMax and selects its provider-compatible readiness path", () => {
+    const config = resolveAdapterConfig({
+      ...requiredEnv,
+      QWEN3GUARD_BACKEND_PROVIDER: "minimax",
+      QWEN3GUARD_BACKEND_BASE_URL: "https://api.minimaxi.com"
+    });
+
+    expect(config.backendProvider).toBe("minimax");
+    expect(config.backendReadinessPath).toBe("/v1/models");
+  });
+
+  it("rejects unsupported moderation backend providers", () => {
+    expect(() =>
+      resolveAdapterConfig({
+        ...requiredEnv,
+        QWEN3GUARD_BACKEND_PROVIDER: "unknown"
+      })
+    ).toThrow(/BACKEND_PROVIDER.*qwen.*minimax/i);
   });
 
   it("rejects invalid URLs and non-positive or fractional limits", () => {

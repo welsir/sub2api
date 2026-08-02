@@ -1,7 +1,7 @@
 /**
- * [INPUT]: Validated text, backend configuration, and caller cancellation signal.
- * [OUTPUT]: Origin-contained endpoints and byte-bounded classifications with typed failures.
- * [POS]: Cancellation-aware, stop-only Chat Completions client behind the moderation contract.
+ * [INPUT]: Validated text, provider-aware backend configuration, and caller cancellation signal.
+ * [OUTPUT]: Origin-contained Qwen/MiniMax classifications and typed provider failures.
+ * [POS]: Cancellation-aware Chat Completions clients behind the moderation contract.
  *
  * [PROTOCOL]:
  * 1. Update this header when backend client responsibilities change.
@@ -17,14 +17,20 @@ import {
   parseAndMapClassification,
   type MappedClassification
 } from "./classification";
+import {
+  buildMiniMaxChatRequest,
+  mapMiniMaxSensitiveResult,
+  parseMiniMaxClassification
+} from "./minimax";
 
-export type BackendErrorKind = "timeout" | "backend" | "parse" | "cancelled";
+export type BackendErrorKind = "timeout" | "backend" | "parse" | "cancelled" | "auth" | "billing";
 export const MAX_BACKEND_RESPONSE_BYTES = 1_048_576;
 
 export class BackendClientError extends Error {
   constructor(
     readonly kind: BackendErrorKind,
-    message: string
+    message: string,
+    readonly providerCode?: number
   ) {
     super(message);
     this.name = "BackendClientError";
@@ -32,6 +38,11 @@ export class BackendClientError extends Error {
 }
 
 export type FetchImplementation = typeof fetch;
+
+export interface ModerationBackendClient {
+  checkReadiness(callerSignal?: AbortSignal): Promise<boolean>;
+  classify(input: string, callerSignal: AbortSignal): Promise<MappedClassification>;
+}
 
 export function buildBackendEndpoint(baseUrl: string, endpointPath: string): string {
   validateBackendEndpointPath(endpointPath);
@@ -219,4 +230,159 @@ export class QwenBackendClient {
       callerSignal.removeEventListener("abort", forwardAbort);
     }
   }
+}
+
+function miniMaxProviderCode(body: unknown): number | undefined {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return undefined;
+  }
+  const baseResponse = (body as { base_resp?: unknown }).base_resp;
+  if (!baseResponse || typeof baseResponse !== "object" || Array.isArray(baseResponse)) {
+    return undefined;
+  }
+  const code = (baseResponse as { status_code?: unknown }).status_code;
+  return typeof code === "number" && Number.isSafeInteger(code) ? code : undefined;
+}
+
+function parseMiniMaxBody(rawResponse: string): Record<string, unknown> {
+  let body: unknown;
+  try {
+    body = JSON.parse(rawResponse);
+  } catch {
+    throw new BackendClientError("backend", "MiniMax backend returned invalid JSON");
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new BackendClientError("backend", "MiniMax backend returned an invalid body");
+  }
+  return body as Record<string, unknown>;
+}
+
+function miniMaxFailure(httpStatus: number, providerCode?: number): BackendClientError {
+  if (providerCode === 1004 || httpStatus === 401 || httpStatus === 403) {
+    return new BackendClientError("auth", "MiniMax backend authentication failed", providerCode);
+  }
+  if (providerCode === 1008 || httpStatus === 402) {
+    return new BackendClientError("billing", "MiniMax backend balance is insufficient", providerCode);
+  }
+  return new BackendClientError("backend", "MiniMax backend request failed", providerCode);
+}
+
+function miniMaxSensitive(body: Record<string, unknown>, providerCode?: number): boolean {
+  return body.input_sensitive === true ||
+    body.output_sensitive === true ||
+    providerCode === 1026 ||
+    providerCode === 1027;
+}
+
+export class MiniMaxBackendClient implements ModerationBackendClient {
+  constructor(
+    private readonly config: AdapterConfig,
+    private readonly fetchImpl: FetchImplementation = fetch
+  ) {}
+
+  private headers(includeJson = false): Record<string, string> {
+    return {
+      ...(includeJson ? { "content-type": "application/json" } : {}),
+      ...(this.config.backendBearerToken
+        ? { authorization: `Bearer ${this.config.backendBearerToken}` }
+        : {})
+    };
+  }
+
+  async checkReadiness(callerSignal?: AbortSignal): Promise<boolean> {
+    const controller = new AbortController();
+    const forwardAbort = () => controller.abort();
+    callerSignal?.addEventListener("abort", forwardAbort, { once: true });
+    const timeout = setTimeout(() => controller.abort(), this.config.readinessTimeoutMs);
+    try {
+      const response = await this.fetchImpl(
+        buildBackendEndpoint(this.config.backendBaseUrl, this.config.backendReadinessPath),
+        { method: "GET", headers: this.headers(), signal: controller.signal }
+      );
+      const ready = response.ok;
+      await cancelResponseBody(response);
+      return ready;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      callerSignal?.removeEventListener("abort", forwardAbort);
+    }
+  }
+
+  async classify(input: string, callerSignal: AbortSignal): Promise<MappedClassification> {
+    const controller = new AbortController();
+    let timedOut = false;
+    const forwardAbort = () => controller.abort();
+    callerSignal.addEventListener("abort", forwardAbort, { once: true });
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, this.config.inferenceTimeoutMs);
+
+    try {
+      const response = await this.fetchImpl(
+        buildBackendEndpoint(this.config.backendBaseUrl, "/v1/chat/completions"),
+        {
+          method: "POST",
+          headers: this.headers(true),
+          signal: controller.signal,
+          body: JSON.stringify(buildMiniMaxChatRequest(this.config.backendModel, input))
+        }
+      );
+      const rawResponse = await readLimitedResponseBody(response, controller.signal);
+      const body = parseMiniMaxBody(rawResponse);
+      const providerCode = miniMaxProviderCode(body);
+      if (miniMaxSensitive(body, providerCode)) {
+        return mapMiniMaxSensitiveResult(String(providerCode ?? "sensitive"));
+      }
+      if (!response.ok || (providerCode !== undefined && providerCode !== 0)) {
+        throw miniMaxFailure(response.status, providerCode);
+      }
+      const choices = Array.isArray(body.choices) ? body.choices : [];
+      const choice = choices[0];
+      if (!choice || typeof choice !== "object" || Array.isArray(choice)) {
+        throw new BackendClientError("parse", "MiniMax output was missing");
+      }
+      const choiceRecord = choice as Record<string, unknown>;
+      if (choiceRecord.finish_reason !== "stop") {
+        throw new BackendClientError("parse", "MiniMax output did not finish with stop");
+      }
+      const message = choiceRecord.message;
+      const content = message && typeof message === "object" && !Array.isArray(message)
+        ? (message as Record<string, unknown>).content
+        : undefined;
+      if (typeof content !== "string" || content.trim() === "") {
+        throw new BackendClientError("parse", "MiniMax output was empty");
+      }
+      try {
+        return parseMiniMaxClassification(content);
+      } catch {
+        throw new BackendClientError("parse", "MiniMax output did not match the strict format");
+      }
+    } catch (error) {
+      if (timedOut) {
+        throw new BackendClientError("timeout", "MiniMax inference deadline exceeded");
+      }
+      if (callerSignal.aborted) {
+        throw new BackendClientError("cancelled", "moderation request was cancelled");
+      }
+      if (error instanceof BackendClientError) {
+        throw error;
+      }
+      throw new BackendClientError("backend", "MiniMax backend request failed");
+    } finally {
+      clearTimeout(timeout);
+      callerSignal.removeEventListener("abort", forwardAbort);
+    }
+  }
+}
+
+export function createBackendClient(
+  config: AdapterConfig,
+  fetchImpl: FetchImplementation = fetch
+): ModerationBackendClient {
+  return config.backendProvider === "minimax"
+    ? new MiniMaxBackendClient(config, fetchImpl)
+    : new QwenBackendClient(config, fetchImpl);
 }

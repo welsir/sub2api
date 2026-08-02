@@ -40,7 +40,20 @@
 - [x] 3A.6 Add service, handler, adapter, WebSocket, and downstream-boundary tests proving failed moderation cannot select or call an upstream account.
 - [x] 3A.7 Run focused and regression verification, strict OpenSpec validation, typecheck, and diff hygiene checks.
 
+## 3B. Add The MiniMax-First Hosted Backend
+
+- [x] 3B.1 Add a backward-compatible `qwen|minimax` backend provider setting and provider-specific readiness defaults.
+- [x] 3B.2 Add a strict MiniMax classifier prompt and final-JSON parser where only an explicit `allow` can pass.
+- [x] 3B.3 Map MiniMax sensitive flags and provider codes `1026`/`1027` to successful blocked Moderations results.
+- [x] 3B.4 Expose MiniMax authentication and billing failures as deterministic 401/402 responses while keeping transient failures retryable.
+- [x] 3B.5 Preserve complete-context, gzip, bounded execution, Qwen compatibility, and fail-closed Sub2API behavior.
+- [x] 3B.6 Document the high-risk-group-only rollout, require `auto_ban_enabled=false`, and prohibit automatic user or API-key bans from MiniMax decisions.
+- [x] 3B.7 Add provider parser, backend client, HTTP contract, runtime, and configuration verification.
+
 ## 4. Prepare The Windows Qwen3Guard Runtime
+
+The following local-runtime work is deferred and optional after approval of the
+MiniMax-first rollout.
 
 - [ ] 4.1 Power on the target Windows host and record Windows, WSL2, NVIDIA driver, GPU/VRAM, CUDA, Python, and container/runtime versions.
 - [ ] 4.2 Prove WSL2 GPU visibility and select vLLM/SGLang or the documented Transformers fallback through a reproducible compatibility check.
