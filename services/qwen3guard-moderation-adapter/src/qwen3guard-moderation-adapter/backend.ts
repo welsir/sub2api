@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Validated text, provider-aware backend configuration, and caller cancellation signal.
- * [OUTPUT]: Origin-contained Qwen/MiniMax classifications and typed provider failures.
+ * [OUTPUT]: Origin-contained classifications, fail-closed MiniMax uncertainty, and typed transport failures.
  * [POS]: Cancellation-aware Chat Completions clients behind the moderation contract.
  *
  * [PROTOCOL]:
@@ -20,6 +20,7 @@ import {
 import {
   buildMiniMaxChatRequest,
   mapMiniMaxSensitiveResult,
+  mapMiniMaxUncertainResult,
   parseMiniMaxClassification
 } from "./minimax";
 
@@ -346,23 +347,23 @@ export class MiniMaxBackendClient implements ModerationBackendClient {
       const choices = Array.isArray(body.choices) ? body.choices : [];
       const choice = choices[0];
       if (!choice || typeof choice !== "object" || Array.isArray(choice)) {
-        throw new BackendClientError("parse", "MiniMax output was missing");
+        return mapMiniMaxUncertainResult("missing_choice");
       }
       const choiceRecord = choice as Record<string, unknown>;
       if (choiceRecord.finish_reason !== "stop") {
-        throw new BackendClientError("parse", "MiniMax output did not finish with stop");
+        return mapMiniMaxUncertainResult("non_stop_finish");
       }
       const message = choiceRecord.message;
       const content = message && typeof message === "object" && !Array.isArray(message)
         ? (message as Record<string, unknown>).content
         : undefined;
       if (typeof content !== "string" || content.trim() === "") {
-        throw new BackendClientError("parse", "MiniMax output was empty");
+        return mapMiniMaxUncertainResult("empty_content");
       }
       try {
         return parseMiniMaxClassification(content);
       } catch {
-        throw new BackendClientError("parse", "MiniMax output did not match the strict format");
+        return mapMiniMaxUncertainResult("malformed_classifier_output");
       }
     } catch (error) {
       if (timedOut) {

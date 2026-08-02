@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Fake MiniMax HTTP responses and provider-aware adapter configuration.
- * [OUTPUT]: Assertions for request shape, sensitive blocking, and typed provider failures.
+ * [OUTPUT]: Assertions for request shape, fail-closed classifier output, and typed provider failures.
  * [POS]: Direct backend-client contract tests below the adapter HTTP boundary.
  *
  * [PROTOCOL]:
@@ -106,15 +106,22 @@ describe("MiniMax moderation backend client", () => {
     });
   });
 
-  it("rejects malformed final output as a parse failure", async () => {
-    const fetchImpl = vi.fn<FetchImplementation>(async () =>
-      miniMaxResponse(successfulBody("not-json"))
-    );
+  it.each([
+    ["missing choice", successfulBody("", { choices: [] })],
+    ["non-stop finish", {
+      ...successfulBody('{"decision":"allow","category":"none","confidence":1,"reason_code":"safe"}'),
+      choices: [{ finish_reason: "length", message: { role: "assistant", content: "{}" } }]
+    }],
+    ["empty content", successfulBody("")],
+    ["malformed final output", successfulBody("not-json")]
+  ])("maps %s to a successful blocked classification", async (_name, body) => {
+    const fetchImpl = vi.fn<FetchImplementation>(async () => miniMaxResponse(body));
     const client = createBackendClient(config(), fetchImpl);
 
-    await expect(client.classify("input", new AbortController().signal)).rejects.toMatchObject({
-      kind: "parse"
-    });
+    const result = await client.classify("input", new AbortController().signal);
+
+    expect(result.flagged).toBe(true);
+    expect(result.categories.illicit).toBe(true);
   });
 
   it("checks MiniMax readiness through the authenticated models endpoint", async () => {
