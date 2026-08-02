@@ -102,6 +102,7 @@ const baseConfig = (): ContentModerationConfig => ({
   hit_retention_days: 180,
   non_hit_retention_days: 3,
   pre_hash_check_enabled: false,
+  incremental_cache_enabled: false,
   blocked_keywords: [],
   keyword_blocking_mode: 'keyword_and_api',
   thresholds: {
@@ -255,6 +256,20 @@ describe('admin RiskControlView', () => {
       all_groups: true,
       group_ids: [],
       excluded_group_ids: [],
+    }))
+  })
+
+  it('loads and saves the incremental full-context cache switch', async () => {
+    getConfig.mockResolvedValue({ ...baseConfig(), incremental_cache_enabled: true })
+    const wrapper = mountRiskControlView()
+
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      incremental_cache_enabled: true,
     }))
   })
 

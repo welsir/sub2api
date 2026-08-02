@@ -289,6 +289,8 @@ export default {
       recordNonHitsHint: '开启后会记录抽样但未命中的请求摘要，摘要会先脱敏再入库。',
       preHashCheck: '启用前置哈希比对',
       preHashCheckHint: '异步审核命中过的输入哈希会被前置拦截；该拦截不发送邮件，也不累计封禁次数。',
+      incrementalCache: '启用增量全上下文审核',
+      incrementalCacheHint: '复用已审核的稳定上下文块，只将新增或变化部分发送到语义审核；缓存异常时本地拒绝。',
       flaggedHashCount: '当前哈希集合数量：{count} 个',
       flaggedHashHint: '哈希永久保存在 Redis 集合中；可粘贴完整 64 位哈希删除误拦截项，或一键清空全部风险哈希。',
       flaggedHashPlaceholder: '粘贴完整 64 位输入哈希',

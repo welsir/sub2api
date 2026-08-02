@@ -91,7 +91,8 @@ func TestContentModerationHandlerUpdateConfigPersistsAndReturnsExcludedGroupIDs(
 
 	body := bytes.NewBufferString(`{
 		"all_groups": true,
-		"excluded_group_ids": [17, 17]
+		"excluded_group_ids": [17, 17],
+		"incremental_cache_enabled": true
 	}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/admin/risk-control/config", body)
@@ -103,14 +104,16 @@ func TestContentModerationHandlerUpdateConfigPersistsAndReturnsExcludedGroupIDs(
 	var envelope struct {
 		Code int `json:"code"`
 		Data struct {
-			AllGroups        bool    `json:"all_groups"`
-			ExcludedGroupIDs []int64 `json:"excluded_group_ids"`
+			AllGroups               bool    `json:"all_groups"`
+			ExcludedGroupIDs        []int64 `json:"excluded_group_ids"`
+			IncrementalCacheEnabled bool    `json:"incremental_cache_enabled"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
 	require.Zero(t, envelope.Code)
 	require.True(t, envelope.Data.AllGroups)
 	require.Equal(t, []int64{17}, envelope.Data.ExcludedGroupIDs)
+	require.True(t, envelope.Data.IncrementalCacheEnabled)
 
 	var saved service.ContentModerationConfig
 	require.NoError(t, json.Unmarshal(
@@ -119,4 +122,5 @@ func TestContentModerationHandlerUpdateConfigPersistsAndReturnsExcludedGroupIDs(
 	))
 	require.True(t, saved.AllGroups)
 	require.Equal(t, []int64{17}, saved.ExcludedGroupIDs)
+	require.True(t, saved.IncrementalCacheEnabled)
 }

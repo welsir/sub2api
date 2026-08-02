@@ -137,34 +137,35 @@ func ContentModerationCategories() []string {
 }
 
 type ContentModerationConfig struct {
-	Enabled              bool                         `json:"enabled"`
-	Mode                 string                       `json:"mode"`
-	BaseURL              string                       `json:"base_url"`
-	Model                string                       `json:"model"`
-	APIKey               string                       `json:"api_key,omitempty"`
-	APIKeys              []string                     `json:"api_keys,omitempty"`
-	TimeoutMS            int                          `json:"timeout_ms"`
-	SampleRate           int                          `json:"sample_rate"`
-	AllGroups            bool                         `json:"all_groups"`
-	GroupIDs             []int64                      `json:"group_ids"`
-	ExcludedGroupIDs     []int64                      `json:"excluded_group_ids"`
-	RecordNonHits        bool                         `json:"record_non_hits"`
-	Thresholds           map[string]float64           `json:"thresholds"`
-	WorkerCount          int                          `json:"worker_count"`
-	QueueSize            int                          `json:"queue_size"`
-	BlockStatus          int                          `json:"block_status"`
-	BlockMessage         string                       `json:"block_message"`
-	EmailOnHit           bool                         `json:"email_on_hit"`
-	AutoBanEnabled       bool                         `json:"auto_ban_enabled"`
-	BanThreshold         int                          `json:"ban_threshold"`
-	ViolationWindowHours int                          `json:"violation_window_hours"`
-	RetryCount           int                          `json:"retry_count"`
-	HitRetentionDays     int                          `json:"hit_retention_days"`
-	NonHitRetentionDays  int                          `json:"non_hit_retention_days"`
-	PreHashCheckEnabled  bool                         `json:"pre_hash_check_enabled"`
-	BlockedKeywords      []string                     `json:"blocked_keywords"`
-	KeywordBlockingMode  string                       `json:"keyword_blocking_mode"`
-	ModelFilter          ContentModerationModelFilter `json:"model_filter"`
+	Enabled                 bool                         `json:"enabled"`
+	Mode                    string                       `json:"mode"`
+	BaseURL                 string                       `json:"base_url"`
+	Model                   string                       `json:"model"`
+	APIKey                  string                       `json:"api_key,omitempty"`
+	APIKeys                 []string                     `json:"api_keys,omitempty"`
+	TimeoutMS               int                          `json:"timeout_ms"`
+	SampleRate              int                          `json:"sample_rate"`
+	AllGroups               bool                         `json:"all_groups"`
+	GroupIDs                []int64                      `json:"group_ids"`
+	ExcludedGroupIDs        []int64                      `json:"excluded_group_ids"`
+	RecordNonHits           bool                         `json:"record_non_hits"`
+	Thresholds              map[string]float64           `json:"thresholds"`
+	WorkerCount             int                          `json:"worker_count"`
+	QueueSize               int                          `json:"queue_size"`
+	BlockStatus             int                          `json:"block_status"`
+	BlockMessage            string                       `json:"block_message"`
+	EmailOnHit              bool                         `json:"email_on_hit"`
+	AutoBanEnabled          bool                         `json:"auto_ban_enabled"`
+	BanThreshold            int                          `json:"ban_threshold"`
+	ViolationWindowHours    int                          `json:"violation_window_hours"`
+	RetryCount              int                          `json:"retry_count"`
+	HitRetentionDays        int                          `json:"hit_retention_days"`
+	NonHitRetentionDays     int                          `json:"non_hit_retention_days"`
+	PreHashCheckEnabled     bool                         `json:"pre_hash_check_enabled"`
+	IncrementalCacheEnabled bool                         `json:"incremental_cache_enabled"`
+	BlockedKeywords         []string                     `json:"blocked_keywords"`
+	KeywordBlockingMode     string                       `json:"keyword_blocking_mode"`
+	ModelFilter             ContentModerationModelFilter `json:"model_filter"`
 	// CyberPolicyExcludeFromBanCount 为 true 时，cyber_policy 命中不参与自动封号计数：
 	// 当次不判定封号，且历史 cyber 行在 CountFlaggedByUserSince 中被排除。
 	// 默认 false（计入，与历史行为一致；旧配置 JSON 无此字段时反序列化为 false）。
@@ -200,6 +201,7 @@ type ContentModerationConfigView struct {
 	HitRetentionDays               int                             `json:"hit_retention_days"`
 	NonHitRetentionDays            int                             `json:"non_hit_retention_days"`
 	PreHashCheckEnabled            bool                            `json:"pre_hash_check_enabled"`
+	IncrementalCacheEnabled        bool                            `json:"incremental_cache_enabled"`
 	BlockedKeywords                []string                        `json:"blocked_keywords"`
 	KeywordBlockingMode            string                          `json:"keyword_blocking_mode"`
 	ModelFilter                    ContentModerationModelFilter    `json:"model_filter"`
@@ -289,6 +291,7 @@ type UpdateContentModerationConfigInput struct {
 	HitRetentionDays               *int                          `json:"hit_retention_days"`
 	NonHitRetentionDays            *int                          `json:"non_hit_retention_days"`
 	PreHashCheckEnabled            *bool                         `json:"pre_hash_check_enabled"`
+	IncrementalCacheEnabled        *bool                         `json:"incremental_cache_enabled"`
 	BlockedKeywords                *[]string                     `json:"blocked_keywords"`
 	KeywordBlockingMode            *string                       `json:"keyword_blocking_mode"`
 	ModelFilter                    *ContentModerationModelFilter `json:"model_filter"`
@@ -650,6 +653,9 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.PreHashCheckEnabled != nil {
 		cfg.PreHashCheckEnabled = *input.PreHashCheckEnabled
 	}
+	if input.IncrementalCacheEnabled != nil {
+		cfg.IncrementalCacheEnabled = *input.IncrementalCacheEnabled
+	}
 	if input.BlockedKeywords != nil {
 		cfg.BlockedKeywords = normalizeBlockedKeywords(*input.BlockedKeywords)
 	}
@@ -833,6 +839,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"sample_rate", cfg.SampleRate,
 		"api_key_count", len(cfg.apiKeys()),
 		"pre_hash_check_enabled", cfg.PreHashCheckEnabled,
+		"incremental_cache_enabled", cfg.IncrementalCacheEnabled,
 		"record_non_hits", cfg.RecordNonHits)
 	if !cfg.Enabled {
 		slog.Info("content_moderation.skip_config_disabled",
@@ -1929,31 +1936,32 @@ func (s *ContentModerationService) siteName(ctx context.Context) string {
 
 func defaultContentModerationConfig() *ContentModerationConfig {
 	return &ContentModerationConfig{
-		Enabled:              false,
-		Mode:                 ContentModerationModePreBlock,
-		BaseURL:              defaultContentModerationBaseURL,
-		Model:                defaultContentModerationModel,
-		TimeoutMS:            defaultContentModerationTimeoutMS,
-		SampleRate:           100,
-		AllGroups:            true,
-		GroupIDs:             []int64{},
-		ExcludedGroupIDs:     []int64{},
-		RecordNonHits:        false,
-		Thresholds:           ContentModerationDefaultThresholds(),
-		WorkerCount:          defaultContentModerationWorkerCount,
-		QueueSize:            defaultContentModerationQueueSize,
-		BlockStatus:          defaultContentModerationBlockHTTPStatus,
-		BlockMessage:         defaultContentModerationBlockMessage,
-		EmailOnHit:           true,
-		AutoBanEnabled:       true,
-		BanThreshold:         defaultContentModerationBanThreshold,
-		ViolationWindowHours: defaultContentModerationViolationWindowHours,
-		RetryCount:           defaultContentModerationRetryCount,
-		HitRetentionDays:     defaultContentModerationHitRetentionDays,
-		NonHitRetentionDays:  defaultContentModerationNonHitRetentionDays,
-		PreHashCheckEnabled:  false,
-		BlockedKeywords:      []string{},
-		KeywordBlockingMode:  ContentModerationKeywordModeKeywordAndAPI,
+		Enabled:                 false,
+		Mode:                    ContentModerationModePreBlock,
+		BaseURL:                 defaultContentModerationBaseURL,
+		Model:                   defaultContentModerationModel,
+		TimeoutMS:               defaultContentModerationTimeoutMS,
+		SampleRate:              100,
+		AllGroups:               true,
+		GroupIDs:                []int64{},
+		ExcludedGroupIDs:        []int64{},
+		RecordNonHits:           false,
+		Thresholds:              ContentModerationDefaultThresholds(),
+		WorkerCount:             defaultContentModerationWorkerCount,
+		QueueSize:               defaultContentModerationQueueSize,
+		BlockStatus:             defaultContentModerationBlockHTTPStatus,
+		BlockMessage:            defaultContentModerationBlockMessage,
+		EmailOnHit:              true,
+		AutoBanEnabled:          true,
+		BanThreshold:            defaultContentModerationBanThreshold,
+		ViolationWindowHours:    defaultContentModerationViolationWindowHours,
+		RetryCount:              defaultContentModerationRetryCount,
+		HitRetentionDays:        defaultContentModerationHitRetentionDays,
+		NonHitRetentionDays:     defaultContentModerationNonHitRetentionDays,
+		PreHashCheckEnabled:     false,
+		IncrementalCacheEnabled: false,
+		BlockedKeywords:         []string{},
+		KeywordBlockingMode:     ContentModerationKeywordModeKeywordAndAPI,
 		ModelFilter: ContentModerationModelFilter{
 			Type:   ContentModerationModelFilterAll,
 			Models: []string{},
@@ -2323,6 +2331,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		HitRetentionDays:               cfg.HitRetentionDays,
 		NonHitRetentionDays:            cfg.NonHitRetentionDays,
 		PreHashCheckEnabled:            cfg.PreHashCheckEnabled,
+		IncrementalCacheEnabled:        cfg.IncrementalCacheEnabled,
 		BlockedKeywords:                append([]string(nil), cfg.BlockedKeywords...),
 		KeywordBlockingMode:            cfg.KeywordBlockingMode,
 		ModelFilter:                    cloneContentModerationModelFilter(cfg.ModelFilter),

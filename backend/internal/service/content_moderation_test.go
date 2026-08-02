@@ -860,6 +860,31 @@ func TestContentModerationUpdateConfig_SavesCustomThresholds(t *testing.T) {
 	require.NotContains(t, saved.Thresholds, "unknown")
 }
 
+func TestContentModerationUpdateConfig_IncrementalCacheEnabled(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	require.False(t, cfg.IncrementalCacheEnabled)
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestSettingRepo{values: map[string]string{
+		SettingKeyContentModerationConfig: string(rawCfg),
+	}}
+	svc := NewContentModerationService(repo, nil, nil, nil, nil, nil, nil)
+	enabled := true
+
+	view, err := svc.UpdateConfig(context.Background(), UpdateContentModerationConfigInput{
+		IncrementalCacheEnabled: &enabled,
+	})
+
+	require.NoError(t, err)
+	require.True(t, view.IncrementalCacheEnabled)
+
+	var saved ContentModerationConfig
+	require.NoError(t, json.Unmarshal([]byte(repo.values[SettingKeyContentModerationConfig]), &saved))
+	require.True(t, saved.IncrementalCacheEnabled)
+	require.True(t, cloneContentModerationConfig(&saved).IncrementalCacheEnabled)
+}
+
 func TestExtractContentModerationInput_AnthropicImageSourceOnlyParticipatesInMemory(t *testing.T) {
 	body := []byte(`{
 		"messages": [

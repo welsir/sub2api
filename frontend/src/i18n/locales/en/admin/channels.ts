@@ -289,6 +289,8 @@ export default {
       recordNonHitsHint: 'When enabled, sampled non-hit request summaries are redacted before storage.',
       preHashCheck: 'Enable Pre-Hash Check',
       preHashCheckHint: 'Hashes from async hits are blocked before moderation; this does not send email or increment ban counters.',
+      incrementalCache: 'Enable Incremental Full-Context Review',
+      incrementalCacheHint: 'Reuse stable reviewed context chunks and send only new or changed content to semantic moderation; cache failures block locally.',
       flaggedHashCount: 'Current hash collection size: {count}',
       flaggedHashHint: 'Hashes are stored permanently in Redis; paste a full 64-character hash to remove a false block, or clear all stored hashes.',
       flaggedHashPlaceholder: 'Paste full 64-character input hash',
