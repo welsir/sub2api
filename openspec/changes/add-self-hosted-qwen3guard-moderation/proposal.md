@@ -9,8 +9,10 @@ The current moderation path depends on an OpenAI-shaped external service, while 
 - Connect the Sub2API host to the Windows moderation runtime over a private Tailscale path; no raw public Windows inference or adapter port is introduced.
 - Extend Sub2API group scope with an explicit exemption list so every group is moderated by default and only the resolved `tml` group ID bypasses local moderation.
 - Stage the change through contract tests, local fixtures, Windows reachability checks, `observe`, labeled-sample comparison, and an operator-approved switch to `pre_block`.
-- Preserve the current fail-open semantic for moderation-service failures in the first slice, keep deterministic keyword blocking as the available fallback, and expose timeout/error evidence instead of claiming an unavailable classifier blocked traffic.
-- Limit the first slice to inbound text moderation. Model-output moderation, image moderation, automatic promotion, and a strict fail-close policy require separate evidence or approval.
+- Audit the complete outbound semantic context instead of only the last user message, including tool calls and tool outputs, without silently truncating text at 12,000 characters.
+- Preserve non-blocking failure handling in `observe`, but make scoped `pre_block` requests fail closed after at most three total attempts so unavailable or malformed moderation can never continue to the downstream account.
+- Compress large Sub2API-to-adapter requests with gzip while keeping a stable full-context prefix that can benefit from model-server prefix caching.
+- Limit the first slice to request-side semantic moderation. Model-output and general multimodal moderation remain outside this change.
 
 ## Capabilities
 

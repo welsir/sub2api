@@ -38,7 +38,15 @@ The adapter MUST NOT convert malformed, empty, truncated, or unknown Qwen3Guard 
 - **THEN** the adapter returns a non-2xx error, records a redacted parse-error event, and leaves the caller's configured failure policy to decide request handling
 
 ### Requirement: Bounded runtime behavior
-The adapter SHALL enforce configured input, concurrency, queue, and inference-time limits and SHALL return explicit overload or timeout errors instead of allowing unbounded work accumulation.
+The adapter SHALL enforce configured compressed-body, decompressed-body, input, concurrency, queue, and inference-time limits and SHALL return explicit overload or timeout errors instead of allowing unbounded work accumulation.
+
+#### Scenario: Gzip full-context request
+- **WHEN** Sub2API sends a valid gzip-encoded Moderations JSON request within both body limits
+- **THEN** the adapter decompresses it, validates the same authenticated contract, and invokes the backend with the complete text
+
+#### Scenario: Invalid or oversized compressed request
+- **WHEN** a gzip body is malformed or expands beyond the configured body limit
+- **THEN** the adapter returns a clear non-2xx error without invoking the model backend
 
 #### Scenario: Concurrency limit reached
 - **WHEN** all inference slots and the bounded queue are occupied

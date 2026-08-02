@@ -30,6 +30,16 @@
 - [x] 3.7 Update the Sub2API file headers and affected folder documentation required by its repository protocol.
 - [x] 3.8 Run focused Sub2API service, handler, admin API, frontend, type, and build gates and record the exact Sub2API commit/version required by Sub2API deployment.
 
+## 3A. Make Scoped Pre-Block A Complete Fail-Closed Boundary
+
+- [ ] 3A.1 Replace last-message-only extraction with a stable ordered transcript covering all request-side roles, instructions, function/tool calls, and tool outputs for every supported protocol.
+- [ ] 3A.2 Remove the 12,000-rune silent truncation and prove content after the former cutoff is sent to moderation.
+- [ ] 3A.3 Make `retry_count=2` perform up to three total attempts for transient errors even with one audit Key, while terminating deterministic request/authentication errors early.
+- [ ] 3A.4 Return a local 503 for missing Keys, network errors, timeouts, overload, malformed JSON, empty results, and parse failures in scoped `pre_block`; preserve non-blocking `observe` evidence.
+- [ ] 3A.5 Gzip Moderations JSON larger than 1 KiB and add bounded gzip decoding to the Windows adapter.
+- [ ] 3A.6 Add service, handler, adapter, WebSocket, and downstream-boundary tests proving failed moderation cannot select or call an upstream account.
+- [ ] 3A.7 Run focused and regression verification, strict OpenSpec validation, typecheck, and diff hygiene checks.
+
 ## 4. Prepare The Windows Qwen3Guard Runtime
 
 - [ ] 4.1 Power on the target Windows host and record Windows, WSL2, NVIDIA driver, GPU/VRAM, CUDA, Python, and container/runtime versions.
@@ -63,7 +73,7 @@
 - [ ] 7.3 Send equivalent safe and unsafe probes through disposable `tml`, existing non-`tml`, newly created, and ungrouped keys; record only `tml` bypassing local moderation.
 - [ ] 7.4 Confirm a same-name different-ID group is audited and deleting/recreating `tml` does not transfer the exemption automatically.
 - [ ] 7.5 Confirm image, output, and unsupported multimodal requests are not reported as covered by this inbound-text rollout.
-- [ ] 7.6 Collect an agreed observation window of real latency, categories, errors, timeouts, parse failures, fail-open allowances, audited-group counts, and `tml` exemption counts.
+- [ ] 7.6 Collect an agreed observation window of real latency, categories, errors, timeouts, parse failures, observe-mode error allowances, audited-group counts, and `tml` exemption counts.
 - [ ] 7.7 Review false positives and false negatives from observation and rerun the model-selection gate if the evidence disagrees with the labeled benchmark.
 
 ## 8. Exercise Failure Policy And Promote Manually
@@ -71,7 +81,7 @@
 - [ ] 8.1 Drill adapter stop, model stop, malformed model output, tailnet loss, Windows reboot, queue overload, and recovery while non-`tml` traffic remains in `observe`.
 - [ ] 8.2 Prove semantic-provider failures are recorded as errors rather than safe classifications and verify configured hard keywords still follow deterministic blocking policy.
 - [ ] 8.3 Verify that retries and timeouts remain within the accepted user-latency budget during a complete home-host outage.
-- [ ] 8.4 Present quality, performance, observation, exemption, failure, rollback, and remaining fail-open risk evidence for explicit operator approval.
+- [ ] 8.4 Present quality, performance, observation, exemption, failure, rollback, and pre-block availability trade-off evidence for explicit operator approval.
 - [ ] 8.5 After approval, switch non-`tml` traffic to `pre_block` and run approved safe, semantic-unsafe, keyword-unsafe, adapter-error, new-group, ungrouped, and `tml`-exemption probes.
 - [ ] 8.6 Verify blocked and allowed responses at the real client boundary, correlate Sub2API and adapter evidence, and confirm only `tml` skips this local moderation layer.
 - [ ] 8.7 Monitor the initial blocking window and roll back immediately if exemption scope, latency, availability, or false-positive gates regress.

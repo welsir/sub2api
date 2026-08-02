@@ -45,8 +45,16 @@ The Sub2API admin API, configuration view, runtime status, and management UI MUS
 - **WHEN** an exemption update references a group ID that does not exist
 - **THEN** Sub2API rejects the update without changing the active moderation configuration
 
-### Requirement: Inbound-text scope is explicit
-The first rollout SHALL claim coverage only for inbound text extracted by Sub2API and SHALL NOT claim model-output, image, audio, or general multimodal moderation.
+### Requirement: Complete request-side semantic scope is explicit
+The first rollout SHALL audit the complete ordered request-side semantic text extracted by Sub2API, including historical roles and tool traffic, and SHALL NOT claim model-output, image-pixel, audio, or general multimodal moderation.
+
+#### Scenario: Dangerous history followed by a benign continuation
+- **WHEN** a request contains dangerous historical instructions and the last user message is only `Continue`, or the request ends in assistant/tool traffic
+- **THEN** Sub2API sends the complete ordered semantic history to moderation before any downstream account is selected
+
+#### Scenario: Long context exceeds the former cutoff
+- **WHEN** relevant content appears after the former 12,000-rune boundary
+- **THEN** Sub2API includes it in the moderation request and never treats a silently truncated prefix as the complete input
 
 #### Scenario: Operator reviews rollout status
 - **WHEN** moderation coverage is displayed or documented
@@ -70,16 +78,16 @@ The rollout MUST compare Qwen3Guard-Gen 0.6B and 4B on the same representative l
 - **WHEN** both candidate models have been tested
 - **THEN** the decision record contains model revision, unsafe recall, safe false-positive rate, latency percentiles, throughput, memory use, and the operator-approved selection
 
-### Requirement: Explicit fail-open evidence and keyword fallback
-The first rollout SHALL preserve Sub2API's current fail-open handling for semantic-provider errors, SHALL keep deterministic keyword blocking available through `keyword_and_api`, and MUST make semantic errors and timeouts visible.
+### Requirement: Observe is non-blocking and pre-block fails closed
+The first rollout SHALL keep `observe` non-blocking, SHALL keep deterministic keyword blocking available through `keyword_and_api`, and SHALL terminate scoped `pre_block` requests locally when semantic moderation cannot produce a valid decision after bounded attempts.
 
 #### Scenario: Adapter is unavailable for a non-`tml` request
 - **WHEN** semantic moderation for an audited non-`tml` request times out or returns an error
-- **THEN** Sub2API follows the documented fail-open behavior, records the error, and any configured keyword match still follows the deterministic keyword policy
+- **THEN** Sub2API makes at most three total attempts, returns a local 503 if no valid decision is produced, records the error, and does not select or call a downstream account
 
-#### Scenario: Adapter failure is misreported as safe
-- **WHEN** a request was allowed because semantic moderation failed
-- **THEN** dashboards and run evidence classify it as an audit error or fail-open allowance rather than a successful safe classification
+#### Scenario: Observe adapter failure is not misreported as safe
+- **WHEN** an observe-mode request continues because semantic moderation failed
+- **THEN** dashboards and run evidence classify it as an audit error rather than a successful safe classification
 
 ### Requirement: Configuration snapshot and rollback
 Operators MUST capture the pre-change Sub2API moderation configuration and MUST be able to restore it or return the rollout to `observe` or `keyword_only` without restarting Sub2API.
