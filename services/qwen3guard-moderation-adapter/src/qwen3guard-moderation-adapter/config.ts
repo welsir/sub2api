@@ -9,12 +9,14 @@
  */
 
 export type BackendProvider = "qwen" | "minimax";
+export type MiniMaxServiceTier = "standard" | "priority";
 
 export interface AdapterConfig {
   host: string;
   port: number;
   adapterBearerToken: string;
   backendProvider: BackendProvider;
+  miniMaxServiceTier: MiniMaxServiceTier;
   backendBaseUrl: string;
   backendModel: string;
   backendBearerToken?: string;
@@ -146,6 +148,14 @@ function backendProvider(env: Env): BackendProvider {
   return value;
 }
 
+function miniMaxServiceTier(env: Env): MiniMaxServiceTier {
+  const value = env.QWEN3GUARD_MINIMAX_SERVICE_TIER?.trim().toLowerCase() || "standard";
+  if (value !== "standard" && value !== "priority") {
+    throw new Error("QWEN3GUARD_MINIMAX_SERVICE_TIER must be standard or priority");
+  }
+  return value;
+}
+
 export function resolveAdapterConfig(env: Env = process.env): AdapterConfig {
   const adapterBearerToken = requiredText(env, "QWEN3GUARD_ADAPTER_BEARER_TOKEN");
   const resolvedBackendProvider = backendProvider(env);
@@ -179,6 +189,7 @@ export function resolveAdapterConfig(env: Env = process.env): AdapterConfig {
     port: integerSetting(env, "QWEN3GUARD_ADAPTER_PORT", 8090, 1, 65_535),
     adapterBearerToken,
     backendProvider: resolvedBackendProvider,
+    miniMaxServiceTier: miniMaxServiceTier(env),
     backendBaseUrl: resolvedBackendUrl,
     backendModel,
     backendBearerToken: env.QWEN3GUARD_BACKEND_BEARER_TOKEN?.trim() || undefined,

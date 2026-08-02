@@ -12,6 +12,7 @@ import {
   parseAndMapClassification,
   type MappedClassification
 } from "./classification";
+import type { MiniMaxServiceTier } from "./config";
 
 export const MINIMAX_MAPPING_REVISION = "minimax-strict-policy-v1";
 
@@ -26,23 +27,33 @@ Use allow only when the complete transcript is clearly safe. Use block or review
 export interface MiniMaxChatRequest {
   model: string;
   messages: Array<{ role: "system" | "user"; content: string }>;
+  service_tier: MiniMaxServiceTier;
   temperature: number;
-  max_tokens: number;
+  max_completion_tokens: number;
   stream: false;
-  reasoning_split: true;
+  reasoning_split?: true;
+  thinking?: { type: "disabled" };
 }
 
-export function buildMiniMaxChatRequest(model: string, input: string): MiniMaxChatRequest {
+export function buildMiniMaxChatRequest(
+  model: string,
+  input: string,
+  serviceTier: MiniMaxServiceTier = "standard"
+): MiniMaxChatRequest {
+  const canDisableThinking = /^MiniMax-M3(?:$|-)/i.test(model.trim());
   return {
     model,
     messages: [
       { role: "system", content: MINIMAX_CLASSIFIER_INSTRUCTION },
       { role: "user", content: input }
     ],
+    service_tier: serviceTier,
     temperature: 0.1,
-    max_tokens: 256,
+    max_completion_tokens: canDisableThinking ? 128 : 256,
     stream: false,
-    reasoning_split: true
+    ...(canDisableThinking
+      ? { thinking: { type: "disabled" as const } }
+      : { reasoning_split: true as const })
   };
 }
 

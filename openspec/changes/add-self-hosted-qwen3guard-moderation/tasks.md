@@ -49,6 +49,8 @@
 - [x] 3B.5 Preserve complete-context, gzip, bounded execution, Qwen compatibility, and fail-closed Sub2API behavior.
 - [x] 3B.6 Document the high-risk-group-only rollout, require `auto_ban_enabled=false`, and prohibit automatic user or API-key bans from MiniMax decisions.
 - [x] 3B.7 Add provider parser, backend client, HTTP contract, runtime, and configuration verification.
+- [x] 3B.8 Add MiniMax M3 no-thinking and configurable standard/priority admission after credentialed latency probes.
+- [x] 3B.9 Add a non-root, secret-free Docker image boundary with separate liveness and backend-readiness probes.
 
 ## 4. Prepare The Windows Qwen3Guard Runtime
 

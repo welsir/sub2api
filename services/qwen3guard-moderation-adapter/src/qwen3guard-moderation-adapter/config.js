@@ -115,6 +115,14 @@ function backendProvider(env) {
   return value;
 }
 
+function miniMaxServiceTier(env) {
+  const value = env.QWEN3GUARD_MINIMAX_SERVICE_TIER?.trim().toLowerCase() || "standard";
+  if (value !== "standard" && value !== "priority") {
+    throw new Error("QWEN3GUARD_MINIMAX_SERVICE_TIER must be standard or priority");
+  }
+  return value;
+}
+
 export function resolveAdapterConfig(env = process.env) {
   const adapterBearerToken = requiredText(env, "QWEN3GUARD_ADAPTER_BEARER_TOKEN");
   const resolvedBackendProvider = backendProvider(env);
@@ -148,6 +156,7 @@ export function resolveAdapterConfig(env = process.env) {
     port: integerSetting(env, "QWEN3GUARD_ADAPTER_PORT", 8090, 1, 65_535),
     adapterBearerToken,
     backendProvider: resolvedBackendProvider,
+    miniMaxServiceTier: miniMaxServiceTier(env),
     backendBaseUrl: resolvedBackendUrl,
     backendModel,
     backendBearerToken: env.QWEN3GUARD_BACKEND_BEARER_TOKEN?.trim() || undefined,

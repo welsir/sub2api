@@ -18,6 +18,23 @@ pnpm typecheck
 pnpm start
 ```
 
+## Container Commands
+
+Build the adapter without including any runtime credentials in image layers:
+
+```bash
+docker build \
+  --build-arg VERSION=local \
+  --build-arg COMMIT="$(git rev-parse --short HEAD)" \
+  --tag sub2api-moderation-adapter:local .
+```
+
+Supply MiniMax and adapter Bearer tokens only when the container starts. Do not
+use Docker build arguments for secrets. The image listens on port `8090`, runs
+as the non-root `node` user, and uses `/healthz` for its Docker liveness check.
+Deployment tooling must probe `/readyz` separately before routing Sub2API to the
+adapter because readiness verifies the configured backend connection.
+
 The service exposes:
 
 - `GET /healthz`
@@ -42,11 +59,14 @@ normal blocked Moderations decisions. Authentication and billing failures remain
 deterministic 4xx responses; transient and parse failures remain retryable 5xx
 responses for Sub2API's bounded fail-closed policy.
 
-For MiniMax, use `https://api.minimaxi.com`, `MiniMax-M2.7`, `/v1/models`, and a
-dedicated external Bearer token. Never place that token in Sub2API source or this
-repository. Enable `pre_block` only for the approved high-risk `group_ids` and
-set Sub2API `auto_ban_enabled=false` for this rollout. The adapter itself never
-bans users or disables API keys.
+For the low-latency MiniMax path, use `https://api.minimaxi.com`, `MiniMax-M3`,
+`/v1/models`, `QWEN3GUARD_MINIMAX_SERVICE_TIER=priority`, and a dedicated
+external Bearer token. The adapter disables M3 thinking for this deterministic
+classifier request. `standard` remains available for lower-cost testing, and
+M2.x remains compatible but cannot disable thinking. Never place the token in
+Sub2API source or this repository. Enable `pre_block` only for the approved
+high-risk `group_ids` and set Sub2API `auto_ban_enabled=false` for this rollout.
+The adapter itself never bans users or disables API keys.
 
 Stable transcript prefixes can benefit from provider prompt caching, while gzip
 reduces request bytes. The adapter does not maintain session state or reconstruct

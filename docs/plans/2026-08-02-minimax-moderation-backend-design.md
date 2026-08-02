@@ -36,7 +36,8 @@ later only when an actual deployment needs them.
    and score response.
 5. Sub2API selects an OAI account only after a strict allow result.
 
-The initial MiniMax model is `MiniMax-M2.7`. The model stays configurable.
+The initial production candidate is `MiniMax-M3` with thinking disabled. The
+model stays configurable, and M2.x remains compatible for comparison.
 
 ## Strict Decision Policy
 
@@ -77,12 +78,16 @@ separate downstream safety mechanism.
   reuse repeated conversation history.
 - Record provider usage, cached input tokens, latency, trace ID, provider code,
   and normalized outcome without logging credentials or full provider payloads.
-- Start with the standard M2.7 endpoint. High-speed service is a later operational
-  choice based on measured P95/P99, not a code fork.
+- Start production-candidate measurements with `service_tier=priority`; keep
+  `standard` available for lower-cost comparisons. Priority admission is 1.5x
+  the standard token price and does not guarantee a one-second completion.
 
-The code cannot guarantee a one-second SLO without a real MiniMax key and route.
-Production enablement therefore requires a credentialed benchmark from the Omni
-host and must remain separate from this repository change.
+Credentialed Mac-to-MiniMax probes on 2026-08-02 showed M2.7 standard at
+3.43-4.28 seconds. M3 with thinking disabled and standard admission produced
+1.24-3.31 seconds. M3 priority produced 0.827-1.443 seconds across six probes,
+with four of six below one second. This is directional evidence only: production
+enablement still requires a credentialed benchmark from the Omni host, including
+P50/P95/P99 latency and representative full-context requests.
 
 ## Configuration
 

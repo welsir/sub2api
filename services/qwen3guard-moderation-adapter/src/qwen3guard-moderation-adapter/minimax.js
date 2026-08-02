@@ -20,17 +20,21 @@ Return one final JSON object only with exactly these fields:
 {"decision":"allow|block|review","category":"short_category","confidence":0.0,"reason_code":"short_code"}
 Use allow only when the complete transcript is clearly safe. Use block or review when uncertain.`;
 
-export function buildMiniMaxChatRequest(model, input) {
+export function buildMiniMaxChatRequest(model, input, serviceTier = "standard") {
+  const canDisableThinking = /^MiniMax-M3(?:$|-)/i.test(model.trim());
   return {
     model,
     messages: [
       { role: "system", content: MINIMAX_CLASSIFIER_INSTRUCTION },
       { role: "user", content: input }
     ],
+    service_tier: serviceTier,
     temperature: 0.1,
-    max_tokens: 256,
+    max_completion_tokens: canDisableThinking ? 128 : 256,
     stream: false,
-    reasoning_split: true
+    ...(canDisableThinking
+      ? { thinking: { type: "disabled" } }
+      : { reasoning_split: true })
   };
 }
 

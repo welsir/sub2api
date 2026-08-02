@@ -34,6 +34,7 @@ describe("resolveAdapterConfig", () => {
     const config = resolveAdapterConfig(requiredEnv);
 
     expect(config.backendProvider).toBe("qwen");
+    expect(config.miniMaxServiceTier).toBe("standard");
     expect(config.backendReadinessPath).toBe("/health");
     expect(config.host).toBe("127.0.0.1");
     expect(config.port).toBe(8090);
@@ -53,11 +54,13 @@ describe("resolveAdapterConfig", () => {
     const config = resolveAdapterConfig({
       ...requiredEnv,
       QWEN3GUARD_BACKEND_PROVIDER: "minimax",
-      QWEN3GUARD_BACKEND_BASE_URL: "https://api.minimaxi.com"
+      QWEN3GUARD_BACKEND_BASE_URL: "https://api.minimaxi.com",
+      QWEN3GUARD_MINIMAX_SERVICE_TIER: "priority"
     });
 
     expect(config.backendProvider).toBe("minimax");
     expect(config.backendReadinessPath).toBe("/v1/models");
+    expect(config.miniMaxServiceTier).toBe("priority");
   });
 
   it("rejects unsupported moderation backend providers", () => {
@@ -67,6 +70,15 @@ describe("resolveAdapterConfig", () => {
         QWEN3GUARD_BACKEND_PROVIDER: "unknown"
       })
     ).toThrow(/BACKEND_PROVIDER.*qwen.*minimax/i);
+  });
+
+  it("rejects unsupported MiniMax service tiers", () => {
+    expect(() =>
+      resolveAdapterConfig({
+        ...requiredEnv,
+        QWEN3GUARD_MINIMAX_SERVICE_TIER: "fastest"
+      })
+    ).toThrow(/MINIMAX_SERVICE_TIER.*standard.*priority/i);
   });
 
   it("rejects invalid URLs and non-positive or fractional limits", () => {

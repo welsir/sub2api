@@ -1,0 +1,12 @@
+# [INPUT]: Adapter build-context files.
+# [OUTPUT]: Secret-free, dependency-free Docker build context.
+# [POS]: Build boundary that prevents local state and credentials entering image layers.
+
+.env
+*.env
+node_modules
+tests
+coverage
+.DS_Store
+npm-debug.log*
+pnpm-debug.log*

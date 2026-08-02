@@ -21,7 +21,8 @@ function config() {
     QWEN3GUARD_ADAPTER_BEARER_TOKEN: "adapter-token",
     QWEN3GUARD_BACKEND_PROVIDER: "minimax",
     QWEN3GUARD_BACKEND_BASE_URL: "https://api.minimaxi.com",
-    QWEN3GUARD_BACKEND_MODEL: "MiniMax-M2.7",
+    QWEN3GUARD_BACKEND_MODEL: "MiniMax-M3",
+    QWEN3GUARD_MINIMAX_SERVICE_TIER: "priority",
     QWEN3GUARD_BACKEND_BEARER_TOKEN: "minimax-token"
   });
 }
@@ -48,9 +49,12 @@ describe("MiniMax moderation backend client", () => {
     const fetchImpl = vi.fn<FetchImplementation>(async (_url, init) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       const messages = body.messages as Array<Record<string, unknown>>;
-      expect(body.model).toBe("MiniMax-M2.7");
+      expect(body.model).toBe("MiniMax-M3");
       expect(body.stream).toBe(false);
-      expect(body.max_tokens).toBeLessThanOrEqual(256);
+      expect(body.max_completion_tokens).toBe(128);
+      expect(body.service_tier).toBe("priority");
+      expect(body.thinking).toEqual({ type: "disabled" });
+      expect(body.reasoning_split).toBeUndefined();
       expect(messages[0].role).toBe("system");
       expect(messages[1]).toEqual({ role: "user", content: "dangerous transcript" });
       expect(new Headers(init?.headers).get("authorization")).toBe("Bearer minimax-token");

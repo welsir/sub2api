@@ -27,6 +27,10 @@ The adapter SHALL expose a Bearer-authenticated `POST /v1/moderations` endpoint 
 - **WHEN** MiniMax times out, throttles, returns a transient provider error, or emits an invalid final decision
 - **THEN** the adapter returns a visible retryable non-2xx result and never synthesizes an allow response
 
+#### Scenario: MiniMax M3 low-latency request
+- **WHEN** the configured MiniMax model is `MiniMax-M3` and the service tier is `priority`
+- **THEN** the adapter disables thinking, requests priority admission, bounds completion tokens, and retains the same strict final-decision parser
+
 #### Scenario: Unsupported multimodal input
 - **WHEN** a Moderations request contains an image or another unsupported non-text part
 - **THEN** the adapter returns a clear non-2xx error and does not silently classify the input as safe

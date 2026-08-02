@@ -307,7 +307,11 @@ export class MiniMaxBackendClient {
           method: "POST",
           headers: this.headers(true),
           signal: controller.signal,
-          body: JSON.stringify(buildMiniMaxChatRequest(this.config.backendModel, input))
+          body: JSON.stringify(buildMiniMaxChatRequest(
+            this.config.backendModel,
+            input,
+            this.config.miniMaxServiceTier
+          ))
         }
       );
       const rawResponse = await readLimitedResponseBody(response, controller.signal);

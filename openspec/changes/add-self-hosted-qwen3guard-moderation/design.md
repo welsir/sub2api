@@ -17,6 +17,12 @@ failures are deterministic; transient, timeout, and parse failures remain visibl
 for Sub2API's bounded fail-closed policy. Windows, Tailscale, and local-model tasks
 remain optional future work and are not production prerequisites for this rollout.
 
+Credentialed latency probes selected `MiniMax-M3` with thinking disabled and
+configurable `standard|priority` service admission for the first hosted rollout.
+M2.x remains compatible, but its thinking cannot be disabled and was materially
+slower in the measured short-classifier probes. Priority admission improves the
+observed latency distribution but is not treated as a one-second SLA.
+
 Sub2API owns content-moderation policy. The inspected development branch already accepts an OpenAI-shaped `POST <base>/v1/moderations` provider, scopes checks by the authenticated API key's `GroupID`, and supports `off`, `observe`, and `pre_block`. The prior implementation audited only the last user message, silently truncated normalized text at 12,000 characters, and allowed scoped requests after semantic-provider failure.
 
 A read-only check of 43 V2 on 2026-07-30 verified the deployed image as `tml/sub2api:v0.1.156-omni-luna-first-text-20260728`, the independent database as `sub2api_v2`, and the active exact-name `tml` group as ID `18`. The live legacy moderation JSON is currently `enabled=true`, `mode=pre_block`, `all_groups=false`, `group_ids=[8,10,13,14,15]`, and `keyword_blocking_mode=keyword_only`; it has no `excluded_group_ids`, semantic-provider endpoint, or semantic-provider credential configured. These are point-in-time production facts and no live setting was changed.
