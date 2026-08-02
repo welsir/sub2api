@@ -1561,6 +1561,32 @@ func TestContentModerationCallModeration_FreezesByHTTPStatus(t *testing.T) {
 	}
 }
 
+func TestContentModerationNextUsableAPIKey_LocalSingleKeyIgnoresGlobalFreeze(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.BaseURL = "http://moderation-adapter:8090"
+	cfg.APIKeys = []string{"adapter-internal-token"}
+	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
+	svc.markAPIKeyError("adapter-internal-token", "temporary adapter failure", 100, http.StatusInternalServerError)
+
+	key, ok := svc.nextUsableAPIKey(cfg)
+
+	require.True(t, ok)
+	require.Equal(t, "adapter-internal-token", key)
+}
+
+func TestContentModerationNextUsableAPIKey_ExternalSingleKeyRespectsGlobalFreeze(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.BaseURL = "https://moderation.example.com"
+	cfg.APIKeys = []string{"external-provider-key"}
+	svc := NewContentModerationService(nil, nil, nil, nil, nil, nil, nil)
+	svc.markAPIKeyError("external-provider-key", "provider failure", 100, http.StatusInternalServerError)
+
+	key, ok := svc.nextUsableAPIKey(cfg)
+
+	require.False(t, ok)
+	require.Empty(t, key)
+}
+
 func TestContentModerationTestAPIKeys_400DoesNotFreezeAPIKey(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)

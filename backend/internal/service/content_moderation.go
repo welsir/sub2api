@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -2137,6 +2138,11 @@ func (s *ContentModerationService) nextUsableAPIKey(cfg *ContentModerationConfig
 	if len(keys) == 0 {
 		return "", false
 	}
+	// A local adapter token is a stable service credential, not a rotatable
+	// provider key. Keep bounded per-request retries without freezing all traffic.
+	if len(keys) == 1 && isLocalContentModerationBaseURL(cfg.BaseURL) {
+		return keys[0], true
+	}
 	now := time.Now()
 	for i := 0; i < len(keys); i++ {
 		idx := int(s.apiKeyCursor.Add(1)-1) % len(keys)
@@ -2146,6 +2152,24 @@ func (s *ContentModerationService) nextUsableAPIKey(cfg *ContentModerationConfig
 		}
 	}
 	return "", false
+}
+
+func isLocalContentModerationBaseURL(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSpace(parsed.Hostname()))
+	if host == "" {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+	}
+	return !strings.Contains(host, ".")
 }
 
 func (s *ContentModerationService) isAPIKeyFrozen(key string, now time.Time) bool {
