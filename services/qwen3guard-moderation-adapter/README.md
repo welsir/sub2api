@@ -59,6 +59,13 @@ normal blocked Moderations decisions. Authentication and billing failures remain
 deterministic 4xx responses; transient and parse failures remain retryable 5xx
 responses for Sub2API's bounded fail-closed policy.
 
+The configured Qwen and MiniMax text backends do not inspect image contents.
+OpenAI-shaped structured inputs containing `image_url` therefore receive a
+deterministic local blocked decision without invoking the text backend or OAI.
+This conservative boundary must remain until a separately verified vision
+moderation backend is available; it must not silently treat uninspected images
+as safe.
+
 For the low-latency MiniMax path, use `https://api.minimaxi.com`, `MiniMax-M3`,
 `/v1/models`, `QWEN3GUARD_MINIMAX_SERVICE_TIER=priority`, and a dedicated
 external Bearer token. The adapter disables M3 thinking for this deterministic

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Validated adapter config, authenticated HTTP requests, and provider backend responses.
- * [OUTPUT]: Raw-target-safe bounded HTTP/gzip surfaces plus cancellable hard-deadline shutdown.
+ * [OUTPUT]: Bounded HTTP/gzip moderation, deterministic image fail-closed decisions, and hard-deadline shutdown.
  * [POS]: Standalone moderation process boundary, separate from Omni northbound routing.
  *
  * [PROTOCOL]:
@@ -17,7 +17,11 @@ import {
   createBackendClient,
   type FetchImplementation
 } from "./backend";
-import { MAPPING_REVISION, type MappedClassification } from "./classification";
+import {
+  MAPPING_REVISION,
+  evaluatedCategories,
+  type MappedClassification
+} from "./classification";
 import type { AdapterConfig } from "./config";
 import { AdapterMetrics, type RequestOutcome } from "./metrics";
 import { MINIMAX_MAPPING_REVISION } from "./minimax";
@@ -319,9 +323,32 @@ function decodeRequestBody(request: IncomingMessage, rawBody: Buffer, maxBytes: 
   }
 }
 
+const LOCAL_MEDIA_MAPPING_REVISION = "local-text-only-media-fail-closed-v1";
+
+function localMediaBlockClassification(): MappedClassification {
+  const categoryScores = Object.fromEntries(
+    evaluatedCategories.map((category) => [category, category === "illicit" ? 1 : 0])
+  ) as MappedClassification["categoryScores"];
+  const categories = Object.fromEntries(
+    evaluatedCategories.map((category) => [category, categoryScores[category] > 0])
+  ) as MappedClassification["categories"];
+  return {
+    label: "Unsafe",
+    sourceCategoryCount: 1,
+    mappedCategories: ["illicit"],
+    categoryMapping: "mapped",
+    flagged: true,
+    policyValue: 1,
+    categories,
+    categoryScores,
+    mappingRevision: LOCAL_MEDIA_MAPPING_REVISION
+  };
+}
+
 function moderationInput(rawBody: string, maxInputChars: number): {
   model: string;
   input: string;
+  hasImage: boolean;
 } {
   let parsed: unknown;
   try {
@@ -340,6 +367,7 @@ function moderationInput(rawBody: string, maxInputChars: number): {
     throw new RequestValidationError(400, "invalid_model", "model must be a non-empty string");
   }
   let input: string;
+  let hasImage = false;
   if (typeof body.input === "string") {
     input = body.input;
   } else if (
@@ -348,6 +376,42 @@ function moderationInput(rawBody: string, maxInputChars: number): {
     body.input.every((item) => typeof item === "string")
   ) {
     input = body.input.join("\n");
+  } else if (Array.isArray(body.input) && body.input.length > 0) {
+    const textParts: string[] = [];
+    for (const item of body.input) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        throw new RequestValidationError(
+          400,
+          "unsupported_input",
+          "structured input must contain text or image_url parts"
+        );
+      }
+      const part = item as Record<string, unknown>;
+      if (part.type === "text" && typeof part.text === "string") {
+        if (part.text.trim() !== "") {
+          textParts.push(part.text);
+        }
+        continue;
+      }
+      const imageUrl = part.image_url;
+      if (
+        part.type === "image_url" &&
+        imageUrl &&
+        typeof imageUrl === "object" &&
+        !Array.isArray(imageUrl) &&
+        typeof (imageUrl as Record<string, unknown>).url === "string" &&
+        String((imageUrl as Record<string, unknown>).url).trim() !== ""
+      ) {
+        hasImage = true;
+        continue;
+      }
+      throw new RequestValidationError(
+        400,
+        "unsupported_input",
+        "structured input must contain text or image_url parts"
+      );
+    }
+    input = textParts.join("\n");
   } else {
     throw new RequestValidationError(
       400,
@@ -355,8 +419,11 @@ function moderationInput(rawBody: string, maxInputChars: number): {
       "input must be text or a non-empty text array"
     );
   }
-  if (input.trim() === "") {
+  if (input.trim() === "" && !hasImage) {
     throw new RequestValidationError(400, "invalid_input", "input must contain text");
+  }
+  if (input.trim() === "" && hasImage) {
+    input = "[IMAGE_ATTACHMENT_PRESENT]";
   }
   if (input.length > maxInputChars) {
     throw new RequestValidationError(
@@ -365,7 +432,7 @@ function moderationInput(rawBody: string, maxInputChars: number): {
       "normalized input exceeds configured limit"
     );
   }
-  return { model: body.model, input };
+  return { model: body.model, input, hasImage };
 }
 
 function outcomeFor(error: BackendClientError): RequestOutcome {
@@ -642,7 +709,7 @@ export function createModerationAdapterServer(
       return;
     }
 
-    let normalized: { model: string; input: string };
+    let normalized: { model: string; input: string; hasImage: boolean };
     try {
       const rawBody = await readBody(
           request,
@@ -696,6 +763,42 @@ export function createModerationAdapterServer(
     }
 
     const inputHash = createHash("sha256").update(normalized.input).digest("hex");
+    if (normalized.hasImage) {
+      const result = localMediaBlockClassification();
+      metrics.incrementRequest("success");
+      metrics.incrementClassification(result.label);
+      emit({
+        event: "qwen3guard_moderation.completed",
+        request_id: correlationId,
+        backend_provider: "local_policy",
+        model_revision: "text-only-image-fail-closed",
+        mapping_revision: result.mappingRevision,
+        input_chars: normalized.input.length,
+        input_hash: inputHash,
+        label: result.label,
+        mapped_categories: result.mappedCategories,
+        category_mapping: result.categoryMapping,
+        source_category_count: result.sourceCategoryCount,
+        latency_ms: 0
+      });
+      writeJson(
+        response,
+        200,
+        {
+          id: `modr_${randomUUID()}`,
+          model: normalized.model,
+          results: [
+            {
+              flagged: result.flagged,
+              categories: result.categories,
+              category_scores: result.categoryScores
+            }
+          ]
+        },
+        correlationId
+      );
+      return;
+    }
     const started = Date.now();
     try {
       const result = await scheduler.run(

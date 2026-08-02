@@ -1,6 +1,6 @@
 /**
  * [INPUT]: HTTP requests plus a local fake Qwen Chat Completions backend.
- * [OUTPUT]: HTTP, raw-target, stream-cancel classification, redaction, and lifecycle assertions.
+ * [OUTPUT]: HTTP, image fail-closed, stream-cancel, redaction, and lifecycle assertions.
  * [POS]: TypeScript contract suite for the standalone moderation adapter process.
  *
  * [PROTOCOL]:
@@ -527,15 +527,39 @@ describe("Qwen3Guard moderation adapter HTTP contract", () => {
     expect(backend.calls).toBe(0);
   });
 
-  it.each([
-    [{ type: "image_url", image_url: { url: "https://invalid.example/image.png" } }],
-    [[{ type: "text", text: "object text is unsupported" }]],
-    [["ok", 42]]
-  ])("rejects unsupported non-text or mixed input without backend work", async (input) => {
+  it("fails closed for structured image input without invoking the text backend", async () => {
     const backend = await startFakeBackend();
     const { baseUrl } = await startAdapter(configFor(backend.baseUrl));
 
-    const response = await moderate(baseUrl, input);
+    const response = await moderate(baseUrl, [
+      { type: "text", text: "associated prompt" },
+      { type: "image_url", image_url: { url: "https://invalid.example/image.png" } }
+    ]);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.results[0].flagged).toBe(true);
+    expect(body.results[0].categories.illicit).toBe(true);
+    expect(body.results[0].category_scores.illicit).toBe(1);
+    expect(backend.calls).toBe(0);
+  });
+
+  it("normalizes structured text input before invoking the text backend", async () => {
+    const backend = await startFakeBackend();
+    const { baseUrl } = await startAdapter(configFor(backend.baseUrl));
+
+    const response = await moderate(baseUrl, [{ type: "text", text: "structured text" }]);
+
+    expect(response.status).toBe(200);
+    expect(backend.requests).toHaveLength(1);
+    expect(backend.requests[0].messages).toEqual([{ role: "user", content: "structured text" }]);
+  });
+
+  it("rejects unsupported mixed input without backend work", async () => {
+    const backend = await startFakeBackend();
+    const { baseUrl } = await startAdapter(configFor(backend.baseUrl));
+
+    const response = await moderate(baseUrl, ["ok", 42]);
 
     expect(response.status).toBe(400);
     expect(backend.calls).toBe(0);
