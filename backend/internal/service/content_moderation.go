@@ -500,6 +500,7 @@ type ContentModerationService struct {
 	settingRepo              SettingRepository
 	repo                     ContentModerationRepository
 	hashCache                ContentModerationHashCache
+	chunkCache               ContentModerationChunkCache
 	groupRepo                GroupRepository
 	userRepo                 UserRepository
 	authCacheInvalidator     APIKeyAuthCacheInvalidator
@@ -576,6 +577,9 @@ func NewContentModerationService(
 		workerCount:          maxContentModerationWorkerCount,
 		asyncQueue:           make(chan contentModerationTask, maxContentModerationQueueSize),
 		keyHealth:            make(map[string]*contentModerationKeyHealth),
+	}
+	if chunkCache, ok := hashCache.(ContentModerationChunkCache); ok {
+		svc.chunkCache = chunkCache
 	}
 	if settingRepo != nil && repo != nil {
 		for i := 0; i < svc.workerCount; i++ {
@@ -1034,7 +1038,25 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		defer s.preBlockActive.Add(-1)
 	}
 	start := time.Now()
-	result, err := s.callModeration(ctx, cfg, content.ModerationInput(), trackPreBlock)
+	var result *moderationAPIResult
+	var err error
+	var incrementalStats contentModerationChunkReviewStats
+	if cfg.IncrementalCacheEnabled && len(content.Images) > 0 {
+		err = errors.New("structured images are not supported by incremental moderation")
+	} else if cfg.IncrementalCacheEnabled {
+		result, incrementalStats, err = s.callModerationIncremental(ctx, cfg, content.Text, trackPreBlock)
+		slog.Info("content_moderation.incremental_review",
+			"user_id", input.UserID,
+			"api_key_id", input.APIKeyID,
+			"endpoint", input.Endpoint,
+			"protocol", input.Protocol,
+			"total_chunks", incrementalStats.TotalChunks,
+			"cache_hits", incrementalStats.CacheHits,
+			"cache_misses", incrementalStats.CacheMisses,
+			"reviewed_chunks", incrementalStats.ReviewedChunks)
+	} else {
+		result, err = s.callModeration(ctx, cfg, content.ModerationInput(), trackPreBlock)
+	}
 	latency := int(time.Since(start).Milliseconds())
 	if err != nil {
 		if trackPreBlock {
