@@ -32,13 +32,13 @@
 
 ## 3A. Make Scoped Pre-Block A Complete Fail-Closed Boundary
 
-- [ ] 3A.1 Replace last-message-only extraction with a stable ordered transcript covering all request-side roles, instructions, function/tool calls, and tool outputs for every supported protocol.
-- [ ] 3A.2 Remove the 12,000-rune silent truncation and prove content after the former cutoff is sent to moderation.
-- [ ] 3A.3 Make `retry_count=2` perform up to three total attempts for transient errors even with one audit Key, while terminating deterministic request/authentication errors early.
-- [ ] 3A.4 Return a local 503 for missing Keys, network errors, timeouts, overload, malformed JSON, empty results, and parse failures in scoped `pre_block`; preserve non-blocking `observe` evidence.
-- [ ] 3A.5 Gzip Moderations JSON larger than 1 KiB and add bounded gzip decoding to the Windows adapter.
-- [ ] 3A.6 Add service, handler, adapter, WebSocket, and downstream-boundary tests proving failed moderation cannot select or call an upstream account.
-- [ ] 3A.7 Run focused and regression verification, strict OpenSpec validation, typecheck, and diff hygiene checks.
+- [x] 3A.1 Replace last-message-only extraction with a stable ordered transcript covering all request-side roles, instructions, function/tool calls, and tool outputs for every supported protocol.
+- [x] 3A.2 Remove the 12,000-rune silent truncation and prove content after the former cutoff is sent to moderation.
+- [x] 3A.3 Make `retry_count=2` perform up to three total attempts for transient errors even with one audit Key, while terminating deterministic request/authentication errors early.
+- [x] 3A.4 Return a local 503 for missing Keys, network errors, timeouts, overload, malformed JSON, empty results, and parse failures in scoped `pre_block`; preserve non-blocking `observe` evidence.
+- [x] 3A.5 Gzip Moderations JSON larger than 1 KiB and add bounded gzip decoding to the Windows adapter.
+- [x] 3A.6 Add service, handler, adapter, WebSocket, and downstream-boundary tests proving failed moderation cannot select or call an upstream account.
+- [x] 3A.7 Run focused and regression verification, strict OpenSpec validation, typecheck, and diff hygiene checks.
 
 ## 4. Prepare The Windows Qwen3Guard Runtime
 

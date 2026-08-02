@@ -781,7 +781,8 @@ func TestOpenAIResponsesWebSocket_PreviousResponseIDKindLoggedBeforeAcquireFailu
 }
 
 type contentModerationHandlerSettingRepo struct {
-	values map[string]string
+	values      map[string]string
+	getValueErr error
 }
 
 func (r *contentModerationHandlerSettingRepo) Get(ctx context.Context, key string) (*service.Setting, error) {
@@ -792,10 +793,44 @@ func (r *contentModerationHandlerSettingRepo) Get(ctx context.Context, key strin
 }
 
 func (r *contentModerationHandlerSettingRepo) GetValue(ctx context.Context, key string) (string, error) {
+	if r.getValueErr != nil {
+		return "", r.getValueErr
+	}
 	if value, ok := r.values[key]; ok {
 		return value, nil
 	}
 	return "", service.ErrSettingNotFound
+}
+
+func TestRunContentModeration_ConfigFailureReturnsLocalBlock(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	svc := service.NewContentModerationService(
+		&contentModerationHandlerSettingRepo{getValueErr: errors.New("settings database unavailable")},
+		&contentModerationHandlerTestRepo{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	decision := runContentModeration(
+		c,
+		nil,
+		svc,
+		nil,
+		middleware.AuthSubject{UserID: 1},
+		service.ContentModerationProtocolOpenAIResponses,
+		"gpt-5.5",
+		[]byte(`{"input":"hello"}`),
+	)
+
+	require.NotNil(t, decision)
+	require.True(t, decision.Blocked)
+	require.Equal(t, service.ContentModerationActionError, decision.Action)
+	require.Equal(t, http.StatusServiceUnavailable, decision.StatusCode)
 }
 
 func (r *contentModerationHandlerSettingRepo) Set(ctx context.Context, key, value string) error {
@@ -979,12 +1014,33 @@ func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T
 	}, time.Second, 10*time.Millisecond)
 	require.True(t, logs[0].Flagged)
 	require.Equal(t, service.ContentModerationActionBlock, logs[0].Action)
-	require.Equal(t, "bad prompt", logs[0].InputExcerpt)
+	require.Equal(t, "[user] bad prompt", logs[0].InputExcerpt)
 	select {
 	case promptAuditLog := <-promptAuditRepo.records:
 		t.Fatalf("locally blocked request must not create an upstream audit row: %#v", promptAuditLog)
 	default:
 	}
+}
+
+func TestBuildOpenAIWSModerationPayloadCarriesHistoryIntoContinueTurn(t *testing.T) {
+	first := []byte(`{
+		"input":[
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"dangerous historical request"}]},
+			{"type":"message","role":"assistant","content":[{"type":"output_text","text":"partial answer"}]}
+		]
+	}`)
+	second := []byte(`{
+		"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue"}]}]
+	}`)
+	history := service.ExtractContentModerationInput(service.ContentModerationProtocolOpenAIResponses, first).Text
+
+	combined, moderationPayload := buildOpenAIWSModerationPayload(history, second)
+	moderationInput := service.ExtractContentModerationInput(service.ContentModerationProtocolOpenAIResponses, moderationPayload)
+
+	require.Equal(t, history+" [user] Continue", combined)
+	require.Contains(t, moderationInput.Text, "dangerous historical request")
+	require.Contains(t, moderationInput.Text, "partial answer")
+	require.Contains(t, moderationInput.Text, "Continue")
 }
 
 func TestOpenAIResponsesWebSocket_PassthroughUsageLogPersistsUserAgentAndReasoningEffort(t *testing.T) {

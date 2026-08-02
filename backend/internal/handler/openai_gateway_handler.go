@@ -1402,6 +1402,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, decision.Message)
 		return
 	}
+	wsModerationHistory := service.ExtractContentModerationInput(service.ContentModerationProtocolOpenAIResponses, firstMessage).Text
 	// checkContentModeration attaches the upstream audit metadata.
 	ctx = c.Request.Context()
 
@@ -1592,7 +1593,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if model == "" {
 					model = reqModel
 				}
-				if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, payload); decision != nil && decision.Blocked {
+				var moderationPayload []byte
+				wsModerationHistory, moderationPayload = buildOpenAIWSModerationPayload(wsModerationHistory, payload)
+				if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, moderationPayload); decision != nil && decision.Blocked {
 					writeContentModerationWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, decision.Message, nil)
 				}
@@ -1766,6 +1769,35 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		return
 	}
 
+}
+
+func buildOpenAIWSModerationPayload(history string, payload []byte) (string, []byte) {
+	current := service.ExtractContentModerationInput(service.ContentModerationProtocolOpenAIResponses, payload)
+	combined := strings.TrimSpace(strings.TrimSpace(history) + " " + strings.TrimSpace(current.Text))
+	if combined == "" && len(current.Images) == 0 {
+		return history, payload
+	}
+	if len(current.Images) == 0 {
+		body, err := json.Marshal(map[string]any{"input": combined})
+		if err == nil {
+			return combined, body
+		}
+		return combined, payload
+	}
+	content := make([]map[string]any, 0, len(current.Images)+1)
+	if combined != "" {
+		content = append(content, map[string]any{"type": "input_text", "text": combined})
+	}
+	for _, image := range current.Images {
+		content = append(content, map[string]any{"type": "input_image", "image_url": image})
+	}
+	body, err := json.Marshal(map[string]any{
+		"input": []map[string]any{{"type": "message", "role": "user", "content": content}},
+	})
+	if err != nil {
+		return combined, payload
+	}
+	return combined, body
 }
 
 func (h *OpenAIGatewayHandler) recoverResponsesPanic(c *gin.Context, streamStarted *bool) {

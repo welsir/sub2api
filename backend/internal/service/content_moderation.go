@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -59,8 +60,8 @@ const (
 	defaultContentModerationModel     = "omni-moderation-latest"
 	defaultContentModerationTimeoutMS = 3000
 	maxContentModerationTimeoutMS     = 30000
-	maxModerationInputRunes           = 12000
 	maxModerationExcerptRunes         = 240
+	minContentModerationGzipBytes     = 1024
 
 	defaultContentModerationWorkerCount          = 4
 	maxContentModerationWorkerCount              = 32
@@ -70,6 +71,7 @@ const (
 	defaultContentModerationViolationWindowHours = 720
 	defaultContentModerationBlockHTTPStatus      = http.StatusForbidden
 	defaultContentModerationBlockMessage         = "内容审计命中风险规则，请调整输入后重试"
+	defaultContentModerationErrorMessage         = "内容审计服务暂时不可用，请稍后重试"
 	defaultContentModerationRetryCount           = 2
 	maxContentModerationRetryCount               = 5
 	defaultContentModerationHitRetentionDays     = 180
@@ -321,7 +323,7 @@ func (in *ContentModerationInput) Normalize() {
 	if in == nil {
 		return
 	}
-	in.Text = trimRunes(normalizeContentModerationText(in.Text), maxModerationInputRunes)
+	in.Text = normalizeContentModerationText(in.Text)
 	in.Images = normalizeModerationImages(in.Images)
 }
 
@@ -775,15 +777,19 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 func (s *ContentModerationService) Check(ctx context.Context, input ContentModerationCheckInput) (*ContentModerationDecision, error) {
 	allow := &ContentModerationDecision{Allowed: true, Action: ContentModerationActionAllow}
 	if s == nil || s.settingRepo == nil || s.repo == nil {
-		slog.Info("content_moderation.skip_unavailable",
+		slog.Warn("content_moderation.unavailable",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol)
-		return allow, nil
+		return nil, errors.New("content moderation service unavailable")
 	}
-	if !s.isRiskControlEnabled(ctx) {
+	riskControlEnabled, err := s.isRiskControlEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !riskControlEnabled {
 		slog.Info("content_moderation.skip_feature_disabled",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
@@ -794,14 +800,14 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 	}
 	cfg, err := s.loadConfig(ctx)
 	if err != nil {
-		slog.Warn("content_moderation.skip_config_load_failed",
+		slog.Warn("content_moderation.config_load_failed",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol,
 			"error", err)
-		return allow, nil
+		return nil, err
 	}
 	inGroupScope := cfg.includesGroup(input.GroupID)
 	inModelScope := cfg.includesModel(input.Model)
@@ -970,10 +976,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			}, nil
 		}
 	}
-	if !cfg.shouldSample(hashText) {
-		if cfg.Mode == ContentModerationModePreBlock {
-			s.recordPreBlockSyncMetric(0, ContentModerationActionAllow)
-		}
+	if cfg.Mode != ContentModerationModePreBlock && !cfg.shouldSample(hashText) {
 		slog.Info("content_moderation.skip_sample_rate",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
@@ -993,6 +996,11 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"group_id", contentModerationLogGroupID(input.GroupID),
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol)
+		if cfg.Mode == ContentModerationModePreBlock {
+			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), nil, nil, "no moderation api key configured")
+			_ = s.repo.CreateLog(ctx, log)
+			return ContentModerationFailureDecision(), nil
+		}
 		return allow, nil
 	}
 	if cfg.Mode == ContentModerationModeObserve {
@@ -1038,9 +1046,12 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		if queueDelay != nil {
 			s.asyncErrors.Add(1)
 		}
-		if cfg.RecordNonHits {
+		if cfg.RecordNonHits || trackPreBlock {
 			log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), &latency, queueDelay, err.Error())
 			_ = s.repo.CreateLog(ctx, log)
+		}
+		if trackPreBlock {
+			return ContentModerationFailureDecision()
 		}
 		return allow
 	}
@@ -1342,7 +1353,10 @@ func (s *ContentModerationService) GetStatus(ctx context.Context) (*ContentModer
 	if err != nil {
 		return nil, err
 	}
-	riskEnabled := s.isRiskControlEnabled(ctx)
+	riskEnabled, err := s.isRiskControlEnabled(ctx)
+	if err != nil {
+		return nil, err
+	}
 	active := int(s.asyncActive.Load())
 	if active < 0 {
 		active = 0
@@ -1473,12 +1487,15 @@ func (s *ContentModerationService) loadConfig(ctx context.Context) (*ContentMode
 	return cfg, nil
 }
 
-func (s *ContentModerationService) isRiskControlEnabled(ctx context.Context) bool {
+func (s *ContentModerationService) isRiskControlEnabled(ctx context.Context) (bool, error) {
 	raw, err := s.settingRepo.GetValue(ctx, SettingKeyRiskControlEnabled)
 	if err != nil {
-		return false
+		if errors.Is(err, ErrSettingNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("get risk control setting: %w", err)
 	}
-	return raw == "true"
+	return raw == "true", nil
 }
 
 func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *ContentModerationConfig) error {
@@ -1540,12 +1557,19 @@ func (s *ContentModerationService) callModeration(ctx context.Context, cfg *Cont
 	}
 	trackLoad := len(trackKeyLoad) > 0 && trackKeyLoad[0]
 	var lastErr error
+	var lastKey string
 	for attempt := 0; attempt < attempts; attempt++ {
 		key, ok := s.nextUsableAPIKey(cfg)
 		if !ok {
-			lastErr = errors.New("no moderation api key available")
-			break
+			if attempt == 0 || lastKey == "" {
+				lastErr = errors.New("no moderation api key available")
+				break
+			}
+			// A transient failure may freeze the only key for future requests. The
+			// current request still owns its bounded retry budget.
+			key = lastKey
 		}
+		lastKey = key
 		if trackLoad {
 			s.beginModerationAPIKeyCall(key)
 		}
@@ -1565,7 +1589,7 @@ func (s *ContentModerationService) callModeration(ctx context.Context, cfg *Cont
 		}
 		s.markAPIKeyError(key, err.Error(), latency, httpStatus)
 		lastErr = err
-		if httpStatus == http.StatusBadRequest {
+		if !isRetryableModerationFailure(httpStatus) {
 			break
 		}
 		if attempt == attempts-1 {
@@ -1579,6 +1603,14 @@ func (s *ContentModerationService) callModeration(ctx context.Context, cfg *Cont
 		}
 	}
 	return nil, lastErr
+}
+
+func isRetryableModerationFailure(httpStatus int) bool {
+	if httpStatus == 0 || httpStatus == http.StatusRequestTimeout || httpStatus == http.StatusTooManyRequests {
+		return true
+	}
+	// A 2xx status can still carry an empty or malformed moderation result.
+	return (httpStatus >= 200 && httpStatus < 300) || httpStatus >= 500
 }
 
 func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Context, cfg *ContentModerationConfig, apiKey string, input any, httpStatus *int) (*moderationAPIResult, error) {
@@ -1595,6 +1627,10 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 	if err != nil {
 		return nil, err
 	}
+	raw, compressed, err := compressContentModerationRequest(raw)
+	if err != nil {
+		return nil, err
+	}
 	timeout := time.Duration(cfg.TimeoutMS) * time.Millisecond
 	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -1605,6 +1641,9 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
+	if compressed {
+		req.Header.Set("Content-Encoding", "gzip")
+	}
 
 	client := s.httpClient
 	if client == nil {
@@ -1631,6 +1670,36 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 		return nil, errors.New("moderation api returned empty results")
 	}
 	return &out.Results[0], nil
+}
+
+func compressContentModerationRequest(raw []byte) ([]byte, bool, error) {
+	if len(raw) < minContentModerationGzipBytes {
+		return raw, false, nil
+	}
+	var compressed bytes.Buffer
+	writer, err := gzip.NewWriterLevel(&compressed, gzip.BestSpeed)
+	if err != nil {
+		return nil, false, err
+	}
+	if _, err := writer.Write(raw); err != nil {
+		_ = writer.Close()
+		return nil, false, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, false, err
+	}
+	return compressed.Bytes(), true, nil
+}
+
+func ContentModerationFailureDecision() *ContentModerationDecision {
+	return &ContentModerationDecision{
+		Allowed:    false,
+		Blocked:    true,
+		Flagged:    false,
+		Message:    defaultContentModerationErrorMessage,
+		StatusCode: http.StatusServiceUnavailable,
+		Action:     ContentModerationActionError,
+	}
 }
 
 func (s *ContentModerationService) buildLog(input ContentModerationCheckInput, cfg *ContentModerationConfig, action string, flagged bool, highestCategory string, highestScore float64, scores map[string]float64, text string, latency *int, queueDelay *int, errText string) *ContentModerationLog {
@@ -2364,7 +2433,7 @@ func moderationAPIKeyHash(key string) string {
 }
 
 func buildModerationTestInput(prompt string, images []string) (any, int, error) {
-	prompt = trimRunes(normalizeContentModerationText(prompt), maxModerationInputRunes)
+	prompt = normalizeContentModerationText(prompt)
 	normalizedImages := make([]string, 0, len(images))
 	for _, image := range images {
 		image = strings.TrimSpace(image)
@@ -2787,7 +2856,12 @@ func (s *ContentModerationService) RecordCyberPolicyEvent(ctx context.Context, i
 	if s == nil || s.repo == nil {
 		return
 	}
-	if !s.isRiskControlEnabled(ctx) {
+	riskEnabled, err := s.isRiskControlEnabled(ctx)
+	if err != nil {
+		slog.Warn("content_moderation.cyber_risk_setting_failed", "error", err)
+		return
+	}
+	if !riskEnabled {
 		return
 	}
 	cfg, err := s.loadConfig(ctx)

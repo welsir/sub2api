@@ -82,3 +82,17 @@ func TestOpenAIGatewayToolContinuationStillGetsUpstreamAuditContext(t *testing.T
 		t.Fatal("tool continuation must retain complete upstream audit context")
 	}
 }
+
+func TestContentModerationFailureUsesLocalUnavailableResponse(t *testing.T) {
+	decision := service.ContentModerationFailureDecision()
+
+	if !decision.Blocked || decision.Allowed {
+		t.Fatalf("failure decision = %#v, want blocked local response", decision)
+	}
+	if got := contentModerationStatus(decision); got != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", got, http.StatusServiceUnavailable)
+	}
+	if got := contentModerationErrorCode(decision); got != "content_moderation_unavailable" {
+		t.Fatalf("error code = %q, want content_moderation_unavailable", got)
+	}
+}

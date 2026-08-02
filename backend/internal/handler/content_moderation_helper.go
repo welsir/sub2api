@@ -31,6 +31,9 @@ func contentModerationStatus(decision *service.ContentModerationDecision) int {
 }
 
 func contentModerationErrorCode(decision *service.ContentModerationDecision) string {
+	if decision != nil && decision.Action == service.ContentModerationActionError {
+		return "content_moderation_unavailable"
+	}
 	return "content_policy_violation"
 }
 
@@ -99,7 +102,7 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 		if reqLog != nil {
 			reqLog.Warn("content_moderation.check_failed", zap.Error(err))
 		}
-		return nil
+		return service.ContentModerationFailureDecision()
 	}
 	if reqLog != nil && decision != nil {
 		reqLog.Info("content_moderation.gateway_check_done",

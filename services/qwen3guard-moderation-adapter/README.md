@@ -25,10 +25,19 @@ The service exposes:
 - `GET /metrics`
 - Bearer-authenticated `POST /v1/moderations`
 
-The backend base URL may include a fixed path prefix. Configuration rejects
+The backend base URL may include a fixed path prefix. The Moderations endpoint
+accepts ordinary JSON and bounded `Content-Encoding: gzip` JSON; compressed and
+decompressed bodies are both limited by `QWEN3GUARD_ADAPTER_MAX_BODY_BYTES`.
+Configuration rejects
 credentials, queries, fragments, backslashes, and dot-segment variants before
 backend authorization is attached. Request bodies, backend streams, inference,
 readiness, queueing, concurrency, and shutdown all use explicit bounds.
+
+Sub2API sends a stable role-tagged full-context transcript. The adapter forwards
+that transcript as one text message to Qwen3Guard. Model-server automatic prefix
+caching can reuse the unchanged beginning for inference, while gzip reduces the
+cloud-to-Windows request bytes. The adapter does not maintain session state or
+reconstruct delta fragments in this first version.
 
 Do not commit `.env`, adapter Bearer secrets, model-backend credentials, or
 tailnet-specific addresses.

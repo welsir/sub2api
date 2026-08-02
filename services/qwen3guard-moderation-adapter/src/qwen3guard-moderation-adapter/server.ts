@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Validated adapter config, authenticated HTTP requests, and Qwen backend responses.
- * [OUTPUT]: Raw-target-safe bounded HTTP surfaces plus cancellable hard-deadline shutdown.
+ * [OUTPUT]: Raw-target-safe bounded HTTP/gzip surfaces plus cancellable hard-deadline shutdown.
  * [POS]: Standalone moderation process boundary, separate from Omni northbound routing.
  *
  * [PROTOCOL]:
@@ -10,6 +10,7 @@
 
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { gunzipSync } from "node:zlib";
 
 import {
   BackendClientError,
@@ -200,7 +201,7 @@ function readBody(
   maxBytes: number,
   timeoutMs: number,
   signal: AbortSignal
-): Promise<string> {
+): Promise<Buffer> {
   const declared = Number(request.headers["content-length"]);
   if (Number.isFinite(declared) && declared > maxBytes) {
     request.pause();
@@ -260,7 +261,7 @@ function readBody(
       }
       settled = true;
       cleanup();
-      resolve(Buffer.concat(chunks).toString("utf8"));
+      resolve(Buffer.concat(chunks));
     };
     const onAborted = () => fail(new CancelledRequestError());
     const onError = (error: Error) => fail(error);
@@ -285,6 +286,36 @@ function readBody(
     request.once("error", onError);
     signal.addEventListener("abort", onSignalAbort, { once: true });
   });
+}
+
+function decodeRequestBody(request: IncomingMessage, rawBody: Buffer, maxBytes: number): string {
+  const rawEncoding = request.headers["content-encoding"];
+  const encoding = (typeof rawEncoding === "string" ? rawEncoding : "").trim().toLowerCase();
+  if (encoding === "" || encoding === "identity") {
+    return rawBody.toString("utf8");
+  }
+  if (encoding !== "gzip") {
+    throw new RequestValidationError(
+      415,
+      "unsupported_content_encoding",
+      "content-encoding must be gzip or identity"
+    );
+  }
+  try {
+    return gunzipSync(rawBody, { maxOutputLength: maxBytes }).toString("utf8");
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code?: unknown }).code ?? "")
+      : "";
+    if (code === "ERR_BUFFER_TOO_LARGE") {
+      throw new RequestValidationError(
+        413,
+        "request_body_too_large",
+        "decompressed request body exceeds configured limit"
+      );
+    }
+    throw new RequestValidationError(400, "invalid_gzip", "request body is not valid gzip");
+  }
 }
 
 function moderationInput(rawBody: string, maxInputChars: number): {
@@ -609,13 +640,14 @@ export function createModerationAdapterServer(
 
     let normalized: { model: string; input: string };
     try {
-      normalized = moderationInput(
-        await readBody(
+      const rawBody = await readBody(
           request,
           config.maxBodyBytes,
           config.requestTimeoutMs,
           cancellation.signal
-        ),
+        );
+      normalized = moderationInput(
+        decodeRequestBody(request, rawBody, config.maxBodyBytes),
         config.maxInputChars
       );
     } catch (error) {

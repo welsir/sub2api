@@ -10,6 +10,7 @@
 
 import { createServer, type Server } from "node:http";
 import { connect, type AddressInfo, type Socket } from "node:net";
+import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
@@ -356,6 +357,64 @@ describe("Qwen3Guard moderation adapter HTTP contract", () => {
     expect(backend.requests[0].model).toBe("Qwen/Qwen3Guard-Gen-0.6B");
     expect(backend.requests[0].authorization).toBe(`Bearer ${backendToken}`);
     expect(backend.requests[0].messages).toEqual([{ role: "user", content: "first\nsecond" }]);
+  });
+
+  it("accepts a bounded gzip-encoded full-context request", async () => {
+    const backend = await startFakeBackend();
+    const { baseUrl } = await startAdapter(configFor(backend.baseUrl));
+    const transcript = "[system] policy [user] safe";
+    const compressed = gzipSync(
+      Buffer.from(JSON.stringify({ model: "qwen3guard-local", input: transcript }), "utf8")
+    );
+
+    const response = await fetch(`${baseUrl}/v1/moderations`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${adapterToken}`,
+        "content-type": "application/json",
+        "content-encoding": "gzip"
+      },
+      body: compressed
+    });
+
+    expect(response.status).toBe(200);
+    expect(backend.calls).toBe(1);
+    expect(backend.requests[0].messages).toEqual([{ role: "user", content: transcript }]);
+  });
+
+  it("rejects malformed and decompressed-over-limit gzip bodies without backend work", async () => {
+    const backend = await startFakeBackend();
+    const { baseUrl } = await startAdapter(
+      configFor(backend.baseUrl, {
+        QWEN3GUARD_ADAPTER_MAX_BODY_BYTES: "1024",
+        QWEN3GUARD_ADAPTER_MAX_INPUT_CHARS: "10000"
+      })
+    );
+    const headers = {
+      authorization: `Bearer ${adapterToken}`,
+      "content-type": "application/json",
+      "content-encoding": "gzip"
+    };
+
+    const malformed = await fetch(`${baseUrl}/v1/moderations`, {
+      method: "POST",
+      headers,
+      body: Buffer.from("not-gzip", "utf8")
+    });
+    const oversized = await fetch(`${baseUrl}/v1/moderations`, {
+      method: "POST",
+      headers,
+      body: gzipSync(
+        Buffer.from(
+          JSON.stringify({ model: "qwen3guard-local", input: "x".repeat(2_000) }),
+          "utf8"
+        )
+      )
+    });
+
+    expect(malformed.status).toBe(400);
+    expect(oversized.status).toBe(413);
+    expect(backend.calls).toBe(0);
   });
 
   it.each([

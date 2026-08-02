@@ -81,6 +81,10 @@ The rollout MUST compare Qwen3Guard-Gen 0.6B and 4B on the same representative l
 ### Requirement: Observe is non-blocking and pre-block fails closed
 The first rollout SHALL keep `observe` non-blocking, SHALL keep deterministic keyword blocking available through `keyword_and_api`, and SHALL terminate scoped `pre_block` requests locally when semantic moderation cannot produce a valid decision after bounded attempts.
 
+#### Scenario: Pre-block sampling is configured below 100 percent
+- **WHEN** a request is in the configured `pre_block` group and model scope
+- **THEN** Sub2API audits it regardless of `sample_rate`, because enforcement mode cannot sample away a safety decision
+
 #### Scenario: Adapter is unavailable for a non-`tml` request
 - **WHEN** semantic moderation for an audited non-`tml` request times out or returns an error
 - **THEN** Sub2API makes at most three total attempts, returns a local 503 if no valid decision is produced, records the error, and does not select or call a downstream account

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Validated adapter config, authenticated HTTP requests, and Qwen backend responses.
- * [OUTPUT]: Raw-target-safe bounded HTTP surfaces plus cancellable hard-deadline shutdown.
+ * [OUTPUT]: Raw-target-safe bounded HTTP/gzip surfaces plus cancellable hard-deadline shutdown.
  * [POS]: Checked-in JavaScript moderation boundary, separate from Omni routing.
  *
  * [PROTOCOL]:
@@ -10,6 +10,7 @@
 
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
+import { gunzipSync } from "node:zlib";
 
 import { BackendClientError, QwenBackendClient } from "./backend.js";
 import { MAPPING_REVISION } from "./classification.js";
@@ -210,7 +211,7 @@ function readBody(request, maxBytes, timeoutMs, signal) {
       }
       settled = true;
       cleanup();
-      resolve(Buffer.concat(chunks).toString("utf8"));
+      resolve(Buffer.concat(chunks));
     };
     const onAborted = () => fail(new CancelledRequestError());
     const onError = (error) => fail(error);
@@ -235,6 +236,33 @@ function readBody(request, maxBytes, timeoutMs, signal) {
     request.once("error", onError);
     signal.addEventListener("abort", onSignalAbort, { once: true });
   });
+}
+
+function decodeRequestBody(request, rawBody, maxBytes) {
+  const rawEncoding = request.headers["content-encoding"];
+  const encoding = (typeof rawEncoding === "string" ? rawEncoding : "").trim().toLowerCase();
+  if (encoding === "" || encoding === "identity") {
+    return rawBody.toString("utf8");
+  }
+  if (encoding !== "gzip") {
+    throw new RequestValidationError(
+      415,
+      "unsupported_content_encoding",
+      "content-encoding must be gzip or identity"
+    );
+  }
+  try {
+    return gunzipSync(rawBody, { maxOutputLength: maxBytes }).toString("utf8");
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "ERR_BUFFER_TOO_LARGE") {
+      throw new RequestValidationError(
+        413,
+        "request_body_too_large",
+        "decompressed request body exceeds configured limit"
+      );
+    }
+    throw new RequestValidationError(400, "invalid_gzip", "request body is not valid gzip");
+  }
 }
 
 function moderationInput(rawBody, maxInputChars) {
@@ -546,13 +574,14 @@ export function createModerationAdapterServer(config, dependencies = {}) {
 
     let normalized;
     try {
-      normalized = moderationInput(
-        await readBody(
+      const rawBody = await readBody(
           request,
           config.maxBodyBytes,
           config.requestTimeoutMs,
           cancellation.signal
-        ),
+        );
+      normalized = moderationInput(
+        decodeRequestBody(request, rawBody, config.maxBodyBytes),
         config.maxInputChars
       );
     } catch (error) {

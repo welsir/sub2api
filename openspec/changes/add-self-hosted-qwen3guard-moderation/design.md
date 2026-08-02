@@ -112,7 +112,7 @@ The initial configuration will use:
 - `keyword_and_api` so known hard keywords remain deterministic when the semantic service is unavailable.
 - `pre_block` only after operator approval.
 
-`observe` remains fail-open because it is evidence collection rather than enforcement. In `pre_block`, the existing group and model scope is also the failure-policy scope: no audit Key, timeout, network error, overload, non-2xx, malformed JSON, empty result, or parse failure returns a local 503 after bounded attempts and cannot continue to downstream account selection. The default `retry_count=2` means three total attempts. Deterministic 400/401/403 errors may terminate immediately; transient failures may reuse the only configured audit Key within the current request even if its health state is frozen for later requests.
+`observe` remains fail-open because it is evidence collection rather than enforcement. Sampling applies only to `observe`; `pre_block` audits every in-scope request. In `pre_block`, the existing group and model scope is also the failure-policy scope: no audit Key, timeout, network error, overload, non-2xx, malformed JSON, empty result, or parse failure returns a local 503 after bounded attempts and cannot continue to downstream account selection. The default `retry_count=2` means three total attempts. Deterministic 400/401/403 errors may terminate immediately; transient failures may reuse the only configured audit Key within the current request even if its health state is frozen for later requests.
 
 ### 7. Audit a stable complete semantic transcript and gzip large requests
 

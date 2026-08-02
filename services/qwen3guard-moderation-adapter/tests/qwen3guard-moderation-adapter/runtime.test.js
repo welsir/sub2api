@@ -1,6 +1,6 @@
 /**
  * [INPUT]: Checked-in JavaScript adapter server and a local fake Qwen backend.
- * [OUTPUT]: JavaScript server smoke and structured main-process listen-error proof.
+ * [OUTPUT]: JavaScript gzip/server smoke and structured main-process listen-error proof.
  * [POS]: JavaScript mirror integration coverage for the standalone adapter.
  *
  * [PROTOCOL]:
@@ -12,6 +12,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
 import { resolveAdapterConfig } from "../../src/qwen3guard-moderation-adapter/config.js";
@@ -29,7 +30,7 @@ async function close(server) {
 }
 
 describe("Qwen3Guard JavaScript adapter runtime", () => {
-  it("serves the moderation contract through checked-in JavaScript modules", async () => {
+  it("serves a gzip moderation contract through checked-in JavaScript modules", async () => {
     const backend = createServer((_request, response) => {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
@@ -54,9 +55,12 @@ describe("Qwen3Guard JavaScript adapter runtime", () => {
         method: "POST",
         headers: {
           authorization: "Bearer runtime-token",
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "content-encoding": "gzip"
         },
-        body: JSON.stringify({ model: "moderation-local", input: "runtime fixture" })
+        body: gzipSync(
+          Buffer.from(JSON.stringify({ model: "moderation-local", input: "runtime fixture" }))
+        )
       });
       const body = await response.json();
 

@@ -10,6 +10,7 @@
 - 审核 OpenAI Responses、Chat Completions、Anthropic Messages、Gemini、图片请求和 WebSocket 请求已有入口。
 - Prompt 审计表仍只记录本轮用户原文；本设计只改变内容审核输入，不改变 Prompt 审计口径。
 - `observe` 保持非阻断，用于上线前测量；`pre_block` 对其现有分组范围执行失败关闭。
+- `sample_rate` 只用于 `observe` 抽样；`pre_block` 对范围内每个请求都调用审核，不能因抽样配置绕过。
 - 不在第一版引入云端和 Windows 之间的有状态分片、会话重建或自定义 DP 协议。
 
 ## 完整审核输入
