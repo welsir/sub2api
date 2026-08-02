@@ -35,7 +35,7 @@
 - [x] 3A.1 Replace last-message-only extraction with a stable ordered transcript covering all request-side roles, instructions, function/tool calls, and tool outputs for every supported protocol.
 - [x] 3A.2 Remove the 12,000-rune silent truncation and prove content after the former cutoff is sent to moderation.
 - [x] 3A.3 Make `retry_count=2` perform up to three total attempts for transient errors even with one audit Key, while terminating deterministic request/authentication errors early.
-- [x] 3A.4 Return a local 503 for missing Keys, network errors, timeouts, overload, malformed JSON, empty results, and parse failures in scoped `pre_block`; preserve non-blocking `observe` evidence.
+- [x] 3A.4 Return a local 503 for missing Keys, network errors, timeouts, overload, malformed response envelopes, empty results, and Qwen parse failures in scoped `pre_block`; preserve non-blocking `observe` evidence.
 - [x] 3A.5 Gzip Moderations JSON larger than 1 KiB and add bounded gzip decoding to the Windows adapter.
 - [x] 3A.6 Add service, handler, adapter, WebSocket, and downstream-boundary tests proving failed moderation cannot select or call an upstream account.
 - [x] 3A.7 Run focused and regression verification, strict OpenSpec validation, typecheck, and diff hygiene checks.
@@ -51,6 +51,16 @@
 - [x] 3B.7 Add provider parser, backend client, HTTP contract, runtime, and configuration verification.
 - [x] 3B.8 Add MiniMax M3 no-thinking and configurable standard/priority admission after credentialed latency probes.
 - [x] 3B.9 Add a non-root, secret-free Docker image boundary with separate liveness and backend-readiness probes.
+
+## 3C. Add Incremental Full-Context Review
+
+- [x] 3C.1 Add an operator-controlled `incremental_cache_enabled` switch with a backward-compatible disabled default.
+- [x] 3C.2 Split the complete normalized transcript into deterministic 32,768-rune chunks with 1,024-rune overlap and versioned policy namespaces.
+- [x] 3C.3 Add Redis batch reads and pipelined writes for SHA-256 keyed allow/block verdicts without storing prompt text.
+- [x] 3C.4 Review only cache misses with concurrency eight under one overall deadline, cancel remaining work after an unsafe result, and merge category scores by maximum.
+- [x] 3C.5 Fail closed on missing cache support, Redis read/write errors, provider errors, deadlines, and structured images; never truncate or bypass account selection.
+- [x] 3C.6 Convert MiniMax missing choices, non-stop finishes, empty content, and malformed final decisions into successful blocked classifications instead of retry-amplified parse errors.
+- [x] 3C.7 Add tests for cold chunks, appended tails, dangerous history followed by `Continue`, cache failures, deadlines, images, the disabled legacy path, MiniMax uncertainty, and data races.
 
 ## 4. Prepare The Windows Qwen3Guard Runtime
 
@@ -81,24 +91,24 @@ MiniMax-first rollout.
 - [ ] 6.4 Select and pin the production candidate only after comparing quality and runtime evidence against the approved gates.
 - [ ] 6.5 Record the selected model revision, adapter revision, mapping revision, input limit, timeout, retry count, and rejected alternative.
 
-## 7. Run The Default-On Observation
+## 7. Run The High-Risk-Group Candidate
 
-- [ ] 7.1 Configure Sub2API with the adapter origin, dedicated Bearer secret, selected model identifier, bounded timeout/retry values, `all_groups=true`, and exactly group ID `18` in `excluded_group_ids`.
-- [ ] 7.2 Set the rollout to `observe` plus `keyword_and_api` and verify no automatic promotion mechanism is active.
-- [ ] 7.3 Send equivalent safe and unsafe probes through disposable `tml`, existing non-`tml`, newly created, and ungrouped keys; record only `tml` bypassing local moderation.
-- [ ] 7.4 Confirm a same-name different-ID group is audited and deleting/recreating `tml` does not transfer the exemption automatically.
-- [ ] 7.5 Confirm image, output, and unsupported multimodal requests are not reported as covered by this inbound-text rollout.
-- [ ] 7.6 Collect an agreed observation window of real latency, categories, errors, timeouts, parse failures, observe-mode error allowances, audited-group counts, and `tml` exemption counts.
-- [ ] 7.7 Review false positives and false negatives from observation and rerun the model-selection gate if the evidence disagrees with the labeled benchmark.
+- [ ] 7.1 Configure the isolated candidate with the adapter origin, dedicated Bearer secret, selected model identifier, bounded timeout/retry values, `all_groups=false`, and approved group IDs `8`, `10`, `13`, `14`, and `15`.
+- [ ] 7.2 Keep `keyword_and_api`, `pre_block`, and `auto_ban_enabled=false`; enable `incremental_cache_enabled` only on the isolated candidate before the application image switch.
+- [ ] 7.3 Send safe and unsafe probes through disposable in-scope and out-of-scope Keys; prove only the approved high-risk groups invoke semantic moderation.
+- [ ] 7.4 Repeat a long transcript, append a new turn, and prove only changed tail chunks invoke MiniMax while a cached dangerous prefix plus `Continue` blocks without a provider call.
+- [ ] 7.5 Confirm structured images block locally and are not reported as image-pixel moderation coverage.
+- [ ] 7.6 Collect cold-cache and appended-turn latency, cache hits/misses, provider errors, Redis errors, and audited-group counts without logging prompt text.
+- [ ] 7.7 Review false positives and false negatives from the candidate and keep the previous application image/configuration ready for immediate rollback.
 
 ## 8. Exercise Failure Policy And Promote Manually
 
-- [ ] 8.1 Drill adapter stop, model stop, malformed model output, tailnet loss, Windows reboot, queue overload, and recovery while non-`tml` traffic remains in `observe`.
-- [ ] 8.2 Prove semantic-provider failures are recorded as errors rather than safe classifications and verify configured hard keywords still follow deterministic blocking policy.
+- [ ] 8.1 Drill adapter stop, MiniMax timeout/throttling, Redis loss, malformed classifier output, queue overload, and recovery on the isolated candidate.
+- [ ] 8.2 Prove transport/cache failures become local 503 errors, malformed MiniMax classifier output becomes a local blocked result without retries, and hard keywords remain deterministic.
 - [ ] 8.3 Verify that retries and timeouts remain within the accepted user-latency budget during a complete home-host outage.
 - [ ] 8.4 Present quality, performance, observation, exemption, failure, rollback, and pre-block availability trade-off evidence for explicit operator approval.
-- [ ] 8.5 After approval, switch non-`tml` traffic to `pre_block` and run approved safe, semantic-unsafe, keyword-unsafe, adapter-error, new-group, ungrouped, and `tml`-exemption probes.
-- [ ] 8.6 Verify blocked and allowed responses at the real client boundary, correlate Sub2API and adapter evidence, and confirm only `tml` skips this local moderation layer.
+- [ ] 8.5 After approval, switch the versioned application and adapter images and run safe, semantic-unsafe, keyword-unsafe, adapter-error, Redis-error, appended-tail, and image probes.
+- [ ] 8.6 Verify blocked and allowed responses at the real client boundary, correlate Sub2API and adapter evidence, and confirm out-of-scope groups do not invoke this local moderation layer.
 - [ ] 8.7 Monitor the initial blocking window and roll back immediately if exemption scope, latency, availability, or false-positive gates regress.
 
 ## 9. Close Documentation And Verification

@@ -50,14 +50,19 @@ credentials, queries, fragments, backslashes, and dot-segment variants before
 backend authorization is attached. Request bodies, backend streams, inference,
 readiness, queueing, concurrency, and shutdown all use explicit bounds.
 
-Sub2API sends a stable role-tagged full-context transcript. The adapter forwards
-that transcript to the selected backend. Qwen receives one user message. MiniMax
-receives a fixed trusted classifier instruction plus the transcript as a separate
-untrusted user message and accepts only a strict final JSON decision. MiniMax
+With incremental review enabled, Sub2API derives a stable role-tagged
+full-context transcript, reuses versioned Redis verdicts, and sends one uncached
+overlapping chunk per Moderations call. The adapter forwards that chunk to the
+selected backend. Qwen receives one user message. MiniMax receives a fixed
+trusted classifier instruction plus the chunk as a separate untrusted user
+message and accepts only a strict final JSON decision. MiniMax
 `input_sensitive`, `output_sensitive`, `1026`, and `1027` results are returned as
 normal blocked Moderations decisions. Authentication and billing failures remain
-deterministic 4xx responses; transient and parse failures remain retryable 5xx
-responses for Sub2API's bounded fail-closed policy.
+deterministic 4xx responses. Missing choices, non-stop finishes, empty content,
+and malformed MiniMax classifier decisions return normal blocked Moderations
+results instead of retrying a large chunk. Network, timeout, throttling, and
+invalid HTTP-body failures remain retryable 5xx responses for Sub2API's bounded
+fail-closed policy.
 
 The configured Qwen and MiniMax text backends do not inspect image contents.
 OpenAI-shaped structured inputs containing `image_url` therefore receive a
@@ -75,9 +80,12 @@ Sub2API source or this repository. Enable `pre_block` only for the approved
 high-risk `group_ids` and set Sub2API `auto_ban_enabled=false` for this rollout.
 The adapter itself never bans users or disables API keys.
 
-Stable transcript prefixes can benefit from provider prompt caching, while gzip
-reduces request bytes. The adapter does not maintain session state or reconstruct
-delta fragments in this first version.
+Sub2API's content-addressed Redis cache stores only versioned chunk hashes and
+compact verdicts: safe entries live 24 hours and blocked entries 30 days. It
+reconstructs full coverage locally on every request, sends only misses with
+bounded concurrency under one overall deadline, and gzip-compresses larger
+chunk requests. The adapter does not maintain provider-side session state or
+reconstruct delta fragments.
 
 Do not commit `.env`, adapter Bearer secrets, Qwen credentials, MiniMax tokens,
 or tailnet-specific addresses.

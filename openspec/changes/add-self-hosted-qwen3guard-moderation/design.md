@@ -11,11 +11,12 @@ not automatically ban users, disable API keys, or create a permanent session
 block.
 
 The adapter remains the stable `POST /v1/moderations` boundary and now selects a
-`qwen` or `minimax` Chat Completions backend. MiniMax sensitive flags and provider
-codes `1026`/`1027` are successful blocked classifications. Auth and billing
-failures are deterministic; transient, timeout, and parse failures remain visible
-for Sub2API's bounded fail-closed policy. Windows, Tailscale, and local-model tasks
-remain optional future work and are not production prerequisites for this rollout.
+`qwen` or `minimax` Chat Completions backend. MiniMax sensitive flags, provider
+codes `1026`/`1027`, and uncertain classifier output are successful blocked
+classifications. Auth and billing failures are deterministic; network, timeout,
+throttling, and invalid HTTP-body failures remain visible for Sub2API's bounded
+fail-closed policy. Windows, Tailscale, and local-model tasks remain optional
+future work and are not production prerequisites for this rollout.
 
 Credentialed latency probes selected `MiniMax-M3` with thinking disabled and
 configurable `standard|priority` service admission for the first hosted rollout.
@@ -41,7 +42,7 @@ The expected volume is about 50,000 inbound requests per day, or roughly 0.58 re
 - Apply strict moderation only to explicitly approved high-risk groups in the MiniMax-first rollout.
 - Make model unavailability, parse failure, overload, and network failure visible, bounded, and fail closed for scoped `pre_block` requests.
 - Audit the complete ordered outbound semantic context, including tool traffic, without silent text truncation.
-- Reduce repeated-context transfer with gzip and preserve stable prefixes for model-server prefix caching.
+- Reduce repeated-context transfer with deterministic overlapping chunks, a Redis verdict cache, and gzip for uncached chunks.
 - Require measured model quality, latency, failure drills, and human-controlled promotion before `pre_block`.
 - Preserve a fast rollback to the prior Sub2API moderation configuration.
 
@@ -51,7 +52,7 @@ The expected volume is about 50,000 inbound requests per day, or roughly 0.58 re
 - Changing Sub2API billing or account scheduling.
 - Claiming that 0.6B or 4B is production-quality before a representative local benchmark.
 - Auditing model output, image pixels, audio, or arbitrary multimodal content in the first slice.
-- Introducing a public inference endpoint, automatic rollout promotion, or a stateful delta/session protocol in the first slice.
+- Introducing a public inference endpoint, automatic rollout promotion, or provider-side session state in the first slice.
 - Remotely configuring or validating the powered-off Windows machine during the planning phase.
 
 ## Decisions
@@ -114,9 +115,12 @@ Alternatives considered:
 - Raw router port forwarding and unauthenticated FRP are rejected because they create an unnecessary public attack surface.
 - A public Cloudflare Tunnel is not required for a server-to-server path; it may be reconsidered only if the private route cannot satisfy availability and identity controls.
 
-### 6. Add default-on scope with one explicit `tml` exemption
+### 6. Retain both scope modes and start with the approved high-risk allowlist
 
-Sub2API remains the policy enforcement owner. The current `all_groups` plus `group_ids` model cannot safely express the approved rule. `all_groups=true` audits `tml`, while `all_groups=false` requires an allowlist that would silently omit future groups. The Sub2API configuration will therefore add normalized `excluded_group_ids`.
+Sub2API remains the policy enforcement owner. It supports normalized
+`excluded_group_ids` for a future default-on rollout, but the MiniMax-first
+deployment intentionally uses the existing selected-group allowlist so only the
+approved high-risk groups incur hosted-classifier cost and latency.
 
 Scope evaluation will follow these rules:
 
@@ -128,22 +132,38 @@ Scope evaluation will follow these rules:
 
 The initial configuration will use:
 
-- `all_groups=true`.
-- Exactly the verified 43 V2 `tml` group ID `18` in `excluded_group_ids`.
-- No other exempt group.
-- `observe` during evidence collection.
+- `all_groups=false`.
+- The approved high-risk group IDs `8`, `10`, `13`, `14`, and `15` in
+  `group_ids`.
+- No `excluded_group_ids` in this allowlist mode.
 - `keyword_and_api` so known hard keywords remain deterministic when the semantic service is unavailable.
-- `pre_block` only after operator approval.
+- `pre_block` after isolated candidate verification.
+- `auto_ban_enabled=false` so one classifier result cannot disable a user or Key.
 
-`observe` remains fail-open because it is evidence collection rather than enforcement. Sampling applies only to `observe`; `pre_block` audits every in-scope request. In `pre_block`, the existing group and model scope is also the failure-policy scope: no audit Key, timeout, network error, overload, non-2xx, malformed JSON, empty result, or parse failure returns a local 503 after bounded attempts and cannot continue to downstream account selection. The default `retry_count=2` means three total attempts. Deterministic 400/401/403 errors may terminate immediately; transient failures may reuse the only configured audit Key within the current request even if its health state is frozen for later requests.
+`observe` remains fail-open because it is evidence collection rather than enforcement. Sampling applies only to `observe`; `pre_block` audits every in-scope request. In `pre_block`, the existing group and model scope is also the failure-policy scope: no audit Key, timeout, network error, overload, non-2xx, malformed response envelope, empty result, or Qwen parse failure returns a local 503 after bounded attempts and cannot continue to downstream account selection. MiniMax classifier-shape uncertainty instead returns a successful blocked result without retries. The default `retry_count=2` means three total attempts. Deterministic 400/401/403 errors may terminate immediately; transient failures may reuse the only configured audit Key within the current request even if its health state is frozen for later requests.
 
-### 7. Audit a stable complete semantic transcript and gzip large requests
+### 7. Audit complete context with deterministic incremental chunks
 
 Sub2API will construct an ordered role-tagged transcript from all semantic text that is about to be sent upstream: system/developer instructions, user and assistant messages, function/tool calls and outputs, Responses instructions, and Gemini function traffic. A final `Continue`, assistant item, or tool result never causes historical context to be skipped.
 
-The 12,000-rune silent truncation is removed. Explicit adapter or model capacity errors follow the failure policy; content outside a hidden cutoff is never treated as safe by omission.
+The 12,000-rune silent truncation is removed. The normalized transcript is split
+into deterministic 32,768-rune windows with a 1,024-rune overlap. Every rune is
+covered by at least one chunk, and appending a turn keeps completed prefix chunk
+hashes stable. Sub2API batch-reads versioned verdicts from Redis, blocks
+immediately on a cached unsafe chunk, and sends only cache misses to the adapter
+with bounded parallelism under one overall moderation deadline.
 
-For Moderations JSON larger than 1 KiB, Sub2API uses gzip best-speed compression. The transcript representation is deterministic so an unchanged conversation prefix remains byte-stable and can benefit from vLLM automatic prefix caching on the Windows host. This saves repeated inference work but not cloud-to-Windows bytes; gzip addresses transport size. A stateful prefix-hash/delta protocol is deferred until measurement proves transport is the dominant bottleneck.
+Safe verdicts expire after 24 hours and blocked verdicts after 30 days. Cache
+keys contain only a policy namespace and SHA-256 chunk hash; prompt text is not
+stored in Redis. Redis read/write errors, unavailable cache support, provider
+errors, and deadline exhaustion return a local 503 in scoped `pre_block` and do
+not select a downstream account. Structured images are blocked locally until an
+image-capable moderation backend is verified.
+
+For each uncached Moderations JSON larger than 1 KiB, Sub2API uses gzip
+best-speed compression. This is a content-addressed verdict cache, not a
+provider-side session protocol: full semantic coverage is reconstructed locally
+on every request, while only unknown chunks cross the network.
 
 ### 8. Separate local proof, deployed proof, and production activation
 
@@ -159,10 +179,10 @@ No step automatically promotes the next one. The operator owns start, pause, gro
 - [Taxonomy mismatch can hide unsafe categories] -> Maintain an explicit mapping table and an `Unsafe` fallback into a Sub2API-evaluated category.
 - [Tailscale works from the host but not from the Sub2API container] -> Make the container-origin request a required connectivity gate.
 - [Retries can multiply user latency while the home host is offline] -> Cap the path at three total attempts and set the per-attempt timeout from measured P99 inference plus network headroom.
-- [Complete histories increase bytes and inference work] -> Gzip large requests, keep a stable role-tagged prefix for automatic prefix caching, measure P95/P99 input size, and add a stateful delta protocol only if transport is proven to dominate.
+- [Complete histories increase bytes and inference work] -> Reuse versioned Redis verdicts for stable chunks, gzip misses, and bound cold-chunk parallelism plus the overall deadline.
 - [Windows GPU stack for RTX 5070 Ti may require newer driver/CUDA/runtime builds] -> Record exact versions, prove cold and warm starts, and keep backend selection behind the compatibility gate.
-- [`tml` bypass can be misread as no safety policy anywhere] -> Document that `tml` skips only this local Sub2API moderation scope; upstream provider policy may still apply.
-- [A hand-maintained non-`tml` allowlist misses newly created groups] -> Use default-on `all_groups=true` plus one explicit exclusion and test a newly created group before rollout.
+- [A high-risk allowlist does not automatically include future groups] -> Treat the five approved IDs as an explicit cost/safety scope and require operator review before changing it.
+- [Display names can be mutable or duplicated] -> Persist and evaluate stable group IDs; never infer moderation scope from a name at request time.
 - [Group display names are mutable or duplicated] -> Persist the verified 43 V2 `tml` group ID `18`; never grant exemption through case-insensitive name matching at request time.
 - [Inbound-only moderation may be mistaken for output moderation] -> Label every test and status surface with the audited direction and reject output-coverage claims.
 
@@ -171,11 +191,11 @@ No step automatically promotes the next one. The operator owns start, pause, gro
 1. Implement adapter contract tests, deterministic mapping fixtures, auth, health/readiness, bounded execution, and redacted logging without a live Windows dependency.
 2. On the powered-on Windows machine, record GPU/WSL2/runtime versions and prove Qwen3Guard-Gen 0.6B cold start, warm inference, and restart. Test 4B under the same bounded input and concurrency profile.
 3. Establish the Tailscale ACL and prove authenticated `/readyz` and safe/unsafe Moderations fixtures from the actual Sub2API runtime boundary.
-4. Implement and verify the Sub2API `excluded_group_ids` extension, retain the verified `tml` group ID `18`, then capture the complete rollback-safe deployed configuration and prepare disposable scope-test keys.
-5. Configure `all_groups=true` with only `tml` excluded, begin in `observe` with `keyword_and_api`, and collect audited non-`tml` plus exempt-`tml` evidence without claiming blocking.
+4. Implement and verify complete transcript extraction plus the versioned Redis chunk-verdict cache, then capture the rollback-safe deployed configuration.
+5. Keep `all_groups=false` with approved high-risk group IDs `8`, `10`, `13`, `14`, and `15`, enable `keyword_and_api`, and verify the incremental switch in an isolated candidate before changing the active application image.
 6. Compare 0.6B and 4B on a representative labeled sample and measured peak load. Record the selected model revision, mapping revision, timeout, retry count, and operator decision.
 7. Run service-stop, Windows-reboot, tailnet-loss, overload, malformed-output, and recovery drills. Confirm `observe` remains non-blocking and scoped `pre_block` returns a local 503 without downstream account selection.
-8. After explicit operator approval, switch non-`tml` traffic to `pre_block`, run allowed and blocked probes, and verify only `tml` bypasses local moderation.
+8. After explicit operator approval, switch the isolated candidate into service, run allowed and blocked probes, and verify out-of-scope groups remain unaffected.
 9. Roll back by restoring the captured Sub2API configuration or returning to `observe`/`keyword_only`; do not require a Sub2API restart.
 
 ## Open Questions
@@ -185,4 +205,4 @@ No step automatically promotes the next one. The operator owns start, pause, gro
 - What labeled-sample recall and false-positive thresholds will the operator require before `pre_block`?
 - Does vLLM or SGLang pass the RTX 5070 Ti WSL2 compatibility gate, or is the Transformers fallback required?
 - Is 0.6B sufficient, or does 4B provide enough quality improvement to justify its latency and memory cost?
-- Do measured gzip ratios and network timings justify a future stateful prefix-hash/delta transport?
+- What are the measured cold-cache and appended-turn P50/P95/P99 latencies after the Redis chunk cache is enabled on 43 V2?

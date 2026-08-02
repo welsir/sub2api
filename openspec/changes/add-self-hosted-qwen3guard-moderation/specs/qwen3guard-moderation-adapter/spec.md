@@ -23,8 +23,12 @@ The adapter SHALL expose a Bearer-authenticated `POST /v1/moderations` endpoint 
 - **WHEN** MiniMax reports invalid authentication or insufficient balance
 - **THEN** the adapter returns a deterministic 401 or 402 so Sub2API terminates without consuming transient retry attempts
 
-#### Scenario: MiniMax transient or malformed response
-- **WHEN** MiniMax times out, throttles, returns a transient provider error, or emits an invalid final decision
+#### Scenario: MiniMax uncertain classifier output
+- **WHEN** MiniMax returns no choice, a non-stop finish, empty content, or an invalid final decision after a successful HTTP response
+- **THEN** the adapter returns a successful flagged Moderations response so uncertainty blocks locally without retrying the transcript
+
+#### Scenario: MiniMax transient transport or provider failure
+- **WHEN** MiniMax times out, throttles, returns a transient provider error, or returns an invalid HTTP response body
 - **THEN** the adapter returns a visible retryable non-2xx result and never synthesizes an allow response
 
 #### Scenario: MiniMax M3 low-latency request
@@ -50,12 +54,16 @@ The adapter MUST translate Qwen3Guard safety labels and categories through a ver
 - **WHEN** Qwen3Guard returns `Unsafe` with an absent, unknown, or non-equivalent category
 - **THEN** the adapter applies the documented unsafe fallback to a Sub2API-evaluated category so the taxonomy mismatch cannot produce an allowed score set
 
-### Requirement: Parse failures fail visibly
-The adapter MUST NOT convert malformed, empty, truncated, or unknown Qwen3Guard output into a safe moderation result.
+### Requirement: Classifier uncertainty fails closed
+The adapter MUST NOT convert malformed, empty, truncated, or unknown classifier output into a safe moderation result. Qwen parse failures remain visible errors; MiniMax classifier-shape uncertainty becomes a successful blocked result to avoid retrying a large transcript.
 
 #### Scenario: Malformed model output
-- **WHEN** the model backend returns output that does not match the supported structured classification format
+- **WHEN** the Qwen backend returns output that does not match the supported structured classification format
 - **THEN** the adapter returns a non-2xx error, records a redacted parse-error event, and leaves the caller's configured failure policy to decide request handling
+
+#### Scenario: Malformed MiniMax final decision
+- **WHEN** MiniMax completes the HTTP request but its classifier output does not match the strict final-decision format
+- **THEN** the adapter returns a flagged illicit result and does not expose a retryable parse failure
 
 ### Requirement: Bounded runtime behavior
 The adapter SHALL enforce configured compressed-body, decompressed-body, input, concurrency, queue, and inference-time limits and SHALL return explicit overload or timeout errors instead of allowing unbounded work accumulation.

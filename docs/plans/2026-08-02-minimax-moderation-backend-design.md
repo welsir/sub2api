@@ -27,14 +27,19 @@ later only when an actual deployment needs them.
 ## Request Flow
 
 1. Sub2API applies the existing group and model scope before moderation.
-2. In-scope `pre_block` requests send the complete visible semantic transcript
-   to the adapter's `POST /v1/moderations` endpoint.
-3. The adapter sends a non-streaming Chat Completions request to MiniMax with a
-   fixed classifier instruction and the untrusted transcript in a separate user
+2. In-scope `pre_block` requests derive deterministic overlapping chunks from
+   the complete visible semantic transcript and batch-read their versioned
+   verdicts from Redis.
+3. Cached unsafe chunks block immediately. Only cache misses are sent to the
+   adapter's `POST /v1/moderations` endpoint with bounded parallelism under one
+   overall deadline.
+4. The adapter sends a non-streaming Chat Completions request to MiniMax with a
+   fixed classifier instruction and the untrusted chunk in a separate user
    message.
-4. The adapter normalizes MiniMax output into the existing Moderations category
+5. The adapter normalizes MiniMax output into the existing Moderations category
    and score response.
-5. Sub2API selects an OAI account only after a strict allow result.
+6. Sub2API selects an OAI account only after every complete-context chunk has a
+   strict allow result.
 
 The initial production candidate is `MiniMax-M3` with thinking disabled. The
 model stays configurable, and M2.x remains compatible for comparison.
@@ -46,10 +51,12 @@ model stays configurable, and M2.x remains compatible for comparison.
   illicit result.
 - MiniMax `input_sensitive=true`, `output_sensitive=true`, or provider codes
   `1026` and `1027` map directly to a blocked result and are not retried.
-- Invalid JSON, empty output, truncated output, network failures, timeouts,
-  throttling, and transient provider errors remain typed adapter failures. The
-  existing Sub2API boundary retries transient failures up to three total attempts
-  and then returns a local 503.
+- Missing choices, empty output, truncated/non-stop output, and malformed final
+  classifier decisions map to a blocked illicit result and are not retried.
+- Invalid HTTP-body JSON, network failures, timeouts, throttling, and transient
+  provider errors remain typed adapter failures. The existing Sub2API boundary
+  retries transient failures up to three total attempts within the overall
+  deadline and then returns a local 503.
 - Invalid credentials and insufficient balance are deterministic failures and
   must not consume all retry attempts.
 - No failure path falls back to OAI.
@@ -74,8 +81,9 @@ separate downstream safety mechanism.
 ## Cost And Latency Controls
 
 - Use non-streaming responses and a small completion budget.
-- Keep the stable transcript prefix so MiniMax automatic prompt caching can
-  reuse repeated conversation history.
+- Reuse versioned safe/block verdicts for stable transcript chunks so repeated
+  history is not uploaded to MiniMax.
+- Store only chunk hashes and compact verdicts in Redis; never store prompt text.
 - Record provider usage, cached input tokens, latency, trace ID, provider code,
   and normalized outcome without logging credentials or full provider payloads.
 - Start production-candidate measurements with `service_tier=priority`; keep
@@ -110,7 +118,10 @@ Contract tests must prove:
 - `input_sensitive`, `output_sensitive`, `1026`, and `1027` block locally.
 - transient failures remain retryable while auth/balance errors are
   deterministic failures.
-- malformed, empty, oversized, and timed-out responses fail closed at Sub2API.
+- malformed/empty MiniMax classifier output blocks without retries, while
+  oversized, invalid HTTP-body, and timed-out responses fail closed at Sub2API.
+- repeated long context sends only changed tail chunks, while dangerous cached
+  history followed by `Continue` blocks without a MiniMax call.
 - no blocked or failed moderation request reaches OAI account selection.
 
 Offline acceptance uses the previously audited prompt set with OAI egress
@@ -122,5 +133,5 @@ basic smoke check; reducing false positives is not a first-release gate.
 - Changing production group membership or runtime configuration.
 - Storing a MiniMax key in the repository.
 - Automatically banning users or API keys.
-- Implementing a stateful delta-transfer protocol.
+- Implementing provider-side session state or trusting a lossy generated summary.
 - Claiming real MiniMax latency or recall without credentialed replay evidence.
