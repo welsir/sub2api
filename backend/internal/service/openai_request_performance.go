@@ -39,6 +39,7 @@ type OpenAIRequestPerformanceSnapshot struct {
 	RetryWaitMs        int64
 	UnattributedMs     int64
 	E2EFirstOutputMs   int64
+	E2EFirstTextMs     int64
 	TotalMs            int64
 	ConnectMs          int64
 	AttemptCount       int
@@ -74,6 +75,7 @@ type OpenAIRequestPerformanceTrace struct {
 	upstreamHeaderStartedAt time.Time
 	upstreamBodyStartedAt   time.Time
 	firstOutputAt           time.Time
+	firstTextAt             time.Time
 	connectStartedAt        time.Time
 	completionStatus        string
 	missingTerminal         bool
@@ -213,6 +215,7 @@ func (t *OpenAIRequestPerformanceTrace) BeginAttempt(startedAt time.Time) {
 	t.upstreamHeaderStartedAt = time.Time{}
 	t.upstreamBodyStartedAt = time.Time{}
 	t.firstOutputAt = time.Time{}
+	t.firstTextAt = time.Time{}
 	t.connectStartedAt = time.Time{}
 	t.completionStatus = ""
 	t.missingTerminal = false
@@ -274,6 +277,17 @@ func (t *OpenAIRequestPerformanceTrace) MarkFirstOutput(at time.Time) {
 			t.upstreamBodyStartedAt = time.Time{}
 		}
 		t.firstOutputAt = at
+	}
+	t.mu.Unlock()
+}
+
+func (t *OpenAIRequestPerformanceTrace) MarkFirstText(at time.Time) {
+	if t == nil {
+		return
+	}
+	t.mu.Lock()
+	if t.firstTextAt.IsZero() {
+		t.firstTextAt = at
 	}
 	t.mu.Unlock()
 }
@@ -424,6 +438,10 @@ func (t *OpenAIRequestPerformanceTrace) Snapshot(endedAt time.Time) OpenAIReques
 	if !t.firstOutputAt.IsZero() {
 		e2eFirstOutputMs = durationMilliseconds(t.firstOutputAt.Sub(t.startedAt))
 	}
+	e2eFirstTextMs := int64(0)
+	if !t.firstTextAt.IsZero() {
+		e2eFirstTextMs = durationMilliseconds(t.firstTextAt.Sub(t.startedAt))
+	}
 	phaseTotal := t.authMs + t.prepareMs + t.userQueueMs + t.billingMs +
 		t.schedulerMs + t.accountQueueMs + t.upstreamHeaderMs +
 		t.upstreamBodyWaitMs + t.streamMs + t.retryWaitMs
@@ -454,6 +472,7 @@ func (t *OpenAIRequestPerformanceTrace) Snapshot(endedAt time.Time) OpenAIReques
 		RetryWaitMs:        t.retryWaitMs,
 		UnattributedMs:     unattributedMs,
 		E2EFirstOutputMs:   e2eFirstOutputMs,
+		E2EFirstTextMs:     e2eFirstTextMs,
 		TotalMs:            totalMs,
 		ConnectMs:          t.connectMs,
 		AttemptCount:       t.attemptCount,
