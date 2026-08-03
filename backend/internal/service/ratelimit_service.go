@@ -812,6 +812,14 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 }
 
 func (s *RateLimitService) handleOpenAI403(ctx context.Context, account *Account, upstreamMsg string, responseBody []byte) (shouldDisable bool) {
+	if account.Type == AccountTypeAPIKey && strings.EqualFold(
+		strings.TrimSpace(gjson.GetBytes(responseBody, "error.type").String()),
+		"content_policy_violation",
+	) {
+		slog.Info("openai_apikey_content_policy_no_cooldown", "account_id", account.ID)
+		return false
+	}
+
 	msg := buildForbiddenErrorMessage(
 		"Access forbidden (403):",
 		upstreamMsg,
