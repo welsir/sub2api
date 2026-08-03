@@ -18,11 +18,47 @@ throttling, and invalid HTTP-body failures remain visible for Sub2API's bounded
 fail-closed policy. Windows, Tailscale, and local-model tasks remain optional
 future work and are not production prerequisites for this rollout.
 
-Credentialed latency probes selected `MiniMax-M3` with thinking disabled and
-configurable `standard|priority` service admission for the first hosted rollout.
-M2.x remains compatible, but its thinking cannot be disabled and was materially
-slower in the measured short-classifier probes. Priority admission improves the
-observed latency distribution but is not treated as a one-second SLA.
+The first hosted candidate was `MiniMax-M2.7-highspeed`, but a credentialed local
+comparison selected `MiniMax-M3` with thinking disabled and temperature zero:
+the tested M2.7 high-speed path still emitted reasoning tokens and was slower.
+The adapter retains M2.7 high-speed compatibility without attaching a separate
+`service_tier`, but M3 is the current release candidate. A successful authenticated
+`/v1/models` response proves only provider reachability and configured-model
+presence; it does not prove that the credential has an active plan, remaining
+quota, or working inference. Candidate readiness therefore requires a real
+classification probe before any application-image switch.
+
+Provider codes `2056` and `2062` are deterministic billing or quota
+unavailability, not network jitter. The adapter surfaces them as a non-retryable
+billing failure so Sub2API cannot multiply a plan/configuration problem across
+the three-attempt transient retry budget. No one-second MiniMax SLA is assumed;
+latency remains a measured release gate.
+
+### 2026-08-03 text-only attachment amendment
+
+The operator approved preserving normal attachment workflows rather than
+blocking every request that contains structured media. Sub2API now constructs a
+separate text-only moderation projection before account selection and leaves the
+original request body unchanged. A strict text `allow` permits that original
+request, including its attachments, to continue through the normal downstream
+path; `block` or `review` rejects the entire request before any downstream
+account is selected.
+
+The projection covers ordered visible text and tool traffic across OpenAI Chat,
+Responses, Images, Anthropic Messages, Gemini, and Grok media requests. Attachment
+content becomes only a canonical marker containing bounded kind, normalized MIME,
+source class, and normalized extension when available. Raw image pixels, file
+bytes, Base64, URLs or URIs, opaque file IDs, file names, headers, cookies, and
+credentials never enter the moderation transcript. A marker or unavailable
+attachment content is neutral metadata, not an automatic allow, block, or review;
+visible dangerous text still controls the decision.
+
+This is an explicit residual-risk trade-off. Harmful instructions that exist only
+inside image pixels or file bytes can pass text-only moderation and reach the
+upstream model. V1 does not OCR, fetch, extract, scan archives or executables, or
+claim multimodal coverage. The adapter still fail-closes a direct structured-media
+Moderations call as defense in depth, but that is a protocol-violation path and is
+not the normal Sub2API attachment flow.
 
 Sub2API owns content-moderation policy. The inspected development branch already accepts an OpenAI-shaped `POST <base>/v1/moderations` provider, scopes checks by the authenticated API key's `GroupID`, and supports `off`, `observe`, and `pre_block`. The prior implementation audited only the last user message, silently truncated normalized text at 12,000 characters, and allowed scoped requests after semantic-provider failure.
 
@@ -42,6 +78,8 @@ The expected volume is about 50,000 inbound requests per day, or roughly 0.58 re
 - Apply strict moderation only to explicitly approved high-risk groups in the MiniMax-first rollout.
 - Make model unavailability, parse failure, overload, and network failure visible, bounded, and fail closed for scoped `pre_block` requests.
 - Audit the complete ordered outbound semantic context, including tool traffic, without silent text truncation.
+- Preserve original attachment-bearing requests while exposing only bounded,
+  non-secret attachment markers to the text classifier.
 - Reduce repeated-context transfer with deterministic overlapping chunks, a Redis verdict cache, and gzip for uncached chunks.
 - Require measured model quality, latency, failure drills, and human-controlled promotion before `pre_block`.
 - Preserve a fast rollback to the prior Sub2API moderation configuration.
@@ -51,7 +89,10 @@ The expected volume is about 50,000 inbound requests per day, or roughly 0.58 re
 - Automatically banning users or disabling API keys from a MiniMax decision.
 - Changing Sub2API billing or account scheduling.
 - Claiming that 0.6B or 4B is production-quality before a representative local benchmark.
-- Auditing model output, image pixels, audio, or arbitrary multimodal content in the first slice.
+- Auditing model output, image pixels, audio, file bytes, archives, executables,
+  or arbitrary multimodal content in the first slice.
+- Fetching attachment URLs, resolving file IDs, OCR, document extraction, or
+  malware analysis.
 - Introducing a public inference endpoint, automatic rollout promotion, or provider-side session state in the first slice.
 - Remotely configuring or validating the powered-off Windows machine during the planning phase.
 
@@ -82,7 +123,13 @@ The adapter will expose:
 - `GET /readyz` for model-backend readiness.
 - `POST /v1/moderations` for authenticated text moderation.
 
-`POST /v1/moderations` will require a dedicated Bearer secret and accept the request shape used by Sub2API: a model identifier and text input. Text arrays may be normalized deterministically, but image or other unsupported parts will return a clear non-2xx error rather than being silently labeled safe.
+`POST /v1/moderations` will require a dedicated Bearer secret and accept the
+normal request shape used by Sub2API: a model identifier and one text input. The
+text may contain canonical attachment markers, but Sub2API does not send image
+parts or file bodies to this endpoint. If a caller bypasses that projection and
+sends a structured image directly, the adapter returns a deterministic flagged
+local-policy result without invoking MiniMax. This defense-in-depth behavior is
+not image-pixel moderation and is not the normal Sub2API request path.
 
 The successful response will contain at least one `results` item with `flagged`, `categories`, and `category_scores`. Contract fixtures will prove that Sub2API can deserialize and evaluate the response. The Base URL configured in Sub2API will be the adapter origin, because Sub2API appends `/v1/moderations`.
 
@@ -144,7 +191,36 @@ The initial configuration will use:
 
 ### 7. Audit complete context with deterministic incremental chunks
 
-Sub2API will construct an ordered role-tagged transcript from all semantic text that is about to be sent upstream: system/developer instructions, user and assistant messages, function/tool calls and outputs, Responses instructions, and Gemini function traffic. A final `Continue`, assistant item, or tool result never causes historical context to be skipped.
+Sub2API will construct an ordered role-tagged transcript from all visible
+semantic text that is about to be sent upstream: system/developer instructions,
+user and assistant messages, function/tool calls and outputs, Responses
+instructions, Gemini function traffic, OpenAI Images or Grok media prompts, and
+top-level tool/output schemas that can carry names, descriptions, instructions,
+examples, defaults, or schema text. This includes Chat `tools`, legacy
+`functions`, and `response_format`; Responses `tools` and `text.format`;
+Anthropic tool/output schemas; and Gemini tool declarations and response schemas. Unknown content
+blocks receive a generic semantic fallback through the same safe projection. A
+final `Continue`, assistant item, or tool result never causes historical context
+to be skipped.
+
+OpenAI Chat `image_url`/file content, Responses `input_image`/`input_file`,
+Anthropic image/document blocks, Gemini inline/file data, and OpenAI Images or
+Grok reference/upload media become canonical text markers. Markers retain only
+bounded `kind`, normalized `mime`, the source class
+`inline|remote|file_id|upload`, and a normalized extension; `source=file_id`
+describes the reference class and never contains the opaque ID. Raw URLs, URIs,
+queries, file IDs, file names, Base64, binary bytes, headers, cookies, and
+credentials are discarded from the projection. The original client request is
+not rewritten by this extraction and remains available to the downstream path
+after a strict allow.
+
+Reference schemes and MIME values are client-controlled. Unknown URL/URI
+schemes never pass through as raw text, and only a bounded MIME allowlist may
+appear in a marker. Low-entropy Base64 is omitted under attachment or binary
+semantic keys without globally deleting identical ordinary user text. Non-empty
+invalid JSON and bounded-projection failures are explicit failures. For
+Responses WebSocket turns after the first, a current-frame projection failure
+closes locally and cannot fall back to auditing only accumulated history.
 
 The 12,000-rune silent truncation is removed. The normalized transcript is split
 into deterministic 32,768-rune windows with a 1,024-rune overlap. Every rune is
@@ -155,10 +231,19 @@ with bounded parallelism under one overall moderation deadline.
 
 Safe verdicts expire after 24 hours and blocked verdicts after 30 days. Cache
 keys contain only a policy namespace and SHA-256 chunk hash; prompt text is not
-stored in Redis. Redis read/write errors, unavailable cache support, provider
-errors, and deadline exhaustion return a local 503 in scoped `pre_block` and do
-not select a downstream account. Structured images are blocked locally until an
-image-capable moderation backend is verified.
+stored in Redis. The text projection revision
+`incremental-full-context-v2-attachment-text-only` and expected classifier
+policy revision `minimax-strict-policy-v5` both participate in the chunk hash
+and Redis namespace, so verdicts from the prior projection or classifier policy
+cannot be reused. The adapter exposes its classifier policy revision from
+`/readyz` and every successful Moderations response. Sub2API requires a matching
+`/readyz` revision before the first cache read for each configured
+base-URL/revision pair, then requires the same revision on each uncached
+Moderations result before writing its verdict. A response mismatch invalidates
+the remembered readiness check so the next request verifies `/readyz` again.
+Missing or mismatched revision evidence, Redis read/write errors, unavailable cache
+support, provider errors, and deadline exhaustion return a local 503 in scoped
+`pre_block` and do not select a downstream account.
 
 For each uncached Moderations JSON larger than 1 KiB, Sub2API uses gzip
 best-speed compression. This is a content-addressed verdict cache, not a
@@ -174,12 +259,20 @@ No step automatically promotes the next one. The operator owns start, pause, gro
 ## Risks / Trade-offs
 
 - [Home power, sleep, broadband, or WSL failure makes the semantic service unavailable] -> In `pre_block`, return a local 503 after bounded attempts; configure restart behavior and run outage drills before promotion.
-- [0.6B may miss nuanced Chinese or adversarial content] -> Benchmark 0.6B and 4B against the same labeled real samples and select on recall, false-positive rate, latency, and peak concurrency.
+- [The hosted classifier may miss nuanced Chinese or adversarial content] -> Replay the selected MiniMax model against the same privacy-reviewed real and synthetic corpus, require every confirmed upstream policy case to block, and record false positives separately.
 - [Synthetic scores may be mistaken for calibrated confidence] -> Name them policy scores in code and docs, keep fixed mapping tests, and retain raw Qwen label/category in adapter operational logs.
 - [Taxonomy mismatch can hide unsafe categories] -> Maintain an explicit mapping table and an `Unsafe` fallback into a Sub2API-evaluated category.
 - [Tailscale works from the host but not from the Sub2API container] -> Make the container-origin request a required connectivity gate.
 - [Retries can multiply user latency while the home host is offline] -> Cap the path at three total attempts and set the per-attempt timeout from measured P99 inference plus network headroom.
 - [Complete histories increase bytes and inference work] -> Reuse versioned Redis verdicts for stable chunks, gzip misses, and bound cold-chunk parallelism plus the overall deadline.
+- [An attachment contains harmful instructions that are not present in visible
+  request text] -> Preserve the user workflow but record this as an accepted V1
+  false-negative risk; do not claim OCR, file inspection, malware analysis, or
+  multimodal moderation.
+- [An old cached allow survives a projection or classifier-policy change] -> Pin
+  the expected classifier revision, verify it at readiness and response time,
+  and include both projection and classifier revisions in chunk hashes and Redis
+  namespaces.
 - [Windows GPU stack for RTX 5070 Ti may require newer driver/CUDA/runtime builds] -> Record exact versions, prove cold and warm starts, and keep backend selection behind the compatibility gate.
 - [A high-risk allowlist does not automatically include future groups] -> Treat the five approved IDs as an explicit cost/safety scope and require operator review before changing it.
 - [Display names can be mutable or duplicated] -> Persist and evaluate stable group IDs; never infer moderation scope from a name at request time.
@@ -189,12 +282,14 @@ No step automatically promotes the next one. The operator owns start, pause, gro
 ## Migration Plan
 
 1. Implement adapter contract tests, deterministic mapping fixtures, auth, health/readiness, bounded execution, and redacted logging without a live Windows dependency.
-2. On the powered-on Windows machine, record GPU/WSL2/runtime versions and prove Qwen3Guard-Gen 0.6B cold start, warm inference, and restart. Test 4B under the same bounded input and concurrency profile.
-3. Establish the Tailscale ACL and prove authenticated `/readyz` and safe/unsafe Moderations fixtures from the actual Sub2API runtime boundary.
-4. Implement and verify complete transcript extraction plus the versioned Redis chunk-verdict cache, then capture the rollback-safe deployed configuration.
+2. Keep the Windows Qwen lane deferred. For the hosted candidate, verify a credentialed `MiniMax-M3` classification with thinking disabled from the production-equivalent runtime boundary; `/v1/models` alone is insufficient.
+3. Prove authenticated adapter `/readyz` and safe/unsafe Moderations fixtures from the actual Sub2API runtime boundary without exposing credentials in evidence.
+4. Implement and verify complete text-only transcript extraction, attachment
+   marker privacy, classifier-policy revision handshake, and the versioned Redis
+   chunk-verdict cache, then capture the rollback-safe deployed configuration.
 5. Keep `all_groups=false` with approved high-risk group IDs `8`, `10`, `13`, `14`, and `15`, enable `keyword_and_api`, and verify the incremental switch in an isolated candidate before changing the active application image.
-6. Compare 0.6B and 4B on a representative labeled sample and measured peak load. Record the selected model revision, mapping revision, timeout, retry count, and operator decision.
-7. Run service-stop, Windows-reboot, tailnet-loss, overload, malformed-output, and recovery drills. Confirm `observe` remains non-blocking and scoped `pre_block` returns a local 503 without downstream account selection.
+6. Replay approximately 1,200 to 1,400 privacy-reviewed samples through `MiniMax-M3`, including every confirmed upstream policy case, risky candidates, legitimate reverse engineering, normal business, long contexts, `Continue`, and tool loops. Record model revision, mapping revision, latency, timeout, retry count, and operator decision without retaining prompt text in test output.
+7. Run adapter-stop, provider-timeout/throttling/billing, Redis-loss, overload, malformed-output, and recovery drills. Confirm `observe` remains non-blocking and scoped `pre_block` returns a local 503 without downstream account selection.
 8. After explicit operator approval, switch the isolated candidate into service, run allowed and blocked probes, and verify out-of-scope groups remain unaffected.
 9. Roll back by restoring the captured Sub2API configuration or returning to `observe`/`keyword_only`; do not require a Sub2API restart.
 

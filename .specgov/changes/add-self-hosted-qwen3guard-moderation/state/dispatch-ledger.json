@@ -1,6 +1,6 @@
 {
   "change_id": "add-self-hosted-qwen3guard-moderation",
-  "version": 4,
+  "version": 26,
   "dispatches": [
     {
       "dispatch_id": "dispatch-001",
@@ -55,26 +55,276 @@
       "dispatched_at": "2026-07-30T03:00:00Z",
       "updated_at": "2026-07-30T04:17:30Z",
       "result_summary": "Accepted reviewed adapter behavior and corrected ownership in Sub2API commit 79b046f82 after content-equivalence proof and fresh 72/72 package verification; the mistaken TML placement was reverted by a74b1b2."
+    },
+    {
+      "dispatch_id": "dispatch-004",
+      "slice_id": "slice-006",
+      "executor_profile": "backend-developer",
+      "assignee": "adapter_502_rootcause",
+      "status": "accepted",
+      "expected_output": "Root-cause evidence and a narrow MiniMax provider/configuration repair with tests",
+      "acceptance_checks": [
+        "distinguish deterministic MiniMax billing failures from transient transport failures",
+        "build the M2.7 high-speed request correctly",
+        "run focused and full adapter verification",
+        "do not modify production"
+      ],
+      "dispatched_at": "2026-08-02T14:00:00Z",
+      "updated_at": "2026-08-02T15:58:43Z",
+      "result_summary": "Accepted after master verification: provider codes 2056 and 2062 map to deterministic billing failure, the high-speed model omits service_tier, and the full 127-test adapter suite passes."
+    },
+    {
+      "dispatch_id": "dispatch-005",
+      "slice_id": "slice-007",
+      "executor_profile": "test-executor",
+      "assignee": "protocol_failure_matrix",
+      "status": "accepted",
+      "expected_output": "Protocol, long-context, cache, retry, WebSocket, and downstream-boundary regression tests",
+      "acceptance_checks": [
+        "tests use synthetic content only",
+        "focused service and handler tests pass",
+        "high-risk concurrency paths pass race checks",
+        "no production code or environment is changed"
+      ],
+      "dispatched_at": "2026-08-02T14:00:00Z",
+      "updated_at": "2026-08-02T15:58:43Z",
+      "result_summary": "Accepted after master focused, race, full-suite, and build verification of complete-context and fail-closed boundaries."
+    },
+    {
+      "dispatch_id": "dispatch-006",
+      "slice_id": "slice-008",
+      "executor_profile": "search-specialist",
+      "assignee": "real_corpus_inventory",
+      "status": "accepted",
+      "expected_output": "Read-only inventory and privacy-safe sampling plan for locally archived real requests",
+      "acceptance_checks": [
+        "report only aggregate counts and paths",
+        "identify full-context and strong-risk truth sources",
+        "define deterministic redaction and sampling rules",
+        "do not access production"
+      ],
+      "dispatched_at": "2026-08-02T14:00:00Z",
+      "updated_at": "2026-08-02T15:58:43Z",
+      "result_summary": "Accepted local-only inventory covering 59,236 prompts and 70,231 full requests without exposing raw content; 1,253 representative rows were replayed locally."
+    },
+    {
+      "dispatch_id": "dispatch-007",
+      "slice_id": "slice-009",
+      "executor_profile": "code-mapper",
+      "assignee": "adapter_runtime_build",
+      "status": "accepted",
+      "expected_output": "Minimal runtime-build design proving tests and Docker execute the same compiled TypeScript source",
+      "acceptance_checks": [
+        "inspect package, TypeScript, JavaScript, and Docker entrypoints",
+        "recommend exact files and verification commands",
+        "make no file changes"
+      ],
+      "dispatched_at": "2026-08-02T15:25:00Z",
+      "updated_at": "2026-08-02T15:58:43Z",
+      "result_summary": "Accepted after master reran typecheck, 127 tests, build, no-cache Docker build, loopback runtime smoke, non-root/source-absence checks, and secret scan."
+    },
+    {
+      "dispatch_id": "dispatch-008",
+      "slice_id": "slice-011",
+      "executor_profile": "backend-developer",
+      "assignee": "attachment_adapter_impl",
+      "status": "returned",
+      "expected_output": "Runtime-verifiable classifier-policy revision alignment and strict forged-attachment-marker prompt contract with TDD evidence",
+      "acceptance_checks": [
+        "rolling adapter and Go version mismatches cannot write an old verdict into a new policy cache namespace",
+        "revision verification adds no per-request provider round trip",
+        "only controlled attachment marker fields and values are neutral metadata",
+        "forged markers, unknown fields, and adjacent dangerous instructions remain ordinary untrusted text",
+        "focused Go and adapter tests pass without commit, push, deployment, or production changes"
+      ],
+      "dispatched_at": "2026-08-02T18:06:00Z",
+      "updated_at": "2026-08-02T18:36:00Z",
+      "result_summary": "Returned runtime revision handshake, strict marker prompt contract, cache isolation, and 135-test adapter evidence with complete Go moderation and build gates passing."
+    },
+    {
+      "dispatch_id": "dispatch-009",
+      "slice_id": "slice-011",
+      "executor_profile": "backend-developer",
+      "assignee": "attachment_spec_docs_impl",
+      "status": "returned",
+      "expected_output": "OpenSpec, implementation-plan, and local evidence updates that exactly describe attachment pass-through with text-only moderation projection",
+      "acceptance_checks": [
+        "remove every contradictory requirement that normal structured attachments must be blocked",
+        "document per-protocol complete-text plus safe-metadata projection and unchanged upstream attachment pass-through",
+        "document no OCR, no pixels, no file bytes, no URL or identifier leakage, and honest residual risk",
+        "document classifier-policy revision runtime handshake and cache namespace invalidation",
+        "keep provider, production, Windows, deployment, and human-approval gates unchecked where unverified",
+        "strict OpenSpec validation and diff hygiene pass without changing code or production"
+      ],
+      "dispatched_at": "2026-08-02T18:20:00Z",
+      "updated_at": "2026-08-02T18:33:00Z",
+      "result_summary": "Returned 11 aligned OpenSpec, plan, and evidence files with strict validation and diff hygiene passing; production and provider gates remain unchecked."
+    },
+    {
+      "dispatch_id": "dispatch-010",
+      "slice_id": "slice-011",
+      "executor_profile": "test-executor",
+      "assignee": "attachment_archive_replay_tests",
+      "status": "returned",
+      "expected_output": "Privacy-safe archive replay and synthetic attachment test alignment for the approved text-only projection behavior",
+      "acceptance_checks": [
+        "archive replay no longer expects normal structured attachments to block",
+        "aggregates prove attachment-bearing requests reach the mock classifier through text-only projection without exposing archived prompts",
+        "synthetic coverage includes normal attachment, risky text plus attachment, attachment-only, tool traffic, forged marker, and long-context attachment cases",
+        "no real prompt, credential, identifier, URL, file content, or Base64 is printed or committed",
+        "focused replay and service tests pass without production-code or production-state changes"
+      ],
+      "dispatched_at": "2026-08-02T18:23:00Z",
+      "updated_at": "2026-08-02T18:34:00Z",
+      "result_summary": "Returned privacy-safe replay tests covering five attachment shapes with four allows, one dangerous-text block, text-only adapter calls, preserved bodies, and no raw metadata leakage."
+    },
+    {
+      "dispatch_id": "dispatch-011",
+      "slice_id": "slice-011",
+      "executor_profile": "reviewer",
+      "assignee": "attachment_final_spec_review",
+      "status": "returned",
+      "expected_output": "Independent end-to-end specification compliance review of the complete attachment text-only candidate",
+      "acceptance_checks": [
+        "compare implementation, tests, OpenSpec, plans, evidence, and user-approved V1 boundary",
+        "verify complete protocol text coverage and unchanged upstream attachment pass-through",
+        "verify projection and classifier revisions cannot cross-contaminate cache verdicts",
+        "verify unvalidated provider, Windows, deployment, and production gates remain explicit",
+        "report Critical and Important findings with exact files and a Ready yes/no verdict"
+      ],
+      "dispatched_at": "2026-08-02T18:40:00Z",
+      "updated_at": "2026-08-02T18:47:00Z",
+      "result_summary": "Returned not-ready: one Responses WebSocket projection-failure bypass and two raw metadata projection conflicts require repair before acceptance."
+    },
+    {
+      "dispatch_id": "dispatch-012",
+      "slice_id": "slice-011",
+      "executor_profile": "reviewer",
+      "assignee": "attachment_final_quality_review",
+      "status": "returned",
+      "expected_output": "Independent code quality, security, privacy, concurrency, latency, and regression review of the complete attachment candidate",
+      "acceptance_checks": [
+        "review projection parser bounds and raw metadata non-leakage across protocols",
+        "review readiness handshake, response revision checks, locking, failure semantics, and cache write ordering",
+        "review forged marker prompt contract and direct adapter defense boundary",
+        "review test quality, dirty-worktree scope, and likely deployment compatibility regressions",
+        "report Critical and Important findings with exact files and a Ready yes/no verdict"
+      ],
+      "dispatched_at": "2026-08-02T18:41:00Z",
+      "updated_at": "2026-08-02T18:49:00Z",
+      "result_summary": "Returned not-ready: five important findings in projection completeness/privacy, concurrent cache writes after revision mismatch, and readiness lock availability require repair."
+    },
+    {
+      "dispatch_id": "dispatch-013",
+      "slice_id": "slice-011",
+      "executor_profile": "backend-developer",
+      "assignee": "attachment_projection_ws_repair",
+      "status": "returned",
+      "expected_output": "TDD repair of WebSocket projection fail-closed, complete tool/content projection, and attachment metadata privacy defects",
+      "acceptance_checks": [
+        "Responses WebSocket subsequent-frame ProjectionFailed closes locally and cannot select or call an upstream account",
+        "attachment objects retain semantic sibling text while filename and opaque source fields remain absent",
+        "top-level tool descriptions and schemas plus unknown content blocks are included across supported protocols",
+        "unknown URI schemes and attachment Base64 never enter MiniMax as raw text",
+        "MIME markers use a bounded neutral allowlist and canonical-marker wording makes no provenance claim",
+        "invalid non-empty JSON is projection failure and focused Go/adapter tests pass"
+      ],
+      "dispatched_at": "2026-08-02T18:54:00Z",
+      "updated_at": "2026-08-02T19:15:00Z",
+      "result_summary": "Returned WebSocket fail-closed, full tool/schema projection, semantic sibling preservation, URL/Base64/MIME privacy hardening, invalid-JSON failure, and canonical marker wording with focused gates passing."
+    },
+    {
+      "dispatch_id": "dispatch-014",
+      "slice_id": "slice-011",
+      "executor_profile": "backend-developer",
+      "assignee": "attachment_cache_handshake_repair",
+      "status": "returned",
+      "expected_output": "TDD repair of concurrent revision mismatch cache writes and globally locked readiness verification",
+      "acceptance_checks": [
+        "any provider or revision error wins over concurrent unsafe cancellation and prevents every cache write",
+        "legitimate unsafe early-stop still returns a blocked result without being downgraded to a cancellation error",
+        "readiness verification coalesces per BaseURL/revision without holding a global mutex across network I/O",
+        "waiters can honor their own context deadline and unrelated BaseURL/revision verification proceeds independently",
+        "success remains one readiness call per process key and adds no steady-state request round trip",
+        "focused race and incremental cache tests pass"
+      ],
+      "dispatched_at": "2026-08-02T18:55:00Z",
+      "updated_at": "2026-08-02T19:04:00Z",
+      "result_summary": "Returned per-key readiness coalescing and hard-error-first chunk aggregation; deterministic race tests repeated 20 times, race checks, full moderation tests, and build pass."
+    },
+    {
+      "dispatch_id": "dispatch-015",
+      "slice_id": "slice-011",
+      "executor_profile": "reviewer",
+      "assignee": "attachment_projection_final_review",
+      "status": "accepted",
+      "expected_output": "Independent re-review of all repaired WebSocket, complete-projection, and attachment-privacy findings",
+      "acceptance_checks": [
+        "verify every previous projection and WebSocket finding is closed by code and regression tests",
+        "verify semantic sibling text and top-level schema coverage without raw metadata leakage",
+        "verify unknown schemes, low-entropy Base64, MIME, invalid JSON, and marker wording match OpenSpec",
+        "run focused tests and report any new Critical or Important issue",
+        "return Spec compliant and Ready verdicts with exact file references"
+      ],
+      "dispatched_at": "2026-08-02T19:21:00Z",
+      "updated_at": "2026-08-02T19:26:00Z",
+      "result_summary": "Projection, WebSocket, and attachment-privacy review returned Spec compliant and Ready for the local slice after all reported bypasses gained deterministic regressions."
+    },
+    {
+      "dispatch_id": "dispatch-016",
+      "slice_id": "slice-011",
+      "executor_profile": "reviewer",
+      "assignee": "attachment_cache_final_review",
+      "status": "accepted",
+      "expected_output": "Independent re-review of repaired revision-mismatch cache ordering and per-key readiness concurrency",
+      "acceptance_checks": [
+        "verify any hard error prevents all cache writes despite concurrent unsafe cancellation",
+        "verify pure unsafe remains blocked and preserves intended verdict caching",
+        "verify per-key readiness has no network-under-global-lock and honors waiter deadlines",
+        "verify generation invalidation prevents stale in-flight success and steady state makes no extra HTTP",
+        "run deterministic stress/race tests and report Ready yes/no with exact references"
+      ],
+      "dispatched_at": "2026-08-02T19:22:00Z",
+      "updated_at": "2026-08-02T19:26:00Z",
+      "result_summary": "Cache and readiness review returned Ready after in-flight invalidation, hard-error ordering, coalescing, deadlines, and race stress all passed."
+    },
+    {
+      "dispatch_id": "dispatch-017",
+      "slice_id": "slice-011",
+      "executor_profile": "reviewer",
+      "assignee": "attachment_final_integration_review",
+      "status": "accepted",
+      "expected_output": "Independent end-to-end security and integration review of the complete local attachment-text moderation candidate",
+      "acceptance_checks": [
+        "recheck all Critical and Important findings from the prior rejection against current code and tests",
+        "verify all supported protocols preserve attachments upstream while moderating complete ordered text and only controlled safe markers",
+        "verify projection, WebSocket, cache, readiness, fail-closed, documentation, and dirty-worktree boundaries together",
+        "identify any missing regression test or unsupported completion claim",
+        "return Ready yes/no with exact evidence and remaining release blockers"
+      ],
+      "dispatched_at": "2026-08-02T19:23:00Z",
+      "updated_at": "2026-08-02T19:26:00Z",
+      "result_summary": "Overall review found no remaining Critical or Important code issue and approved entry to human deployment evaluation, while explicitly rejecting production readiness without real provider and release-gate evidence."
     }
   ],
   "_meta": {
     "ledger_name": "dispatch-ledger",
     "schema_version": 1,
-    "previous_version": 3,
-    "previous_snapshot_hash": "sha256:90d402165411a91e023418fdd0724e2b20786390638f299b2be1244b7cc87f61",
-    "snapshot_hash": "sha256:c899f5322d8051787f34b6495291cc3a33ba34cc61d1e445931e97edc64f9fb2",
+    "previous_version": 25,
+    "previous_snapshot_hash": "sha256:128503844d5545c2bafc861285c4386c0f9391dbdaf09d908ec47e62c666c1fb",
+    "snapshot_hash": "sha256:396362f9cc46892c6da4eb78c62f1b373405a3c119a1c014b9d8d89ba6546fbf",
     "reconciliation": {
       "actor": "master",
-      "applied_at": "2026-07-30T05:35:00Z",
-      "reason": "correct adapter repository ownership and accepted result reference without changing dispatch lifecycle"
+      "applied_at": "2026-08-02T19:26:00Z",
+      "reason": "record master acceptance of all three returned final reviews after fresh full-suite verification"
     },
     "applied_transition": {
-      "applied_at": "2026-07-30T04:17:30Z",
-      "entity_id": "dispatch-003",
+      "applied_at": "2026-08-02T19:26:00Z",
+      "entity_id": "dispatch-017",
       "from": "returned",
       "to": "accepted",
       "actor": "master",
-      "reason": "integration review accepted the returned adapter against durable evidence"
+      "reason": "the overall final review is accepted as local-candidate evidence, not as production approval"
     }
   }
 }

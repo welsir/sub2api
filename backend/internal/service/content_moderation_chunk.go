@@ -4,12 +4,16 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -19,7 +23,7 @@ const (
 	contentModerationChunkSizeRunes      = 32_768
 	contentModerationChunkOverlapRunes   = 1_024
 	contentModerationChunkParallelism    = 8
-	contentModerationChunkPolicyRevision = "incremental-full-context-v1"
+	contentModerationChunkPolicyRevision = "incremental-full-context-v2-attachment-text-only"
 	contentModerationChunkSafeTTL        = 24 * time.Hour
 	contentModerationChunkBlockTTL       = 30 * 24 * time.Hour
 )
@@ -46,7 +50,7 @@ type contentModerationChunkReviewStats struct {
 	ReviewedChunks int
 }
 
-func splitContentModerationChunks(text string) []contentModerationChunk {
+func splitContentModerationChunks(text string, classifierPolicyRevision string) []contentModerationChunk {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil
@@ -62,7 +66,7 @@ func splitContentModerationChunks(text string) []contentModerationChunk {
 		chunkText := string(runes[start:end])
 		chunks = append(chunks, contentModerationChunk{
 			Text: chunkText,
-			Hash: contentModerationChunkHash(chunkText),
+			Hash: contentModerationChunkHash(chunkText, classifierPolicyRevision),
 		})
 		if end == len(runes) {
 			break
@@ -71,14 +75,18 @@ func splitContentModerationChunks(text string) []contentModerationChunk {
 	return chunks
 }
 
-func contentModerationChunkHash(text string) string {
-	sum := sha256.Sum256([]byte(contentModerationChunkPolicyRevision + "\x00" + text))
+func contentModerationChunkHash(text string, classifierPolicyRevision string) string {
+	sum := sha256.Sum256([]byte(contentModerationChunkPolicyRevision + "\x00" + strings.TrimSpace(classifierPolicyRevision) + "\x00" + text))
 	return hex.EncodeToString(sum[:])
 }
 
 func contentModerationChunkPolicyNamespace(cfg *ContentModerationConfig) string {
 	var builder strings.Builder
 	builder.WriteString(contentModerationChunkPolicyRevision)
+	builder.WriteByte('\n')
+	if cfg != nil {
+		builder.WriteString(strings.TrimSpace(cfg.ClassifierPolicyRevision))
+	}
 	builder.WriteByte('\n')
 	builder.WriteString(strconv.Itoa(contentModerationChunkSizeRunes))
 	builder.WriteByte(':')
@@ -104,6 +112,148 @@ func contentModerationChunkPolicyNamespace(cfg *ContentModerationConfig) string 
 	return hex.EncodeToString(sum[:])
 }
 
+type contentModerationAdapterReadiness struct {
+	Status                   string `json:"status"`
+	ClassifierPolicyRevision string `json:"classifier_policy_revision"`
+}
+
+type contentModerationClassifierPolicyState struct {
+	generation uint64
+	verified   bool
+	inFlight   *contentModerationClassifierPolicyCall
+}
+
+type contentModerationClassifierPolicyCall struct {
+	done chan struct{}
+	err  error
+}
+
+func contentModerationClassifierVerificationKey(cfg *ContentModerationConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	return strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/") + "\x00" + strings.TrimSpace(cfg.ClassifierPolicyRevision)
+}
+
+func (s *ContentModerationService) ensureContentModerationClassifierPolicy(
+	ctx context.Context,
+	cfg *ContentModerationConfig,
+) error {
+	if s == nil || cfg == nil {
+		return errors.New("content moderation classifier policy verification is unavailable")
+	}
+	expected := strings.TrimSpace(cfg.ClassifierPolicyRevision)
+	if expected == "" {
+		return errors.New("content moderation classifier policy revision is required")
+	}
+	key := contentModerationClassifierVerificationKey(cfg)
+	for {
+		s.classifierPolicyMu.Lock()
+		if s.classifierPolicyStates == nil {
+			s.classifierPolicyStates = make(map[string]*contentModerationClassifierPolicyState)
+		}
+		state := s.classifierPolicyStates[key]
+		if state == nil {
+			state = &contentModerationClassifierPolicyState{}
+			s.classifierPolicyStates[key] = state
+		}
+		if state.verified {
+			s.classifierPolicyMu.Unlock()
+			return nil
+		}
+		if call := state.inFlight; call != nil {
+			s.classifierPolicyMu.Unlock()
+			select {
+			case <-call.done:
+				if call.err != nil {
+					return call.err
+				}
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		call := &contentModerationClassifierPolicyCall{done: make(chan struct{})}
+		generation := state.generation
+		state.inFlight = call
+		s.classifierPolicyMu.Unlock()
+
+		err := s.probeContentModerationClassifierPolicy(ctx, cfg, expected)
+
+		s.classifierPolicyMu.Lock()
+		call.err = err
+		accepted := err == nil && state.generation == generation && state.inFlight == call
+		if state.inFlight == call {
+			state.inFlight = nil
+		}
+		if accepted {
+			state.verified = true
+		}
+		close(call.done)
+		s.classifierPolicyMu.Unlock()
+
+		if err != nil {
+			return err
+		}
+		if accepted {
+			return nil
+		}
+	}
+}
+
+func (s *ContentModerationService) probeContentModerationClassifierPolicy(
+	ctx context.Context,
+	cfg *ContentModerationConfig,
+	expected string,
+) error {
+	endpoint, err := url.JoinPath(strings.TrimRight(cfg.BaseURL, "/"), "/readyz")
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	client := s.httpClient
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("content moderation classifier readiness failed: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("content moderation classifier readiness status %d", resp.StatusCode)
+	}
+	var readiness contentModerationAdapterReadiness
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4_096)).Decode(&readiness); err != nil {
+		return fmt.Errorf("decode content moderation classifier readiness: %w", err)
+	}
+	actual := strings.TrimSpace(readiness.ClassifierPolicyRevision)
+	if actual == "" {
+		return errors.New("content moderation classifier readiness omitted policy revision")
+	}
+	if actual != expected {
+		return fmt.Errorf("content moderation classifier policy revision mismatch: expected %q, got %q", expected, actual)
+	}
+	return nil
+}
+
+func (s *ContentModerationService) invalidateContentModerationClassifierPolicy(cfg *ContentModerationConfig) {
+	if s == nil {
+		return
+	}
+	key := contentModerationClassifierVerificationKey(cfg)
+	s.classifierPolicyMu.Lock()
+	if state := s.classifierPolicyStates[key]; state != nil {
+		state.generation++
+		state.verified = false
+	}
+	s.classifierPolicyMu.Unlock()
+}
+
 func (s *ContentModerationService) callModerationIncremental(
 	ctx context.Context,
 	cfg *ContentModerationConfig,
@@ -114,14 +264,18 @@ func (s *ContentModerationService) callModerationIncremental(
 	if s == nil || s.chunkCache == nil {
 		return nil, stats, errors.New("content moderation chunk cache is unavailable")
 	}
-	chunks := splitContentModerationChunks(text)
+	timeout := time.Duration(cfg.TimeoutMS) * time.Millisecond
+	reviewCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	if err := s.ensureContentModerationClassifierPolicy(reviewCtx, cfg); err != nil {
+		return nil, stats, err
+	}
+
+	chunks := splitContentModerationChunks(text, cfg.ClassifierPolicyRevision)
 	stats.TotalChunks = len(chunks)
 	if len(chunks) == 0 {
 		return nil, stats, errors.New("content moderation chunk input is empty")
 	}
-	timeout := time.Duration(cfg.TimeoutMS) * time.Millisecond
-	reviewCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 
 	namespace := contentModerationChunkPolicyNamespace(cfg)
 	hashes := make([]string, len(chunks))
@@ -158,9 +312,28 @@ func (s *ContentModerationService) callModerationIncremental(
 
 	reviewed := make(map[string]ContentModerationChunkVerdict, len(misses))
 	var reviewedMu sync.Mutex
-	var unsafe atomic.Bool
+	var outcomeMu sync.Mutex
+	var hardErr error
+	unsafe := false
 	workerCtx, stopWorkers := context.WithCancel(reviewCtx)
 	defer stopWorkers()
+	recordHardError := func(err error) {
+		if err == nil {
+			return
+		}
+		outcomeMu.Lock()
+		if hardErr == nil && !(errors.Is(err, context.Canceled) && unsafe) {
+			hardErr = err
+		}
+		outcomeMu.Unlock()
+		stopWorkers()
+	}
+	recordUnsafe := func() {
+		outcomeMu.Lock()
+		unsafe = true
+		outcomeMu.Unlock()
+		stopWorkers()
+	}
 	var group errgroup.Group
 	group.SetLimit(contentModerationChunkParallelism)
 	for _, chunk := range misses {
@@ -171,8 +344,17 @@ func (s *ContentModerationService) callModerationIncremental(
 		group.Go(func() error {
 			result, err := s.callModeration(workerCtx, cfg, chunk.Text, trackKeyLoad)
 			if err != nil {
-				stopWorkers()
-				return err
+				recordHardError(err)
+				return nil
+			}
+			if strings.TrimSpace(result.ClassifierPolicyRevision) != strings.TrimSpace(cfg.ClassifierPolicyRevision) {
+				s.invalidateContentModerationClassifierPolicy(cfg)
+				recordHardError(fmt.Errorf(
+					"content moderation response classifier policy revision mismatch: expected %q, got %q",
+					strings.TrimSpace(cfg.ClassifierPolicyRevision),
+					strings.TrimSpace(result.ClassifierPolicyRevision),
+				))
+				return nil
 			}
 			thresholdFlagged, _, _ := evaluateModerationScores(result.CategoryScores, cfg.Thresholds)
 			flagged := result.Flagged || thresholdFlagged
@@ -184,15 +366,17 @@ func (s *ContentModerationService) callModerationIncremental(
 			reviewed[chunk.Hash] = verdict
 			reviewedMu.Unlock()
 			if flagged {
-				unsafe.Store(true)
-				stopWorkers()
+				recordUnsafe()
 			}
 			return nil
 		})
 	}
-	groupErr := group.Wait()
-	if groupErr != nil && !unsafe.Load() {
-		return nil, stats, groupErr
+	_ = group.Wait()
+	outcomeMu.Lock()
+	workerHardErr := hardErr
+	outcomeMu.Unlock()
+	if workerHardErr != nil {
+		return nil, stats, workerHardErr
 	}
 	stats.ReviewedChunks = len(reviewed)
 	if err := reviewCtx.Err(); err != nil {

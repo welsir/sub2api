@@ -1,6 +1,6 @@
 /**
- * [INPUT]: Validated adapter config, authenticated HTTP requests, and provider backend responses.
- * [OUTPUT]: Bounded HTTP/gzip moderation, deterministic image fail-closed decisions, and hard-deadline shutdown.
+ * [INPUT]: Validated adapter config, authenticated HTTP requests, Unicode text limits, and provider backend responses.
+ * [OUTPUT]: Code-point-bounded moderation plus classifier-revision metadata, deterministic image fail-closed decisions, and hard-deadline shutdown.
  * [POS]: Standalone moderation process boundary, separate from Omni northbound routing.
  *
  * [PROTOCOL]:
@@ -16,15 +16,15 @@ import {
   BackendClientError,
   createBackendClient,
   type FetchImplementation
-} from "./backend";
+} from "./backend.js";
 import {
   MAPPING_REVISION,
   evaluatedCategories,
   type MappedClassification
-} from "./classification";
-import type { AdapterConfig } from "./config";
-import { AdapterMetrics, type RequestOutcome } from "./metrics";
-import { MINIMAX_MAPPING_REVISION } from "./minimax";
+} from "./classification.js";
+import type { AdapterConfig } from "./config.js";
+import { AdapterMetrics, type RequestOutcome } from "./metrics.js";
+import { MINIMAX_CLASSIFIER_POLICY_REVISION } from "./minimax.js";
 
 export interface AdapterLogRecord {
   event: string;
@@ -348,6 +348,7 @@ function localMediaBlockClassification(): MappedClassification {
 function moderationInput(rawBody: string, maxInputChars: number): {
   model: string;
   input: string;
+  inputChars: number;
   hasImage: boolean;
 } {
   let parsed: unknown;
@@ -425,14 +426,18 @@ function moderationInput(rawBody: string, maxInputChars: number): {
   if (input.trim() === "" && hasImage) {
     input = "[IMAGE_ATTACHMENT_PRESENT]";
   }
-  if (input.length > maxInputChars) {
+  let inputChars = 0;
+  for (const _codePoint of input) {
+    inputChars += 1;
+  }
+  if (inputChars > maxInputChars) {
     throw new RequestValidationError(
       413,
       "input_too_large",
       "normalized input exceeds configured limit"
     );
   }
-  return { model: body.model, input, hasImage };
+  return { model: body.model, input, inputChars, hasImage };
 }
 
 function outcomeFor(error: BackendClientError): RequestOutcome {
@@ -577,8 +582,8 @@ export function createModerationAdapterServer(
 ): Server {
   const metrics = new AdapterMetrics();
   const backend = createBackendClient(config, dependencies.fetch ?? fetch);
-  const configuredMappingRevision = config.backendProvider === "minimax"
-    ? MINIMAX_MAPPING_REVISION
+  const configuredClassifierPolicyRevision = config.backendProvider === "minimax"
+    ? MINIMAX_CLASSIFIER_POLICY_REVISION
     : MAPPING_REVISION;
   const scheduler = new InferenceScheduler(config.maxConcurrency, config.maxQueue, metrics);
   const log = dependencies.log ?? ((record: AdapterLogRecord) => console.info(JSON.stringify(record)));
@@ -662,7 +667,10 @@ export function createModerationAdapterServer(
         );
         return;
       }
-      writeJson(response, ready ? 200 : 503, { status: ready ? "ready" : "not_ready" });
+      writeJson(response, ready ? 200 : 503, {
+        status: ready ? "ready" : "not_ready",
+        classifier_policy_revision: configuredClassifierPolicyRevision
+      });
       return;
     }
     if (request.method === "GET" && path === "/metrics") {
@@ -709,7 +717,7 @@ export function createModerationAdapterServer(
       return;
     }
 
-    let normalized: { model: string; input: string; hasImage: boolean };
+    let normalized: { model: string; input: string; inputChars: number; hasImage: boolean };
     try {
       const rawBody = await readBody(
           request,
@@ -773,7 +781,7 @@ export function createModerationAdapterServer(
         backend_provider: "local_policy",
         model_revision: "text-only-image-fail-closed",
         mapping_revision: result.mappingRevision,
-        input_chars: normalized.input.length,
+        input_chars: normalized.inputChars,
         input_hash: inputHash,
         label: result.label,
         mapped_categories: result.mappedCategories,
@@ -787,6 +795,7 @@ export function createModerationAdapterServer(
         {
           id: `modr_${randomUUID()}`,
           model: normalized.model,
+          classifier_policy_revision: result.mappingRevision,
           results: [
             {
               flagged: result.flagged,
@@ -815,7 +824,7 @@ export function createModerationAdapterServer(
         backend_provider: config.backendProvider,
         model_revision: config.modelRevision,
         mapping_revision: result.mappingRevision,
-        input_chars: normalized.input.length,
+        input_chars: normalized.inputChars,
         input_hash: inputHash,
         label: result.label,
         mapped_categories: result.mappedCategories,
@@ -829,6 +838,7 @@ export function createModerationAdapterServer(
         {
           id: `modr_${randomUUID()}`,
           model: normalized.model,
+          classifier_policy_revision: result.mappingRevision,
           results: [
             {
               flagged: result.flagged,
@@ -848,8 +858,8 @@ export function createModerationAdapterServer(
           request_id: correlationId,
           backend_provider: config.backendProvider,
           model_revision: config.modelRevision,
-          mapping_revision: configuredMappingRevision,
-          input_chars: normalized.input.length,
+          mapping_revision: configuredClassifierPolicyRevision,
+          input_chars: normalized.inputChars,
           input_hash: inputHash,
           latency_ms: latencyMs
         });
@@ -890,8 +900,8 @@ export function createModerationAdapterServer(
         request_id: correlationId,
         backend_provider: config.backendProvider,
         model_revision: config.modelRevision,
-        mapping_revision: configuredMappingRevision,
-        input_chars: normalized.input.length,
+        mapping_revision: configuredClassifierPolicyRevision,
+        input_chars: normalized.inputChars,
         input_hash: inputHash,
         latency_ms: latencyMs,
         error_class: outcome

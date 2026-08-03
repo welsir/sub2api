@@ -38,8 +38,10 @@ Passed from the Sub2API-owned package:
 - `git diff --cached --check` before the Sub2API ownership commit.
 - Scoped high-confidence secret and public-IPv4 scan: `secret_hits=0 public_ipv4_hits=0`.
 
-The adapter package has its own `package.json`, lockfile, TypeScript contract,
-environment example, local README, checked-in JavaScript runtime, and tests.
+This historical checkpoint used checked-in JavaScript mirrors. The later
+MiniMax-first candidate in `evidence/minimax-local-candidate.md` supersedes that
+build boundary: TypeScript is now the only source and Docker runs compiled
+`dist/` output verified by the same package test suite.
 
 ## Corrected Ownership
 

@@ -1,6 +1,6 @@
 /**
  * [INPUT]: HTTP requests plus a local fake Qwen Chat Completions backend.
- * [OUTPUT]: HTTP, image fail-closed, stream-cancel, redaction, and lifecycle assertions.
+ * [OUTPUT]: HTTP, classifier-revision handshake, image fail-closed, stream-cancel, redaction, and lifecycle assertions.
  * [POS]: TypeScript contract suite for the standalone moderation adapter process.
  *
  * [PROTOCOL]:
@@ -18,6 +18,7 @@ import {
   buildBackendEndpoint
 } from "../../src/qwen3guard-moderation-adapter/backend";
 import { resolveAdapterConfig, type AdapterConfig } from "../../src/qwen3guard-moderation-adapter/config";
+import { MAPPING_REVISION } from "../../src/qwen3guard-moderation-adapter/classification";
 import {
   createModerationAdapterServer,
   shutdownModerationAdapterServer,
@@ -446,6 +447,7 @@ describe("Qwen3Guard moderation adapter HTTP contract", () => {
     const body = await response.json();
 
     expect(response.status).toBe(200);
+    expect(body.classifier_policy_revision).toBe("minimax-strict-policy-v5");
     expect(body.results[0].flagged).toBe(flagged);
     expect(backend.requests[0].authorization).toBe(`Bearer ${backendToken}`);
     expect(backend.requests[0].messages).toEqual([
@@ -677,11 +679,15 @@ describe("Qwen3Guard moderation adapter HTTP contract", () => {
 
     const health = await fetch(`${baseUrl}/healthz`);
     const readiness = await fetch(`${baseUrl}/readyz`);
+    const notReadyBody = await readiness.json();
 
     expect(health.status).toBe(200);
     expect(readiness.status).toBe(503);
+    expect(notReadyBody.classifier_policy_revision).toBe(MAPPING_REVISION);
     backend.ready = true;
-    expect((await fetch(`${baseUrl}/readyz`)).status).toBe(200);
+    const ready = await fetch(`${baseUrl}/readyz`);
+    expect(ready.status).toBe(200);
+    expect((await ready.json()).classifier_policy_revision).toBe(MAPPING_REVISION);
   });
 
   it("times out bounded inference with 504 and no retry loop", async () => {
@@ -843,6 +849,22 @@ describe("Qwen3Guard moderation adapter HTTP contract", () => {
     expect(inputTooLarge.status).toBe(413);
     expect(bodyTooLarge.status).toBe(413);
     expect(backend.calls).toBe(0);
+  });
+
+  it("counts normalized input limits in Unicode code points", async () => {
+    const backend = await startFakeBackend();
+    const { baseUrl } = await startAdapter(
+      configFor(backend.baseUrl, {
+        QWEN3GUARD_ADAPTER_MAX_INPUT_CHARS: "8"
+      })
+    );
+
+    const atLimit = await moderate(baseUrl, "😀".repeat(8));
+    const overLimit = await moderate(baseUrl, "😀".repeat(9));
+
+    expect(atLimit.status).toBe(200);
+    expect(overLimit.status).toBe(413);
+    expect(backend.calls).toBe(1);
   });
 
   it("returns 413 and closes an oversized chunked request before the client ends it", async () => {

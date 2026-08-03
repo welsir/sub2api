@@ -401,8 +401,19 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		// capturedSessionModel 的读写都发生在该 goroutine 内，因此无需
 		// 加锁/原子化。
 		filter: func(msgType coderws.MessageType, payload []byte) ([]byte, *OpenAIFastBlockedError, error) {
-			if msgType != coderws.MessageText {
+			// coder/websocket exposes both text and binary data frames. Some
+			// clients send JSON response.create events with the binary opcode;
+			// those frames must cross the same moderation/policy boundary as
+			// text frames. Non-JSON binary payloads remain opaque pass-through.
+			if msgType != coderws.MessageText && msgType != coderws.MessageBinary {
 				return payload, nil, nil
+			}
+			if msgType == coderws.MessageText && !gjson.ValidBytes(payload) {
+				return payload, nil, NewOpenAIWSClientCloseError(
+					coderws.StatusPolicyViolation,
+					"invalid websocket request payload",
+					errors.New("invalid json"),
+				)
 			}
 			if strings.TrimSpace(gjson.GetBytes(payload, "type").String()) == "response.create" && hooks != nil && hooks.BeforeRequest != nil {
 				turnNo := int(completedTurns.Load()) + 1
@@ -492,7 +503,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			if readErr != nil {
 				return msgType, payload, readErr
 			}
-			if msgType == coderws.MessageText && strings.TrimSpace(gjson.GetBytes(payload, "type").String()) == "response.create" {
+			if (msgType == coderws.MessageText || msgType == coderws.MessageBinary) &&
+				strings.TrimSpace(gjson.GetBytes(payload, "type").String()) == "response.create" {
 				return msgType, payload, nil
 			}
 			if writeErr := upstreamFrameConn.WriteFrame(readCtx, msgType, payload); writeErr != nil {

@@ -875,6 +875,16 @@
               </div>
               <Toggle v-model="configForm.incremental_cache_enabled" />
             </div>
+            <div v-if="configForm.incremental_cache_enabled" class="lg:col-span-2">
+              <label class="input-label">{{ t('admin.riskControl.classifierPolicyRevision') }}</label>
+              <input
+                v-model.trim="configForm.classifier_policy_revision"
+                type="text"
+                class="input font-mono"
+                :placeholder="t('admin.riskControl.classifierPolicyRevisionPlaceholder')"
+              />
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.classifierPolicyRevisionHint') }}</p>
+            </div>
             <div class="space-y-4 rounded-lg border border-gray-100 p-4 dark:border-dark-700 lg:col-span-2">
               <div class="flex items-center justify-between gap-4">
                 <div>
@@ -1315,6 +1325,7 @@ const configForm = reactive({
   non_hit_retention_days: 3,
   pre_hash_check_enabled: false,
   incremental_cache_enabled: false,
+  classifier_policy_revision: '',
   thresholds: { ...riskThresholdDefaults } as Record<string, number>,
   blocked_keywords_text: '',
   keyword_blocking_mode: 'keyword_and_api' as KeywordBlockingMode,
@@ -1836,6 +1847,7 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.non_hit_retention_days = Math.min(Math.max(config.non_hit_retention_days || 3, 1), 3)
   configForm.pre_hash_check_enabled = config.pre_hash_check_enabled ?? false
   configForm.incremental_cache_enabled = config.incremental_cache_enabled ?? false
+  configForm.classifier_policy_revision = config.classifier_policy_revision ?? ''
   configForm.thresholds = riskThresholdsFromConfig(config.thresholds)
   configForm.blocked_keywords_text = Array.isArray(config.blocked_keywords) ? config.blocked_keywords.join('\n') : ''
   configForm.keyword_blocking_mode = normalizeKeywordBlockingMode(config.keyword_blocking_mode)
@@ -1919,6 +1931,7 @@ async function saveConfig() {
       non_hit_retention_days: Math.min(Math.max(Number(configForm.non_hit_retention_days) || 3, 1), 3),
       pre_hash_check_enabled: configForm.pre_hash_check_enabled,
       incremental_cache_enabled: configForm.incremental_cache_enabled,
+      classifier_policy_revision: configForm.classifier_policy_revision.trim(),
       thresholds: buildRiskThresholdPayload(),
       blocked_keywords: blockedKeywordList.value,
       keyword_blocking_mode: configForm.keyword_blocking_mode,

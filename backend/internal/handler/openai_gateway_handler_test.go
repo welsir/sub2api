@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1022,6 +1023,138 @@ func TestOpenAIResponsesWebSocket_ContentModerationBlocksFirstFrame(t *testing.T
 	}
 }
 
+func TestOpenAIResponsesWebSocket_ContentModerationFailureStopsBeforeUpstreamAudit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	moderationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"synthetic moderation outage"}}`))
+	}))
+	defer moderationServer.Close()
+
+	cfg := &service.ContentModerationConfig{
+		Enabled:      true,
+		Mode:         service.ContentModerationModePreBlock,
+		BaseURL:      moderationServer.URL,
+		Model:        "omni-moderation-latest",
+		APIKeys:      []string{"synthetic-test-key"},
+		RetryCount:   0,
+		SampleRate:   100,
+		AllGroups:    true,
+		BlockMessage: "synthetic moderation block",
+	}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	repo := &contentModerationHandlerTestRepo{}
+	moderationSvc := service.NewContentModerationService(
+		&contentModerationHandlerSettingRepo{values: map[string]string{
+			service.SettingKeyRiskControlEnabled:      "true",
+			service.SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	runtimeCfg := &config.Config{}
+	runtimeCfg.RunMode = config.RunModeSimple
+	runtimeCfg.Default.RateMultiplier = 1
+	runtimeCfg.Gateway.OpenAIWS.Enabled = true
+	runtimeCfg.Gateway.OpenAIWS.APIKeyEnabled = true
+	runtimeCfg.Gateway.OpenAIWS.ResponsesWebsocketsV2 = true
+	runtimeCfg.Gateway.OpenAIWS.ModeRouterV2Enabled = true
+	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: service.Account{
+		ID:          9904,
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+	}}
+	usageRepo := &openAIWSUsageHandlerUsageLogRepoStub{created: make(chan *service.UsageLog, 1)}
+	billingCacheSvc := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, runtimeCfg, nil)
+	gatewaySvc := service.NewOpenAIGatewayService(
+		accountRepo,
+		usageRepo,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		runtimeCfg,
+		nil,
+		nil,
+		service.NewBillingService(runtimeCfg, nil),
+		nil,
+		billingCacheSvc,
+		nil,
+		&service.DeferredService{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	promptAuditRepo := &promptAuditHandlerTestRepository{records: make(chan service.UpstreamAuditLog, 1)}
+	h := &OpenAIGatewayHandler{
+		gatewayService:           gatewaySvc,
+		billingCacheService:      billingCacheSvc,
+		apiKeyService:            &service.APIKeyService{},
+		contentModerationService: moderationSvc,
+		promptAuditService:       service.NewPromptAuditService(promptAuditRepo),
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(&concurrencyCacheMock{}), SSEPingFormatNone, time.Second),
+	}
+	wsServer := newOpenAIWSHandlerTestServer(t, h, middleware.AuthSubject{UserID: 1, Concurrency: 1})
+	defer wsServer.Close()
+
+	dialCtx, cancelDial := context.WithTimeout(context.Background(), 3*time.Second)
+	clientConn, _, err := coderws.Dial(dialCtx, "ws"+strings.TrimPrefix(wsServer.URL, "http")+"/openai/v1/responses", nil)
+	cancelDial()
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{
+		"type":"response.create",
+		"model":"gpt-5.5",
+		"input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"safe synthetic prompt"}]}]
+	}`))
+	cancelWrite()
+	require.NoError(t, err)
+
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	_, payload, readErr := clientConn.Read(readCtx)
+	cancelRead()
+	if readErr == nil {
+		require.Contains(t, string(payload), "content_moderation_unavailable")
+	} else {
+		var closeErr coderws.CloseError
+		require.ErrorAs(t, readErr, &closeErr)
+		require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+	}
+
+	var logs []service.ContentModerationLog
+	require.Eventually(t, func() bool {
+		logs = repo.logSnapshot()
+		return len(logs) == 1
+	}, time.Second, 10*time.Millisecond)
+	require.Equal(t, service.ContentModerationActionError, logs[0].Action)
+	select {
+	case promptAuditLog := <-promptAuditRepo.records:
+		t.Fatalf("moderation failure must not create an upstream audit row: %#v", promptAuditLog)
+	default:
+	}
+	require.Zero(t, accountRepo.listCalls.Load(), "moderation failure must stop before account selection")
+	select {
+	case usageLog := <-usageRepo.created:
+		t.Fatalf("moderation failure must not create a usage row: %#v", usageLog)
+	default:
+	}
+}
+
 func TestBuildOpenAIWSModerationPayloadCarriesHistoryIntoContinueTurn(t *testing.T) {
 	first := []byte(`{
 		"input":[
@@ -1034,13 +1167,67 @@ func TestBuildOpenAIWSModerationPayloadCarriesHistoryIntoContinueTurn(t *testing
 	}`)
 	history := service.ExtractContentModerationInput(service.ContentModerationProtocolOpenAIResponses, first).Text
 
-	combined, moderationPayload := buildOpenAIWSModerationPayload(history, second)
+	combined, moderationPayload, err := buildOpenAIWSModerationPayload(history, second)
+	require.NoError(t, err)
 	moderationInput := service.ExtractContentModerationInput(service.ContentModerationProtocolOpenAIResponses, moderationPayload)
 
 	require.Equal(t, history+" [user] Continue", combined)
 	require.Contains(t, moderationInput.Text, "dangerous historical request")
 	require.Contains(t, moderationInput.Text, "partial answer")
 	require.Contains(t, moderationInput.Text, "Continue")
+}
+
+func TestBuildOpenAIWSModerationPayloadRejectsProjectionFailureInsteadOfReusingHistory(t *testing.T) {
+	history := "[user] dangerous historical request"
+	deep := strings.Repeat(`{"nested":`, 65) + `"CURRENT_FRAME_RISK"` + strings.Repeat(`}`, 65)
+	second := []byte(`{"type":"response.create","model":"gpt-5.5","input":` + deep + `}`)
+	require.True(t, gjson.ValidBytes(second))
+
+	combined, moderationPayload, err := buildOpenAIWSModerationPayload(history, second)
+
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "projection")
+	require.Equal(t, history, combined)
+	require.Nil(t, moderationPayload)
+}
+
+func TestOpenAIResponsesWebSocket_SecondTurnProjectionFailureNeverReachesUpstreamOrUsage(t *testing.T) {
+	deep := strings.Repeat(`{"nested":`, 65) + `"CURRENT_FRAME_RISK"` + strings.Repeat(`}`, 65)
+	second := `{"type":"response.create","model":"gpt-5.4","input":` + deep + `}`
+	require.True(t, gjson.Valid(second))
+
+	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+		firstPayload:  `{"type":"response.create","model":"gpt-5.4","stream":false,"input":"safe first turn"}`,
+		secondPayload: second,
+	})
+
+	require.Empty(t, got.upstreamSecondPayload, "projection-failed second frame must not reach the upstream websocket")
+	require.False(t, got.secondUsageCreated, "projection-failed second frame must not create a usage row")
+}
+
+func TestOpenAIResponsesWebSocket_BinarySecondTurnProjectionFailureNeverReachesUpstreamOrUsage(t *testing.T) {
+	deep := strings.Repeat(`{"nested":`, 65) + `"CURRENT_BINARY_FRAME_RISK"` + strings.Repeat(`}`, 65)
+	second := `{"type":"response.create","model":"gpt-5.4","input":` + deep + `}`
+	require.True(t, gjson.Valid(second))
+
+	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+		firstPayload:      `{"type":"response.create","model":"gpt-5.4","stream":false,"input":"safe first turn"}`,
+		secondPayload:     second,
+		secondMessageType: coderws.MessageBinary,
+	})
+
+	require.Empty(t, got.upstreamSecondPayload, "projection-failed binary second frame must not reach the upstream websocket")
+	require.False(t, got.secondUsageCreated, "projection-failed binary second frame must not create a usage row")
+}
+
+func TestOpenAIResponsesWebSocket_InvalidTextSecondTurnNeverReachesUpstreamOrUsage(t *testing.T) {
+	got := runOpenAIResponsesWebSocketUsageLogCase(t, openAIResponsesWSUsageLogCase{
+		firstPayload:  `{"type":"response.create","model":"gpt-5.4","stream":false,"input":"safe first turn"}`,
+		secondPayload: `{invalid`,
+	})
+
+	require.Empty(t, got.upstreamSecondPayload, "invalid JSON text frame must not reach the upstream websocket")
+	require.False(t, got.secondUsageCreated, "invalid JSON text frame must not create a usage row")
 }
 
 func TestOpenAIResponsesWebSocket_PassthroughUsageLogPersistsUserAgentAndReasoningEffort(t *testing.T) {
@@ -1230,22 +1417,28 @@ func newOpenAIWSHandlerTestServer(t *testing.T, h *OpenAIGatewayHandler, subject
 }
 
 type openAIResponsesWSUsageLogCase struct {
-	firstPayload   string
-	userAgent      *string
-	channelMapping map[string]string
+	firstPayload      string
+	secondPayload     string
+	secondMessageType coderws.MessageType
+	userAgent         *string
+	channelMapping    map[string]string
 }
 
 type openAIResponsesWSUsageLogResult struct {
-	log                  *service.UsageLog
-	upstreamFirstPayload []byte
+	log                   *service.UsageLog
+	upstreamFirstPayload  []byte
+	upstreamSecondPayload []byte
+	secondUsageCreated    bool
 }
 
 type openAIWSUsageHandlerAccountRepoStub struct {
 	service.AccountRepository
-	account service.Account
+	account   service.Account
+	listCalls atomic.Int64
 }
 
 func (s *openAIWSUsageHandlerAccountRepoStub) ListSchedulableByPlatform(ctx context.Context, platform string) ([]service.Account, error) {
+	s.listCalls.Add(1)
 	if s.account.Platform != platform {
 		return nil, nil
 	}
@@ -1347,6 +1540,35 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 
 	firstHitCh := make(chan []byte, 1)
 	secondHitCh := make(chan []byte, 1)
+	var moderationCalls atomic.Int64
+	moderationServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		moderationCalls.Add(1)
+		_, _ = w.Write([]byte(`{"results":[{"category_scores":{"sexual":0.01}}]}`))
+	}))
+	defer moderationServer.Close()
+	moderationCfg, err := json.Marshal(&service.ContentModerationConfig{
+		Enabled:    true,
+		Mode:       service.ContentModerationModePreBlock,
+		BaseURL:    moderationServer.URL,
+		Model:      "omni-moderation-latest",
+		APIKeys:    []string{"synthetic-test-key"},
+		RetryCount: 0,
+		SampleRate: 100,
+		AllGroups:  true,
+	})
+	require.NoError(t, err)
+	moderationSvc := service.NewContentModerationService(
+		&contentModerationHandlerSettingRepo{values: map[string]string{
+			service.SettingKeyRiskControlEnabled:      "true",
+			service.SettingKeyContentModerationConfig: string(moderationCfg),
+		}},
+		&contentModerationHandlerTestRepo{},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
 
 	firstUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{CompressionMode: coderws.CompressionContextTakeover})
@@ -1480,11 +1702,12 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 		},
 	}
 	h := &OpenAIGatewayHandler{
-		gatewayService:      gatewaySvc,
-		billingCacheService: billingCacheSvc,
-		apiKeyService:       &service.APIKeyService{},
-		concurrencyHelper:   NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
-		maxAccountSwitches:  3,
+		gatewayService:           gatewaySvc,
+		billingCacheService:      billingCacheSvc,
+		apiKeyService:            &service.APIKeyService{},
+		contentModerationService: moderationSvc,
+		concurrencyHelper:        NewConcurrencyHelper(service.NewConcurrencyService(cache), SSEPingFormatNone, time.Second),
+		maxAccountSwitches:       3,
 	}
 
 	apiKey := &service.APIKey{
@@ -1514,7 +1737,7 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 	defer func() { _ = clientConn.CloseNow() }()
 
 	writeCtx, cancelWrite := context.WithTimeout(context.Background(), 3*time.Second)
-	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","stream":false}`))
+	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5.1","stream":false,"input":"safe synthetic prompt"}`))
 	cancelWrite()
 	require.NoError(t, err)
 
@@ -1536,13 +1759,14 @@ func TestOpenAIResponsesWebSocket_FailoverOnUpstreamUsageLimitEvent(t *testing.T
 		t.Fatal("等待第二个上游收到重放首帧超时")
 	}
 	require.Equal(t, []int64{int64(9902)}, accountRepo.rateLimitedIDs)
+	require.Equal(t, int64(1), moderationCalls.Load(), "account failover must reuse the already-moderated request")
 }
 
 func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSUsageLogCase) openAIResponsesWSUsageLogResult {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	upstreamPayloadCh := make(chan []byte, 1)
+	upstreamPayloadCh := make(chan []byte, 2)
 	upstreamErrCh := make(chan error, 1)
 	upstreamServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := coderws.Accept(w, r, &coderws.AcceptOptions{
@@ -1576,6 +1800,16 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		cancelWrite()
 		if writeErr != nil {
 			upstreamErrCh <- writeErr
+			return
+		}
+		if tc.secondPayload != "" {
+			readSecondCtx, cancelSecondRead := context.WithTimeout(r.Context(), 3*time.Second)
+			_, secondPayload, secondReadErr := conn.Read(readSecondCtx)
+			cancelSecondRead()
+			if secondReadErr == nil {
+				upstreamPayloadCh <- secondPayload
+			}
+			upstreamErrCh <- nil
 			return
 		}
 		_ = conn.Close(coderws.StatusNormalClosure, "done")
@@ -1616,7 +1850,7 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 
 	accountRepo := &openAIWSUsageHandlerAccountRepoStub{account: account}
-	usageRepo := &openAIWSUsageHandlerUsageLogRepoStub{created: make(chan *service.UsageLog, 1)}
+	usageRepo := &openAIWSUsageHandlerUsageLogRepoStub{created: make(chan *service.UsageLog, 2)}
 
 	var channelSvc *service.ChannelService
 	if len(tc.channelMapping) > 0 {
@@ -1714,7 +1948,29 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	cancelRead()
 	require.NoError(t, err)
 	require.Equal(t, "response.completed", gjson.GetBytes(event, "type").String())
-	_ = clientConn.Close(coderws.StatusNormalClosure, "done")
+	if tc.secondPayload != "" {
+		secondMessageType := tc.secondMessageType
+		if secondMessageType != coderws.MessageBinary {
+			secondMessageType = coderws.MessageText
+		}
+		writeSecondCtx, cancelSecondWrite := context.WithTimeout(context.Background(), 3*time.Second)
+		err = clientConn.Write(writeSecondCtx, secondMessageType, []byte(tc.secondPayload))
+		cancelSecondWrite()
+		require.NoError(t, err)
+
+		readSecondCtx, cancelSecondRead := context.WithTimeout(context.Background(), 3*time.Second)
+		_, secondEvent, secondReadErr := clientConn.Read(readSecondCtx)
+		cancelSecondRead()
+		if secondReadErr == nil {
+			require.Contains(t, string(secondEvent), "content_moderation_unavailable")
+		} else {
+			var closeErr coderws.CloseError
+			require.ErrorAs(t, secondReadErr, &closeErr)
+			require.Equal(t, coderws.StatusPolicyViolation, closeErr.Code)
+		}
+	} else {
+		_ = clientConn.Close(coderws.StatusNormalClosure, "done")
+	}
 
 	var usageLog *service.UsageLog
 	select {
@@ -1730,6 +1986,13 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 	case <-time.After(3 * time.Second):
 		t.Fatal("等待上游 WebSocket 首帧超时")
 	}
+	var upstreamSecondPayload []byte
+	if tc.secondPayload != "" {
+		select {
+		case upstreamSecondPayload = <-upstreamPayloadCh:
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 
 	select {
 	case upstreamErr := <-upstreamErrCh:
@@ -1738,9 +2001,18 @@ func runOpenAIResponsesWebSocketUsageLogCase(t *testing.T, tc openAIResponsesWSU
 		t.Fatal("等待上游 WebSocket 结束超时")
 	}
 
+	secondUsageCreated := false
+	select {
+	case <-usageRepo.created:
+		secondUsageCreated = true
+	case <-time.After(100 * time.Millisecond):
+	}
+
 	return openAIResponsesWSUsageLogResult{
-		log:                  usageLog,
-		upstreamFirstPayload: upstreamFirstPayload,
+		log:                   usageLog,
+		upstreamFirstPayload:  upstreamFirstPayload,
+		upstreamSecondPayload: upstreamSecondPayload,
+		secondUsageCreated:    secondUsageCreated,
 	}
 }
 

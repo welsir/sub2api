@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.33.4",
   "scripts": {
-    "start": "node --env-file-if-exists=.env src/qwen3guard-moderation-adapter/main.js",
-    "test": "vitest run tests/qwen3guard-moderation-adapter",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "pnpm run build && node --env-file-if-exists=.env dist/main.js",
+    "test": "pnpm run build && vitest run tests/qwen3guard-moderation-adapter",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

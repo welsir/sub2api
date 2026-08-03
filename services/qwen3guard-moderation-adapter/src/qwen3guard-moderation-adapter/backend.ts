@@ -12,17 +12,17 @@ import {
   normalizeBackendBaseUrl,
   validateBackendEndpointPath,
   type AdapterConfig
-} from "./config";
+} from "./config.js";
 import {
   parseAndMapClassification,
   type MappedClassification
-} from "./classification";
+} from "./classification.js";
 import {
   buildMiniMaxChatRequest,
   mapMiniMaxSensitiveResult,
   mapMiniMaxUncertainResult,
   parseMiniMaxClassification
-} from "./minimax";
+} from "./minimax.js";
 
 export type BackendErrorKind = "timeout" | "backend" | "parse" | "cancelled" | "auth" | "billing";
 export const MAX_BACKEND_RESPONSE_BYTES = 1_048_576;
@@ -233,16 +233,45 @@ export class QwenBackendClient {
   }
 }
 
+function miniMaxNumericCode(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isSafeInteger(value)) {
+    return value;
+  }
+  if (typeof value === "string" && /^(?:0|[1-9]\d*)$/.test(value)) {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
 function miniMaxProviderCode(body: unknown): number | undefined {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return undefined;
   }
   const baseResponse = (body as { base_resp?: unknown }).base_resp;
-  if (!baseResponse || typeof baseResponse !== "object" || Array.isArray(baseResponse)) {
-    return undefined;
+  const baseCode = baseResponse && typeof baseResponse === "object" && !Array.isArray(baseResponse)
+    ? miniMaxNumericCode((baseResponse as { status_code?: unknown }).status_code)
+    : undefined;
+  if (baseCode !== undefined && baseCode !== 0) {
+    return baseCode;
   }
-  const code = (baseResponse as { status_code?: unknown }).status_code;
-  return typeof code === "number" && Number.isSafeInteger(code) ? code : undefined;
+
+  const error = (body as { error?: unknown }).error;
+  if (error && typeof error === "object" && !Array.isArray(error)) {
+    const errorRecord = error as Record<string, unknown>;
+    const errorCode = miniMaxNumericCode(errorRecord.code);
+    if (errorCode !== undefined) {
+      return errorCode;
+    }
+    if (typeof errorRecord.message === "string") {
+      const suffix = errorRecord.message.match(/\(([1-9]\d*)\)\s*$/);
+      const suffixCode = miniMaxNumericCode(suffix?.[1]);
+      if (suffixCode !== undefined) {
+        return suffixCode;
+      }
+    }
+  }
+  return baseCode;
 }
 
 function parseMiniMaxBody(rawResponse: string): Record<string, unknown> {
@@ -262,8 +291,17 @@ function miniMaxFailure(httpStatus: number, providerCode?: number): BackendClien
   if (providerCode === 1004 || httpStatus === 401 || httpStatus === 403) {
     return new BackendClientError("auth", "MiniMax backend authentication failed", providerCode);
   }
-  if (providerCode === 1008 || httpStatus === 402) {
-    return new BackendClientError("billing", "MiniMax backend balance is insufficient", providerCode);
+  if (
+    providerCode === 1008 ||
+    providerCode === 2056 ||
+    providerCode === 2062 ||
+    httpStatus === 402
+  ) {
+    return new BackendClientError(
+      "billing",
+      "MiniMax backend billing or quota is unavailable",
+      providerCode
+    );
   }
   return new BackendClientError("backend", "MiniMax backend request failed", providerCode);
 }
@@ -300,9 +338,23 @@ export class MiniMaxBackendClient implements ModerationBackendClient {
         buildBackendEndpoint(this.config.backendBaseUrl, this.config.backendReadinessPath),
         { method: "GET", headers: this.headers(), signal: controller.signal }
       );
-      const ready = response.ok;
-      await cancelResponseBody(response);
-      return ready;
+      if (!response.ok) {
+        await cancelResponseBody(response);
+        return false;
+      }
+      const rawResponse = await readLimitedResponseBody(response, controller.signal);
+      const body = parseMiniMaxBody(rawResponse);
+      const providerCode = miniMaxProviderCode(body);
+      if (providerCode !== undefined && providerCode !== 0) {
+        return false;
+      }
+      const models = Array.isArray(body.data) ? body.data : [];
+      return models.some((model) =>
+        model !== null &&
+        typeof model === "object" &&
+        !Array.isArray(model) &&
+        (model as Record<string, unknown>).id === this.config.backendModel
+      );
     } catch {
       return false;
     } finally {

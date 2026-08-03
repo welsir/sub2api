@@ -1,7 +1,7 @@
 /**
- * [INPUT]: Checked-in JavaScript adapter server and a local fake Qwen backend.
- * [OUTPUT]: JavaScript gzip/server smoke and structured main-process listen-error proof.
- * [POS]: JavaScript mirror integration coverage for the standalone adapter.
+ * [INPUT]: Compiled adapter modules and a local fake Qwen backend.
+ * [OUTPUT]: Emitted-runtime gzip/server smoke and structured main-process listen-error proof.
+ * [POS]: Integration coverage for the exact dist artifact used by the adapter image.
  *
  * [PROTOCOL]:
  * 1. Update this header when runtime smoke responsibilities change.
@@ -15,8 +15,8 @@ import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
 
-import { resolveAdapterConfig } from "../../src/qwen3guard-moderation-adapter/config.js";
-import { createModerationAdapterServer } from "../../src/qwen3guard-moderation-adapter/server.js";
+import { resolveAdapterConfig } from "../../dist/config.js";
+import { createModerationAdapterServer } from "../../dist/server.js";
 
 async function listen(server) {
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -29,8 +29,8 @@ async function close(server) {
   await new Promise((resolve) => server.close(resolve));
 }
 
-describe("Qwen3Guard JavaScript adapter runtime", () => {
-  it("serves a gzip moderation contract through checked-in JavaScript modules", async () => {
+describe("compiled moderation adapter runtime", () => {
+  it("serves a gzip moderation contract through emitted modules", async () => {
     const backend = createServer((_request, response) => {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(
@@ -78,7 +78,7 @@ describe("Qwen3Guard JavaScript adapter runtime", () => {
     const occupiedBaseUrl = await listen(occupied);
     const { port } = new URL(occupiedBaseUrl);
     const mainPath = fileURLToPath(
-      new URL("../../src/qwen3guard-moderation-adapter/main.js", import.meta.url)
+      new URL("../../dist/main.js", import.meta.url)
     );
     const child = spawn(process.execPath, [mainPath], {
       env: {

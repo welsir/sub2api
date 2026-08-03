@@ -1,19 +1,19 @@
 /**
  * [INPUT]: Process environment and operating-system termination signals.
  * [OUTPUT]: A listening adapter with structured errors and bounded graceful shutdown.
- * [POS]: TypeScript authoring entrypoint for the Qwen3Guard adapter process.
+ * [POS]: TypeScript entrypoint compiled into the adapter's only executable runtime.
  *
  * [PROTOCOL]:
  * 1. Update this header when process lifecycle responsibilities change.
  * 2. Update this folder's .folder.md when this file changes.
  */
 
-import { resolveAdapterConfig } from "./config";
+import { resolveAdapterConfig } from "./config.js";
 import {
   createModerationAdapterServer,
   shutdownModerationAdapterServer,
   type AdapterLogRecord
-} from "./server";
+} from "./server.js";
 
 const config = resolveAdapterConfig();
 const server = createModerationAdapterServer(config);

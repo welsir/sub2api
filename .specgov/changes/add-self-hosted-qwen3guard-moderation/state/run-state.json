@@ -2,33 +2,33 @@
   "change_id": "add-self-hosted-qwen3guard-moderation",
   "change_title": "Self-hosted Qwen3Guard moderation",
   "phase": "blocked",
-  "version": 5,
+  "version": 16,
   "status": "blocked",
-  "current_focus": "Await powered-on Windows host and disposable scope-test keys for slices 004 and 005",
-  "resume_from": "slice-ledger:slice-004",
-  "resume_anchor_version": 11,
-  "blocking_reason": "Windows host is powered off; disposable scope-test keys, complete rollback-safe configuration capture, traffic baseline, model benchmark, Tailscale connectivity, observation, and production gates remain unverified.",
-  "last_verified_at": "2026-07-30T05:51:19Z",
+  "blocking_reason": "Real MiniMax-M3 inference now works and all 13 exact OAI cyber_policy requests block after the Unicode repair, but cold latency exceeds one second, the full semantic replay and production-capacity proof remain incomplete, and no isolated-candidate, rollback, or production approval exists.",
+  "current_focus": "Finish the full M3 semantic and production-capacity evidence, then build and verify one isolated rollback-safe candidate before requesting production approval",
+  "resume_from": "slice-ledger:slice-010",
+  "resume_anchor_version": 22,
+  "last_verified_at": "2026-08-03T02:25:32Z",
   "started_at": "2026-07-30T01:44:20Z",
-  "updated_at": "2026-07-30T05:51:19Z",
+  "updated_at": "2026-08-03T02:25:32Z",
   "_meta": {
     "ledger_name": "run-state",
     "schema_version": 1,
-    "previous_version": 4,
-    "previous_snapshot_hash": "sha256:9e99430ddabcecd135b7221197d19eceed79df95316420c2ad22fd3d6e7636c0",
-    "snapshot_hash": "sha256:278e3e93fe2037e661d029764d64173a161ebc28e32f43fe08e74355caa9d22c",
+    "previous_version": 15,
+    "previous_snapshot_hash": "sha256:f07688f6e83ded83656a3b24bdc0520cfa751fceba9da7cf48f480b52651cde3",
+    "snapshot_hash": "sha256:4f65dda85f2563d9b2f12b37e1c35a0a804005ebcd76ba4230a5f86a0d2e709b",
     "reconciliation": {
       "actor": "master",
-      "applied_at": "2026-07-30T05:51:19Z",
-      "reason": "record read-only 43 V2 deployed version, database, active tml group ID 18, and redacted legacy moderation baseline without changing execution phase"
+      "applied_at": "2026-08-03T02:25:32Z",
+      "reason": "record the v5 harmless-outer-task regression, real-provider decision, and provider-flag consistency repair without changing the release blocker"
     },
     "applied_transition": {
-      "applied_at": "2026-07-30T04:22:00Z",
-      "entity_id": "phase",
-      "from": "integrating",
-      "to": "blocked",
+      "applied_at": "2026-08-03T02:25:32Z",
+      "entity_id": "classifier_policy_revision",
+      "from": "minimax-strict-policy-v4",
+      "to": "minimax-strict-policy-v5",
       "actor": "master",
-      "reason": "local implementation and integration are accepted, but the powered-off Windows host and deployment facts block the next required slice"
+      "reason": "treat risky appended task history as in-scope even when the outer request only generates suggestions or summaries"
     }
   }
 }

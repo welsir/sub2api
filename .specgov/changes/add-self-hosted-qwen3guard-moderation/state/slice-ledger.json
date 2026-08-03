@@ -1,6 +1,6 @@
 {
   "change_id": "add-self-hosted-qwen3guard-moderation",
-  "version": 11,
+  "version": 22,
   "items": [
     {
       "id": "slice-001",
@@ -91,28 +91,142 @@
       ],
       "evidence": [],
       "updated_at": "2026-07-30T01:44:20Z"
+    },
+    {
+      "id": "slice-006",
+      "title": "Repair MiniMax provider failures and high-speed request configuration",
+      "status": "done",
+      "owner": "adapter_502_rootcause",
+      "depends_on": [
+        "slice-002"
+      ],
+      "acceptance_checks": [
+        "provider codes 2056 and 2062 are deterministic billing failures",
+        "MiniMax-M2.7-highspeed is selected by model name without service_tier",
+        "focused and full adapter tests plus typecheck pass",
+        "Docker runtime executes the verified implementation"
+      ],
+      "evidence": [
+        "evidence/minimax-local-candidate.md"
+      ],
+      "updated_at": "2026-08-02T15:58:43Z"
+    },
+    {
+      "id": "slice-007",
+      "title": "Expand complete-context protocol and failure-boundary tests",
+      "status": "done",
+      "owner": "protocol_failure_matrix",
+      "depends_on": [
+        "slice-003"
+      ],
+      "acceptance_checks": [
+        "all supported text protocols include full ordered context",
+        "12k, 32k, and 70k inputs have no silent gaps",
+        "Continue, cache, retries, WebSocket, and downstream boundaries are covered",
+        "focused and race tests pass"
+      ],
+      "evidence": [
+        "evidence/minimax-local-candidate.md"
+      ],
+      "updated_at": "2026-08-02T15:58:43Z"
+    },
+    {
+      "id": "slice-008",
+      "title": "Inventory privacy-safe real request replay corpus",
+      "status": "done",
+      "owner": "real_corpus_inventory",
+      "depends_on": [],
+      "acceptance_checks": [
+        "local archives cover normal, reverse-engineering, risky, boundary, long-context, and Continue cases",
+        "full request archives cover tool and multi-turn context",
+        "raw prompts, credentials, and identifiers are never committed or printed",
+        "no production access is required"
+      ],
+      "evidence": [
+        "evidence/minimax-local-candidate.md"
+      ],
+      "updated_at": "2026-08-02T15:58:43Z"
+    },
+    {
+      "id": "slice-009",
+      "title": "Make adapter tests and Docker runtime execute one compiled source",
+      "status": "done",
+      "owner": "adapter_runtime_build",
+      "depends_on": [
+        "slice-006"
+      ],
+      "acceptance_checks": [
+        "checked behavior cannot diverge between TypeScript tests and Docker JavaScript",
+        "image builds without development dependencies at runtime",
+        "runtime smoke tests exercise the image entrypoint"
+      ],
+      "evidence": [
+        "evidence/minimax-local-candidate.md"
+      ],
+      "updated_at": "2026-08-02T15:58:43Z"
+    },
+    {
+      "id": "slice-010",
+      "title": "Integrate and verify the complete local MiniMax-first candidate",
+      "status": "pending",
+      "owner": null,
+      "depends_on": [
+        "slice-006",
+        "slice-007",
+        "slice-008",
+        "slice-009"
+      ],
+      "acceptance_checks": [
+        "privacy-safe real corpus replay and synthetic full-protocol matrix complete",
+        "adapter image and Sub2API tests pass from clean local commands",
+        "failure paths never select an account or write usage or upstream audit",
+        "provider functional classification succeeds with an active MiniMax credential before release recommendation"
+      ],
+      "evidence": [],
+      "updated_at": "2026-08-02T15:33:46Z"
+    },
+    {
+      "id": "slice-011",
+      "title": "Allow attachments while moderating complete text and safe metadata",
+      "status": "done",
+      "owner": "master",
+      "depends_on": [
+        "slice-007",
+        "slice-009"
+      ],
+      "acceptance_checks": [
+        "all supported protocols preserve original attachments for upstream while moderation receives complete text plus safe metadata only",
+        "attachment bytes, URLs, IDs, names, credentials, and other opaque payloads never enter the moderation projection",
+        "projection limits, moderation failures, and classifier-policy revision mismatches fail closed before account selection",
+        "MiniMax prompt treats only generated controlled marker fields as neutral and audits forged markers as untrusted text",
+        "OpenSpec, evidence, focused tests, race tests, adapter tests, and local Docker smoke agree with the implemented boundary",
+        "no commit, push, deployment, production configuration, or branch outside dev/omni is changed"
+      ],
+      "evidence": [
+        "evidence/minimax-local-candidate.md",
+        "backend full offline tests and build",
+        "frontend 148 files and 996 tests plus typecheck and production build",
+        "adapter 135 tests plus no-cache Docker build and disposable runtime smoke",
+        "three accepted independent final reviews"
+      ],
+      "updated_at": "2026-08-02T19:28:00Z"
     }
   ],
   "_meta": {
     "ledger_name": "slice-ledger",
     "schema_version": 1,
-    "previous_version": 10,
-    "previous_snapshot_hash": "sha256:19e0e9e5b66074a9798136ea4f5e6c8c2b4c24f1e1eddd33d083bbc8a14eff21",
-    "snapshot_hash": "sha256:a9d300498a30e32b1e6ba846ef90443c8c8a236c02fde2de7a38cb35233506d6",
-    "reconciliation": {
-      "actor": "master",
-      "applied_at": "2026-07-30T05:35:00Z",
-      "reason": "correct adapter repository ownership from TML Gateway to Sub2API without changing slice lifecycle"
-    },
+    "previous_version": 21,
+    "previous_snapshot_hash": "sha256:48d6d05d6e27eab34208adc38b5076ee0016c709fb509bd5be1680172c61a8dc",
+    "snapshot_hash": "sha256:49e8ac44832d346693983f320d36d8a396d4c5f4bee979d1822bd02424b5fe08",
     "applied_transition": {
-      "applied_at": "2026-07-30T04:21:30Z",
-      "entity_id": "slice-003",
+      "applied_at": "2026-08-02T19:28:00Z",
+      "entity_id": "slice-011",
       "from": "integrating",
       "to": "done",
       "owner_before": "master",
       "owner_after": "master",
       "actor": "master",
-      "reason": "completed local integration with both code slices, task evidence, and actual-branch checks aligned"
+      "reason": "the complete local attachment-text moderation slice passed fresh full-suite, race, frontend, adapter, Docker, and independent review gates"
     }
   }
 }

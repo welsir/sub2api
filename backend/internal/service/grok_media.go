@@ -62,27 +62,27 @@ func (r GrokMediaRequestInfo) ModerationBody() []byte {
 		payload["prompt"] = prompt
 	}
 
-	images := make([]map[string]string, 0, len(r.InputImageURLs)+len(r.Uploads)+1)
+	attachments := make([]map[string]string, 0, len(r.InputImageURLs)+len(r.Uploads)+1)
 	for _, imageURL := range r.InputImageURLs {
-		if imageURL = strings.TrimSpace(imageURL); imageURL != "" {
-			images = append(images, map[string]string{"image_url": imageURL})
+		if marker := remoteImageModerationAttachment(imageURL); marker != nil {
+			attachments = append(attachments, marker)
 		}
 	}
 	for _, upload := range r.Uploads {
-		if dataURL := upload.ModerationDataURL(); dataURL != "" {
-			images = append(images, map[string]string{"image_url": dataURL})
+		if marker := upload.moderationAttachment(); marker != nil {
+			attachments = append(attachments, marker)
 		}
 	}
-	if maskURL := strings.TrimSpace(r.MaskImageURL); maskURL != "" {
-		images = append(images, map[string]string{"image_url": maskURL})
+	if marker := remoteImageModerationAttachment(r.MaskImageURL); marker != nil {
+		attachments = append(attachments, marker)
 	}
 	if r.MaskUpload != nil {
-		if dataURL := r.MaskUpload.ModerationDataURL(); dataURL != "" {
-			images = append(images, map[string]string{"image_url": dataURL})
+		if marker := r.MaskUpload.moderationAttachment(); marker != nil {
+			attachments = append(attachments, marker)
 		}
 	}
-	if len(images) > 0 {
-		payload["images"] = images
+	if len(attachments) > 0 {
+		payload["attachments"] = attachments
 	}
 	if len(payload) == 0 {
 		return nil

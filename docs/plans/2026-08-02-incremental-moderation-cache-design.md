@@ -35,11 +35,14 @@ Rejected alternatives:
   existing extraction path.
 - Split text into deterministic 32,768-character windows with a 1,024-character
   overlap. Boundaries are measured in Unicode code points, not bytes.
-- Every character must occur in at least one chunk. Empty text produces no text
-  chunk; structured images retain the existing deterministic local block.
-- Include a fixed chunking/policy revision in every cache key. Changing chunk
-  size, overlap, classifier policy, model, endpoint, or relevant thresholds must
-  produce a different namespace rather than reuse stale decisions.
+- Every character must occur in at least one chunk. Attachment-only requests
+  produce canonical text markers; attachment presence does not create an empty
+  input or a deterministic local block.
+- Include both the text-projection revision and expected classifier-policy
+  revision in every chunk hash and cache namespace. Changing projection,
+  classifier policy, chunk size, overlap, model, endpoint, or relevant
+  thresholds must produce a different namespace rather than reuse stale
+  decisions.
 - Exact appended histories keep all completed prefix chunks stable. Normally
   only the previous partial tail and the newly appended tail require review.
 
@@ -63,8 +66,9 @@ and local overload must not create an allow entry.
 ## Request Flow
 
 1. Apply the existing enabled/mode/group/model and keyword scope.
-2. Extract the complete transcript, images, and deterministic overlapping text
-   chunks.
+2. Extract the complete text transcript and canonical bounded attachment markers
+   without mutating the original downstream body, then create deterministic
+   overlapping text chunks.
 3. Build the policy namespace and batch-read cached verdicts.
 4. Immediately block if any cached chunk is unsafe.
 5. Review cache misses with bounded parallelism through the existing moderation
@@ -74,6 +78,11 @@ and local overload must not create an allow entry.
 7. Cache strict allow/block results with their respective TTLs.
 8. Allow account selection only when every chunk is a strict allow and all cache
    operations required for that decision have succeeded.
+
+Before cache access, Sub2API verifies that `/readyz` exposes the configured
+classifier policy revision. Every successful Moderations response must repeat
+that revision before its verdict can be cached; missing or mismatched revision
+evidence fails closed.
 
 The request retains one overall moderation deadline. It does not receive three
 complete-transcript retries. Individual transient provider failures use the
@@ -91,8 +100,13 @@ requests.
   allow condition.
 - Text beyond the configured total local safety bound: return a local error; do
   not truncate and do not call OAI.
-- Images remain locally blocked until a real image-capable moderation backend is
-  integrated.
+- Attachment-bearing requests remain usable: only visible text and bounded
+  markers are reviewed, and strict allow forwards the unchanged original
+  attachment. A dangerous text verdict blocks the whole request. Pure
+  attachment-content attacks remain an explicit V1 residual risk.
+- A structured image sent directly to the adapter still returns a local flagged
+  result as defense in depth, but this is not the normal Sub2API path and is not
+  image-pixel moderation.
 
 The deployment remains a versioned image switch. The existing production image,
 Compose backup, moderation configuration backup, and prior adapter container
@@ -121,7 +135,13 @@ Automated tests must prove:
 - safe results are reused only within the same policy namespace;
 - Redis read/write errors, unknown cache values, provider failures, and malformed
   output fail closed;
-- images fail closed without provider or OAI calls;
+- safe and attachment-only requests do not fail solely because media exists,
+  while dangerous visible text plus an attachment blocks without OAI calls;
+- MiniMax receives no structured media, raw URL/URI, opaque file ID value, file
+  name, Base64, headers, cookies, credentials, or attachment bytes;
+- readiness/response classifier revision mismatches fail closed and old
+  projection/classifier cache namespaces are not reused;
+- direct structured adapter input remains a separate local flagged defense;
 - no blocked or failed request creates a `usage_logs` row or downstream
   `account_id`.
 

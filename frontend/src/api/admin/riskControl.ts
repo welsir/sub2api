@@ -39,6 +39,7 @@ export interface ContentModerationConfig {
   non_hit_retention_days: number
   pre_hash_check_enabled: boolean
   incremental_cache_enabled: boolean
+  classifier_policy_revision: string
   blocked_keywords: string[]
   keyword_blocking_mode: KeywordBlockingMode
   model_filter: ContentModerationModelFilter
@@ -117,6 +118,7 @@ export interface UpdateContentModerationConfig {
   non_hit_retention_days?: number
   pre_hash_check_enabled?: boolean
   incremental_cache_enabled?: boolean
+  classifier_policy_revision?: string
   blocked_keywords?: string[]
   keyword_blocking_mode?: KeywordBlockingMode
   model_filter?: ContentModerationModelFilter

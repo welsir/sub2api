@@ -1593,8 +1593,13 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				if model == "" {
 					model = reqModel
 				}
-				var moderationPayload []byte
-				wsModerationHistory, moderationPayload = buildOpenAIWSModerationPayload(wsModerationHistory, payload)
+				nextModerationHistory, moderationPayload, projectionErr := buildOpenAIWSModerationPayload(wsModerationHistory, payload)
+				if projectionErr != nil {
+					decision := service.ContentModerationFailureDecision()
+					writeContentModerationWSError(ctx, wsConn, decision)
+					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, decision.Message, projectionErr)
+				}
+				wsModerationHistory = nextModerationHistory
 				if decision := h.checkContentModeration(c, reqLog, apiKey, subject, service.ContentModerationProtocolOpenAIResponses, model, moderationPayload); decision != nil && decision.Blocked {
 					writeContentModerationWSError(ctx, wsConn, decision)
 					return service.NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, decision.Message, nil)
@@ -1771,18 +1776,21 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 
 }
 
-func buildOpenAIWSModerationPayload(history string, payload []byte) (string, []byte) {
+func buildOpenAIWSModerationPayload(history string, payload []byte) (string, []byte, error) {
 	current := service.ExtractContentModerationInput(service.ContentModerationProtocolOpenAIResponses, payload)
+	if current.ProjectionFailed {
+		return history, nil, fmt.Errorf("current websocket moderation projection failed: %s", current.ProjectionError)
+	}
 	combined := strings.TrimSpace(strings.TrimSpace(history) + " " + strings.TrimSpace(current.Text))
 	if combined == "" && len(current.Images) == 0 {
-		return history, payload
+		return history, payload, nil
 	}
 	if len(current.Images) == 0 {
 		body, err := json.Marshal(map[string]any{"input": combined})
 		if err == nil {
-			return combined, body
+			return combined, body, nil
 		}
-		return combined, payload
+		return history, nil, fmt.Errorf("marshal websocket moderation projection: %w", err)
 	}
 	content := make([]map[string]any, 0, len(current.Images)+1)
 	if combined != "" {
@@ -1795,9 +1803,9 @@ func buildOpenAIWSModerationPayload(history string, payload []byte) (string, []b
 		"input": []map[string]any{{"type": "message", "role": "user", "content": content}},
 	})
 	if err != nil {
-		return combined, payload
+		return history, nil, fmt.Errorf("marshal websocket moderation projection: %w", err)
 	}
-	return combined, body
+	return combined, body, nil
 }
 
 func (h *OpenAIGatewayHandler) recoverResponsesPanic(c *gin.Context, streamStarted *bool) {

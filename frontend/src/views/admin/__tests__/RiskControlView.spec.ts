@@ -103,6 +103,7 @@ const baseConfig = (): ContentModerationConfig => ({
   non_hit_retention_days: 3,
   pre_hash_check_enabled: false,
   incremental_cache_enabled: false,
+  classifier_policy_revision: '',
   blocked_keywords: [],
   keyword_blocking_mode: 'keyword_and_api',
   thresholds: {
@@ -260,7 +261,11 @@ describe('admin RiskControlView', () => {
   })
 
   it('loads and saves the incremental full-context cache switch', async () => {
-    getConfig.mockResolvedValue({ ...baseConfig(), incremental_cache_enabled: true })
+    getConfig.mockResolvedValue({
+      ...baseConfig(),
+      incremental_cache_enabled: true,
+      classifier_policy_revision: 'minimax-strict-policy-v3',
+    })
     const wrapper = mountRiskControlView()
 
     await flushPromises()
@@ -270,6 +275,7 @@ describe('admin RiskControlView', () => {
 
     expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
       incremental_cache_enabled: true,
+      classifier_policy_revision: 'minimax-strict-policy-v3',
     }))
   })
 

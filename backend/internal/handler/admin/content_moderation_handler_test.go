@@ -92,7 +92,8 @@ func TestContentModerationHandlerUpdateConfigPersistsAndReturnsExcludedGroupIDs(
 	body := bytes.NewBufferString(`{
 		"all_groups": true,
 		"excluded_group_ids": [17, 17],
-		"incremental_cache_enabled": true
+		"incremental_cache_enabled": true,
+		"classifier_policy_revision": "minimax-strict-policy-v3"
 	}`)
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/admin/risk-control/config", body)
@@ -107,6 +108,7 @@ func TestContentModerationHandlerUpdateConfigPersistsAndReturnsExcludedGroupIDs(
 			AllGroups               bool    `json:"all_groups"`
 			ExcludedGroupIDs        []int64 `json:"excluded_group_ids"`
 			IncrementalCacheEnabled bool    `json:"incremental_cache_enabled"`
+			ClassifierPolicyRevision string `json:"classifier_policy_revision"`
 		} `json:"data"`
 	}
 	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &envelope))
@@ -114,6 +116,7 @@ func TestContentModerationHandlerUpdateConfigPersistsAndReturnsExcludedGroupIDs(
 	require.True(t, envelope.Data.AllGroups)
 	require.Equal(t, []int64{17}, envelope.Data.ExcludedGroupIDs)
 	require.True(t, envelope.Data.IncrementalCacheEnabled)
+	require.Equal(t, "minimax-strict-policy-v3", envelope.Data.ClassifierPolicyRevision)
 
 	var saved service.ContentModerationConfig
 	require.NoError(t, json.Unmarshal(
@@ -123,4 +126,5 @@ func TestContentModerationHandlerUpdateConfigPersistsAndReturnsExcludedGroupIDs(
 	require.True(t, saved.AllGroups)
 	require.Equal(t, []int64{17}, saved.ExcludedGroupIDs)
 	require.True(t, saved.IncrementalCacheEnabled)
+	require.Equal(t, "minimax-strict-policy-v3", saved.ClassifierPolicyRevision)
 }

@@ -48,7 +48,14 @@ The Sub2API admin API, configuration view, runtime status, and management UI MUS
 - **THEN** Sub2API rejects the update without changing the active moderation configuration
 
 ### Requirement: Complete request-side semantic scope is explicit
-The first rollout SHALL audit the complete ordered request-side semantic text extracted by Sub2API, including historical roles and tool traffic, and SHALL NOT claim model-output, image-pixel, audio, or general multimodal moderation.
+The first rollout SHALL audit the complete ordered request-side semantic text
+extracted by Sub2API, including historical roles, tool traffic, image-generation
+prompts, and Grok media prompts. OpenAI Chat, Responses, Images, Anthropic
+Messages, Gemini, and Grok attachment-bearing requests SHALL retain their
+original downstream bodies while the moderation path receives only text and
+canonical bounded attachment markers. The rollout SHALL NOT claim model-output,
+image-pixel, audio, file-byte, OCR, document-extraction, archive, executable, or
+general multimodal moderation.
 
 #### Scenario: Dangerous history followed by a benign continuation
 - **WHEN** a request contains dangerous historical instructions and the last user message is only `Continue`, or the request ends in assistant/tool traffic
@@ -58,9 +65,45 @@ The first rollout SHALL audit the complete ordered request-side semantic text ex
 - **WHEN** relevant content appears after the former 12,000-rune boundary
 - **THEN** Sub2API includes it in the moderation request and never treats a silently truncated prefix as the complete input
 
+#### Scenario: Safe text accompanies an attachment
+- **WHEN** visible request text receives a strict allow and the original request contains an image, document, file, reference image, upload, or opaque file reference
+- **THEN** Sub2API forwards the unchanged original request and attachment through the normal downstream path while MiniMax receives only the ordered text and canonical attachment marker
+
+#### Scenario: Dangerous visible text accompanies an attachment
+- **WHEN** visible text, a caption, a tool argument, or a tool result is actionable high-risk content and the request also contains an attachment
+- **THEN** Sub2API blocks the complete request before downstream account selection regardless of the attachment
+
+#### Scenario: Attachment-only request
+- **WHEN** a valid request contains no visible semantic text beyond one or more canonical attachment markers
+- **THEN** attachment presence alone is not treated as an allow, block, review, or moderation-service failure; the strict text-classifier result governs the request
+
+#### Scenario: Attachment metadata is projected
+- **WHEN** extraction encounters a URL or URI, opaque file ID, file name, Base64 payload, upload bytes, headers, cookies, or credentials associated with an attachment
+- **THEN** the moderation projection emits at most bounded kind, normalized MIME, source class, and normalized extension and does not emit any raw value
+
+#### Scenario: Tool traffic references attachments
+- **WHEN** OpenAI, Anthropic, or Gemini tool/function arguments or results contain recognized attachment references plus ordinary semantic fields
+- **THEN** Sub2API replaces only the attachment payloads with bounded markers and preserves the remaining visible semantic text in deterministic order
+
+#### Scenario: Top-level tool and output schemas carry semantic instructions
+- **WHEN** OpenAI Chat `tools`, legacy `functions`, or `response_format`, Responses `tools` or `text.format`, Anthropic tool/output schemas, or Gemini tool declarations and response schemas contain names, descriptions, instructions, examples, defaults, or schemas that will be forwarded upstream
+- **THEN** Sub2API includes those structures in the ordered text audit through the same secret- and attachment-safe projection used for tool traffic
+
+#### Scenario: A supported protocol receives an unknown content block
+- **WHEN** a Chat, Responses, Anthropic, or Gemini content container has an unrecognized block shape with visible semantic fields
+- **THEN** Sub2API applies a generic safe projection that preserves semantic text while still removing attachment payloads, transport secrets, and raw references
+
+#### Scenario: Client-controlled reference or MIME metadata is untrusted
+- **WHEN** a URL or URI uses an unknown scheme, a binary-semantic field contains high- or low-entropy Base64, or an attachment supplies a MIME outside the bounded allowlist
+- **THEN** Sub2API emits only a neutral bounded marker or omission, never emits the raw reference, payload, or unknown MIME, and does not remove identical Base64-looking text solely because it appears as ordinary user text
+
+#### Scenario: Request projection cannot be proven complete
+- **WHEN** a non-empty request is invalid JSON, exceeds projection bounds, or a later Responses WebSocket frame fails projection
+- **THEN** Sub2API fails closed locally; the failed frame is not replaced by historical text, forwarded upstream, recorded as an upstream attempt, or billed as usage
+
 #### Scenario: Operator reviews rollout status
 - **WHEN** moderation coverage is displayed or documented
-- **THEN** it identifies the audited direction and unsupported content types
+- **THEN** it identifies the audited direction, the attachment pass-through boundary, the accepted pure-attachment false-negative risk, and unsupported content types
 
 ### Requirement: Incremental review preserves full-context coverage
 When `incremental_cache_enabled=true`, Sub2API SHALL split the complete
@@ -80,9 +123,17 @@ moderation adapter under one overall deadline.
 - **WHEN** the chunk cache is unavailable or a required read or write fails in scoped `pre_block`
 - **THEN** Sub2API returns a local 503 and does not select or call a downstream account
 
-#### Scenario: Structured image is present
-- **WHEN** incremental review receives a structured image that the configured text backend cannot inspect
-- **THEN** Sub2API blocks locally without calling MiniMax or OAI
+#### Scenario: Attachment-bearing input reaches incremental review
+- **WHEN** a supported protocol request contains an attachment
+- **THEN** incremental review chunks only the text projection and bounded markers, never sends structured media to MiniMax, and does not fail solely because the attachment exists
+
+#### Scenario: Classifier revision is missing or mismatched
+- **WHEN** the configured expected classifier policy revision is absent, `/readyz` reports another revision, or a successful Moderations response reports another revision
+- **THEN** absent configuration is rejected, a readiness mismatch fails closed before the first cache read for that configured base-URL/revision pair, and a response mismatch fails closed before writing its verdict and invalidates the remembered readiness check; no case selects or calls a downstream account
+
+#### Scenario: Projection or classifier policy changes
+- **WHEN** the attachment projection or trusted classifier policy revision changes
+- **THEN** the new projection and classifier revisions produce a different chunk hash and Redis namespace so older allow or block verdicts cannot contaminate the new policy
 
 ### Requirement: Human-controlled staged activation
 The rollout MUST use an isolated candidate before replacing the active version,
@@ -104,7 +155,11 @@ risky inputs and long-context traffic before activation.
 
 #### Scenario: Model benchmark completes
 - **WHEN** the MiniMax candidate has been tested
-- **THEN** the decision record contains model revision, service tier, risky-prompt outcomes, cold/appended latency, timeout, retry count, and the operator-approved selection
+- **THEN** the decision record contains model revision, actual functional-probe result, risky-prompt outcomes, cold/appended latency, timeout, retry count, and the operator-approved selection
+
+#### Scenario: Model-list readiness without working inference
+- **WHEN** `/v1/models` succeeds but a real classification returns a deterministic plan or quota failure
+- **THEN** the candidate remains unavailable and no application image is activated
 
 ### Requirement: Observe is non-blocking and pre-block fails closed
 The first rollout SHALL keep `observe` non-blocking, SHALL keep deterministic keyword blocking available through `keyword_and_api`, and SHALL terminate scoped `pre_block` requests locally when semantic moderation cannot produce a valid decision after bounded attempts.

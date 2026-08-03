@@ -98,9 +98,9 @@ func (r *OpenAIImagesRequest) ModerationBody() []byte {
 	if prompt := strings.TrimSpace(r.Prompt); prompt != "" {
 		payload["prompt"] = prompt
 	}
-	images := r.moderationImages()
-	if len(images) > 0 {
-		payload["images"] = images
+	attachments := r.moderationAttachments()
+	if len(attachments) > 0 {
+		payload["attachments"] = attachments
 	}
 	if len(payload) == 0 {
 		return nil
@@ -112,31 +112,59 @@ func (r *OpenAIImagesRequest) ModerationBody() []byte {
 	return body
 }
 
-func (r *OpenAIImagesRequest) moderationImages() []map[string]string {
+func (r *OpenAIImagesRequest) moderationAttachments() []map[string]string {
 	if r == nil {
 		return nil
 	}
-	images := make([]map[string]string, 0, len(r.InputImageURLs)+len(r.Uploads)+1)
+	attachments := make([]map[string]string, 0, len(r.InputImageURLs)+len(r.Uploads)+1)
 	for _, imageURL := range r.InputImageURLs {
-		imageURL = strings.TrimSpace(imageURL)
-		if imageURL != "" {
-			images = append(images, map[string]string{"image_url": imageURL})
+		if marker := remoteImageModerationAttachment(imageURL); marker != nil {
+			attachments = append(attachments, marker)
 		}
 	}
 	for _, upload := range r.Uploads {
-		if dataURL := upload.ModerationDataURL(); dataURL != "" {
-			images = append(images, map[string]string{"image_url": dataURL})
+		if marker := upload.moderationAttachment(); marker != nil {
+			attachments = append(attachments, marker)
 		}
 	}
-	if maskURL := strings.TrimSpace(r.MaskImageURL); maskURL != "" {
-		images = append(images, map[string]string{"image_url": maskURL})
+	if marker := remoteImageModerationAttachment(r.MaskImageURL); marker != nil {
+		attachments = append(attachments, marker)
 	}
 	if r.MaskUpload != nil {
-		if dataURL := r.MaskUpload.ModerationDataURL(); dataURL != "" {
-			images = append(images, map[string]string{"image_url": dataURL})
+		if marker := r.MaskUpload.moderationAttachment(); marker != nil {
+			attachments = append(attachments, marker)
 		}
 	}
-	return images
+	return attachments
+}
+
+func remoteImageModerationAttachment(reference string) map[string]string {
+	if strings.TrimSpace(reference) == "" {
+		return nil
+	}
+	marker := map[string]string{"kind": "image", "source": "remote"}
+	if extension := safeAttachmentExtension(reference); extension != "" {
+		marker["extension"] = extension
+	}
+	return marker
+}
+
+func (u OpenAIImagesUpload) moderationAttachment() map[string]string {
+	if len(u.Data) == 0 {
+		return nil
+	}
+	mimeType := normalizeModerationMIME(u.ContentType)
+	if mimeType == "" {
+		mimeType = normalizeModerationMIME(http.DetectContentType(u.Data))
+	}
+	marker := map[string]string{"kind": "image", "source": "upload"}
+	if mimeType != "" {
+		marker["mime"] = mimeType
+	}
+	if extension := safeAttachmentExtension(u.FileName); extension != "" {
+		marker["extension"] = extension
+	}
+	return marker
 }
 
 func (u OpenAIImagesUpload) ModerationDataURL() string {

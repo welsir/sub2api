@@ -74,6 +74,10 @@ windows, 1,024-rune overlap, total code-point coverage, stable prefix hashes
 after appending text, and policy namespace changes for model/base URL/threshold
 changes.
 
+Also cover the attachment text-projection revision and expected classifier
+policy revision so either change produces new hashes and namespaces instead of
+reusing stale verdicts.
+
 **Step 2: Run the pure helper tests**
 
 ```bash
@@ -151,7 +155,13 @@ Use an `httptest.Server` and cache fake to prove:
 - dangerous history followed by `Continue` blocks;
 - Redis read/write failure, provider failure, and deadline expiration return the
   local moderation failure decision;
-- a structured image still blocks locally without OAI selection;
+- safe text plus attachments and attachment-only requests remain on the
+  text-only moderation path without automatic failure;
+- dangerous visible text plus an attachment blocks without OAI selection;
+- a missing or mismatched readiness classifier revision fails closed before the
+  first cache read for that base-URL/revision pair, while a mismatched response
+  fails closed before verdict write and invalidates the remembered readiness
+  check;
 - disabling the switch preserves the legacy single-request path.
 
 **Step 2: Run the focused tests**
@@ -170,6 +180,12 @@ one `context.WithTimeout` using `cfg.TimeoutMS`, batch-read verdicts, block on
 any cached unsafe result, and review misses through `errgroup` with limit 8.
 Cancel remaining work on unsafe/error where possible. Cache only strict provider
 results; any required cache failure returns the existing local 503 decision.
+
+Require `classifier_policy_revision` in configuration, verify the same value
+from adapter `/readyz` before cache access, and require it on every successful
+Moderations response before writing a verdict. Include both the attachment
+text-projection revision and classifier-policy revision in chunk hashes and
+Redis namespaces.
 
 Merge category scores by maximum score so the existing threshold evaluation and
 logging path stays authoritative. Emit only aggregate slog fields for total
@@ -245,7 +261,9 @@ git commit -m "fix(omni): block uncertain MiniMax classifications"
 
 Document deterministic chunk coverage, Redis hash-only verdicts, policy
 namespaces, TTLs, one overall deadline, malformed-result blocking, rollout
-switch, aggregate observability, and fail-closed cache behavior.
+switch, aggregate observability, attachment text-only pass-through, direct-
+adapter structured-media defense, classifier-revision handshake, and fail-closed
+cache behavior.
 
 **Step 2: Validate documentation and OpenSpec**
 
@@ -295,9 +313,11 @@ Do not restart PostgreSQL or Redis.
 **Step 4: Run fail-closed canaries**
 
 Verify a cold multi-chunk transcript, the same transcript with an appended
-`Continue`, a high-risk tail, an image, Redis unavailability, and MiniMax
-unavailability. For every blocked/error canary assert `usage_rows=0` and
-`account_ids=none`.
+`Continue`, a high-risk tail, safe text plus an attachment, attachment-only
+input, dangerous text plus an attachment, direct structured adapter input,
+revision mismatch, Redis unavailability, and MiniMax unavailability. For every
+blocked/error canary assert `usage_rows=0` and `account_ids=none`; do not claim
+that attachment contents were inspected.
 
 **Step 5: Switch with rollback ready**
 
@@ -310,4 +330,3 @@ restore the prior Compose/config immediately.
 
 Confirm the branch is `dev/omni`, list changed files/commits, confirm no other
 branch was modified or pushed, and retain redacted rollback evidence.
-

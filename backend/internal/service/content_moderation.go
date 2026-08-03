@@ -137,35 +137,36 @@ func ContentModerationCategories() []string {
 }
 
 type ContentModerationConfig struct {
-	Enabled                 bool                         `json:"enabled"`
-	Mode                    string                       `json:"mode"`
-	BaseURL                 string                       `json:"base_url"`
-	Model                   string                       `json:"model"`
-	APIKey                  string                       `json:"api_key,omitempty"`
-	APIKeys                 []string                     `json:"api_keys,omitempty"`
-	TimeoutMS               int                          `json:"timeout_ms"`
-	SampleRate              int                          `json:"sample_rate"`
-	AllGroups               bool                         `json:"all_groups"`
-	GroupIDs                []int64                      `json:"group_ids"`
-	ExcludedGroupIDs        []int64                      `json:"excluded_group_ids"`
-	RecordNonHits           bool                         `json:"record_non_hits"`
-	Thresholds              map[string]float64           `json:"thresholds"`
-	WorkerCount             int                          `json:"worker_count"`
-	QueueSize               int                          `json:"queue_size"`
-	BlockStatus             int                          `json:"block_status"`
-	BlockMessage            string                       `json:"block_message"`
-	EmailOnHit              bool                         `json:"email_on_hit"`
-	AutoBanEnabled          bool                         `json:"auto_ban_enabled"`
-	BanThreshold            int                          `json:"ban_threshold"`
-	ViolationWindowHours    int                          `json:"violation_window_hours"`
-	RetryCount              int                          `json:"retry_count"`
-	HitRetentionDays        int                          `json:"hit_retention_days"`
-	NonHitRetentionDays     int                          `json:"non_hit_retention_days"`
-	PreHashCheckEnabled     bool                         `json:"pre_hash_check_enabled"`
-	IncrementalCacheEnabled bool                         `json:"incremental_cache_enabled"`
-	BlockedKeywords         []string                     `json:"blocked_keywords"`
-	KeywordBlockingMode     string                       `json:"keyword_blocking_mode"`
-	ModelFilter             ContentModerationModelFilter `json:"model_filter"`
+	Enabled                  bool                         `json:"enabled"`
+	Mode                     string                       `json:"mode"`
+	BaseURL                  string                       `json:"base_url"`
+	Model                    string                       `json:"model"`
+	APIKey                   string                       `json:"api_key,omitempty"`
+	APIKeys                  []string                     `json:"api_keys,omitempty"`
+	TimeoutMS                int                          `json:"timeout_ms"`
+	SampleRate               int                          `json:"sample_rate"`
+	AllGroups                bool                         `json:"all_groups"`
+	GroupIDs                 []int64                      `json:"group_ids"`
+	ExcludedGroupIDs         []int64                      `json:"excluded_group_ids"`
+	RecordNonHits            bool                         `json:"record_non_hits"`
+	Thresholds               map[string]float64           `json:"thresholds"`
+	WorkerCount              int                          `json:"worker_count"`
+	QueueSize                int                          `json:"queue_size"`
+	BlockStatus              int                          `json:"block_status"`
+	BlockMessage             string                       `json:"block_message"`
+	EmailOnHit               bool                         `json:"email_on_hit"`
+	AutoBanEnabled           bool                         `json:"auto_ban_enabled"`
+	BanThreshold             int                          `json:"ban_threshold"`
+	ViolationWindowHours     int                          `json:"violation_window_hours"`
+	RetryCount               int                          `json:"retry_count"`
+	HitRetentionDays         int                          `json:"hit_retention_days"`
+	NonHitRetentionDays      int                          `json:"non_hit_retention_days"`
+	PreHashCheckEnabled      bool                         `json:"pre_hash_check_enabled"`
+	IncrementalCacheEnabled  bool                         `json:"incremental_cache_enabled"`
+	ClassifierPolicyRevision string                       `json:"classifier_policy_revision"`
+	BlockedKeywords          []string                     `json:"blocked_keywords"`
+	KeywordBlockingMode      string                       `json:"keyword_blocking_mode"`
+	ModelFilter              ContentModerationModelFilter `json:"model_filter"`
 	// CyberPolicyExcludeFromBanCount 为 true 时，cyber_policy 命中不参与自动封号计数：
 	// 当次不判定封号，且历史 cyber 行在 CountFlaggedByUserSince 中被排除。
 	// 默认 false（计入，与历史行为一致；旧配置 JSON 无此字段时反序列化为 false）。
@@ -202,6 +203,7 @@ type ContentModerationConfigView struct {
 	NonHitRetentionDays            int                             `json:"non_hit_retention_days"`
 	PreHashCheckEnabled            bool                            `json:"pre_hash_check_enabled"`
 	IncrementalCacheEnabled        bool                            `json:"incremental_cache_enabled"`
+	ClassifierPolicyRevision       string                          `json:"classifier_policy_revision"`
 	BlockedKeywords                []string                        `json:"blocked_keywords"`
 	KeywordBlockingMode            string                          `json:"keyword_blocking_mode"`
 	ModelFilter                    ContentModerationModelFilter    `json:"model_filter"`
@@ -292,6 +294,7 @@ type UpdateContentModerationConfigInput struct {
 	NonHitRetentionDays            *int                          `json:"non_hit_retention_days"`
 	PreHashCheckEnabled            *bool                         `json:"pre_hash_check_enabled"`
 	IncrementalCacheEnabled        *bool                         `json:"incremental_cache_enabled"`
+	ClassifierPolicyRevision       *string                       `json:"classifier_policy_revision"`
 	BlockedKeywords                *[]string                     `json:"blocked_keywords"`
 	KeywordBlockingMode            *string                       `json:"keyword_blocking_mode"`
 	ModelFilter                    *ContentModerationModelFilter `json:"model_filter"`
@@ -319,54 +322,57 @@ type ContentModerationCheckInput struct {
 }
 
 type ContentModerationInput struct {
-	Text   string
-	Images []string
+	Text             string
+	Images           []string
+	ProjectionFailed bool
+	ProjectionError  string
 }
 
 func (in *ContentModerationInput) Normalize() {
 	if in == nil {
 		return
 	}
-	in.Text = normalizeContentModerationText(in.Text)
-	in.Images = normalizeModerationImages(in.Images)
+	parts := []string{in.Text}
+	for _, image := range normalizeModerationImages(in.Images) {
+		parts = append(parts, compatibilityImageModerationMarker(image))
+	}
+	in.Text = normalizeContentModerationText(strings.Join(parts, " "))
+	in.Images = nil
 }
 
 func (in ContentModerationInput) IsEmpty() bool {
-	return strings.TrimSpace(in.Text) == "" && len(in.Images) == 0
+	return !in.ProjectionFailed && strings.TrimSpace(in.canonicalText()) == ""
 }
 
 func (in ContentModerationInput) ModerationInput() any {
-	images := limitContentModerationImages(in.Images)
-	if len(images) == 0 {
-		return in.Text
-	}
-	parts := make([]moderationAPIInputPart, 0, len(images)+1)
-	if strings.TrimSpace(in.Text) != "" {
-		parts = append(parts, moderationAPIInputPart{Type: "text", Text: in.Text})
-	}
-	for _, image := range images {
-		parts = append(parts, moderationAPIInputPart{
-			Type:     "image_url",
-			ImageURL: &moderationAPIImageURLRef{URL: image},
-		})
-	}
-	return parts
+	return in.canonicalText()
 }
 
 func (in ContentModerationInput) ExcerptText() string {
-	return in.Text
+	return in.canonicalText()
 }
 
 func (in ContentModerationInput) Hash() string {
 	h := sha256.New()
 	_, _ = h.Write([]byte("text:"))
-	_, _ = h.Write([]byte(in.Text))
-	for _, image := range in.Images {
-		imageHash := sha256.Sum256([]byte(image))
-		_, _ = h.Write([]byte("\nimage:"))
-		_, _ = h.Write([]byte(hex.EncodeToString(imageHash[:])))
-	}
+	_, _ = h.Write([]byte(in.canonicalText()))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+func (in ContentModerationInput) canonicalText() string {
+	clone := in
+	clone.Normalize()
+	return clone.Text
+}
+
+func compatibilityImageModerationMarker(image string) string {
+	if mimeType, ok := parseModerationDataURI(image); ok {
+		return buildModerationAttachmentMarker("image", mimeType, "inline", "")
+	}
+	if isURLLikeModerationValue(image) || isRemoteModerationReference(image) {
+		return buildModerationAttachmentMarker("image", "", "remote", safeAttachmentExtension(image))
+	}
+	return buildModerationAttachmentMarker("image", "", "", safeAttachmentExtension(image))
 }
 
 type ContentModerationDecision struct {
@@ -525,6 +531,8 @@ type ContentModerationService struct {
 	lastCleanupDeletedNonHit atomic.Int64
 	keyHealthMu              sync.Mutex
 	keyHealth                map[string]*contentModerationKeyHealth
+	classifierPolicyMu       sync.Mutex
+	classifierPolicyStates   map[string]*contentModerationClassifierPolicyState
 }
 
 type contentModerationTask struct {
@@ -566,17 +574,18 @@ func NewContentModerationService(
 	emailService *EmailService,
 ) *ContentModerationService {
 	svc := &ContentModerationService{
-		settingRepo:          settingRepo,
-		repo:                 repo,
-		hashCache:            hashCache,
-		groupRepo:            groupRepo,
-		userRepo:             userRepo,
-		authCacheInvalidator: authCacheInvalidator,
-		emailService:         emailService,
-		httpClient:           &http.Client{},
-		workerCount:          maxContentModerationWorkerCount,
-		asyncQueue:           make(chan contentModerationTask, maxContentModerationQueueSize),
-		keyHealth:            make(map[string]*contentModerationKeyHealth),
+		settingRepo:            settingRepo,
+		repo:                   repo,
+		hashCache:              hashCache,
+		groupRepo:              groupRepo,
+		userRepo:               userRepo,
+		authCacheInvalidator:   authCacheInvalidator,
+		emailService:           emailService,
+		httpClient:             &http.Client{},
+		workerCount:            maxContentModerationWorkerCount,
+		asyncQueue:             make(chan contentModerationTask, maxContentModerationQueueSize),
+		keyHealth:              make(map[string]*contentModerationKeyHealth),
+		classifierPolicyStates: make(map[string]*contentModerationClassifierPolicyState),
 	}
 	if chunkCache, ok := hashCache.(ContentModerationChunkCache); ok {
 		svc.chunkCache = chunkCache
@@ -659,6 +668,9 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	}
 	if input.IncrementalCacheEnabled != nil {
 		cfg.IncrementalCacheEnabled = *input.IncrementalCacheEnabled
+	}
+	if input.ClassifierPolicyRevision != nil {
+		cfg.ClassifierPolicyRevision = strings.TrimSpace(*input.ClassifierPolicyRevision)
 	}
 	if input.BlockedKeywords != nil {
 		cfg.BlockedKeywords = normalizeBlockedKeywords(*input.BlockedKeywords)
@@ -894,6 +906,23 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 	content := ExtractContentModerationInput(input.Protocol, input.Body)
+	if content.ProjectionFailed {
+		slog.Warn("content_moderation.projection_failed",
+			"user_id", input.UserID,
+			"api_key_id", input.APIKeyID,
+			"group_id", contentModerationLogGroupID(input.GroupID),
+			"endpoint", input.Endpoint,
+			"protocol", input.Protocol,
+			"mode", cfg.Mode,
+			"error", content.ProjectionError)
+		log := s.buildLog(input, cfg, ContentModerationActionError, false, "", 0, nil, content.ExcerptText(), nil, nil, content.ProjectionError)
+		_ = s.repo.CreateLog(ctx, log)
+		if cfg.Mode == ContentModerationModePreBlock {
+			s.recordPreBlockSyncMetric(0, ContentModerationActionError)
+			return ContentModerationFailureDecision(), nil
+		}
+		return allow, nil
+	}
 	if content.IsEmpty() {
 		slog.Info("content_moderation.skip_empty_input",
 			"user_id", input.UserID,
@@ -1041,9 +1070,7 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 	var result *moderationAPIResult
 	var err error
 	var incrementalStats contentModerationChunkReviewStats
-	if cfg.IncrementalCacheEnabled && len(content.Images) > 0 {
-		err = errors.New("structured images are not supported by incremental moderation")
-	} else if cfg.IncrementalCacheEnabled {
+	if cfg.IncrementalCacheEnabled {
 		result, incrementalStats, err = s.callModerationIncremental(ctx, cfg, content.Text, trackPreBlock)
 		slog.Info("content_moderation.incremental_review",
 			"user_id", input.UserID,
@@ -1086,7 +1113,8 @@ func (s *ContentModerationService) checkSync(ctx context.Context, input ContentM
 		return allow
 	}
 
-	flagged, highestCategory, highestScore := evaluateModerationScores(result.CategoryScores, cfg.Thresholds)
+	thresholdFlagged, highestCategory, highestScore := evaluateModerationScores(result.CategoryScores, cfg.Thresholds)
+	flagged := result.Flagged || thresholdFlagged
 	action := ContentModerationActionAllow
 	blocked := false
 	if allowBlock && flagged && cfg.Mode == ContentModerationModePreBlock {
@@ -1545,6 +1573,12 @@ func (s *ContentModerationService) validateConfig(ctx context.Context, cfg *Cont
 	if cfg.BlockStatus < 400 || cfg.BlockStatus > 599 {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_BLOCK_STATUS", "拦截 HTTP 状态码必须在 400-599 之间")
 	}
+	if cfg.IncrementalCacheEnabled && strings.TrimSpace(cfg.ClassifierPolicyRevision) == "" {
+		return infraerrors.BadRequest(
+			"CONTENT_MODERATION_CLASSIFIER_POLICY_REVISION_REQUIRED",
+			"启用增量审计缓存时必须配置分类器策略版本",
+		)
+	}
 	if cfg.ModelFilter.Type != ContentModerationModelFilterAll && len(cfg.ModelFilter.Models) == 0 {
 		return infraerrors.BadRequest("INVALID_CONTENT_MODERATION_MODEL_FILTER", "指定或排除模型时至少需要配置 1 个模型")
 	}
@@ -1699,7 +1733,9 @@ func (s *ContentModerationService) callModerationOnceWithInput(ctx context.Conte
 	if len(out.Results) == 0 {
 		return nil, errors.New("moderation api returned empty results")
 	}
-	return &out.Results[0], nil
+	result := out.Results[0]
+	result.ClassifierPolicyRevision = strings.TrimSpace(out.ClassifierPolicyRevision)
+	return &result, nil
 }
 
 func compressContentModerationRequest(raw []byte) ([]byte, bool, error) {
@@ -2027,6 +2063,7 @@ func (cfg *ContentModerationConfig) normalize() {
 		cfg.Model = defaultContentModerationModel
 	}
 	cfg.Model = strings.TrimSpace(cfg.Model)
+	cfg.ClassifierPolicyRevision = strings.TrimSpace(cfg.ClassifierPolicyRevision)
 	if cfg.TimeoutMS <= 0 {
 		cfg.TimeoutMS = defaultContentModerationTimeoutMS
 	}
@@ -2354,6 +2391,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		NonHitRetentionDays:            cfg.NonHitRetentionDays,
 		PreHashCheckEnabled:            cfg.PreHashCheckEnabled,
 		IncrementalCacheEnabled:        cfg.IncrementalCacheEnabled,
+		ClassifierPolicyRevision:       cfg.ClassifierPolicyRevision,
 		BlockedKeywords:                append([]string(nil), cfg.BlockedKeywords...),
 		KeywordBlockingMode:            cfg.KeywordBlockingMode,
 		ModelFilter:                    cloneContentModerationModelFilter(cfg.ModelFilter),
@@ -2592,12 +2630,14 @@ type moderationAPIImageURLRef struct {
 }
 
 type moderationAPIResponse struct {
-	Results []moderationAPIResult `json:"results"`
+	ClassifierPolicyRevision string                `json:"classifier_policy_revision"`
+	Results                  []moderationAPIResult `json:"results"`
 }
 
 type moderationAPIResult struct {
-	Flagged        bool               `json:"flagged"`
-	CategoryScores map[string]float64 `json:"category_scores"`
+	Flagged                  bool               `json:"flagged"`
+	CategoryScores           map[string]float64 `json:"category_scores"`
+	ClassifierPolicyRevision string             `json:"-"`
 }
 
 func evaluateModerationScores(scores map[string]float64, thresholds map[string]float64) (bool, string, float64) {

@@ -92,21 +92,30 @@ func TestOpenAIGatewayServiceParseOpenAIImagesRequest_MultipartEdit(t *testing.T
 	require.Equal(t, OpenAIImagesCapabilityNative, parsed.RequiredCapability)
 }
 
-func TestOpenAIImagesRequestModerationBody_JSONEditIncludesInputImageURLs(t *testing.T) {
+func TestOpenAIImagesRequestModerationBody_JSONEditUsesBoundedAttachmentMetadata(t *testing.T) {
 	parsed := &OpenAIImagesRequest{
 		Endpoint:       openAIImagesEditsEndpoint,
 		Prompt:         "replace background",
-		InputImageURLs: []string{"https://example.com/source.png"},
-		MaskImageURL:   "https://example.com/mask.png",
+		InputImageURLs: []string{"https://example.com/private-source.png?signature=synthetic-secret"},
+		MaskImageURL:   "https://example.com/private-mask.png?signature=synthetic-secret",
 	}
 
-	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIImages, parsed.ModerationBody())
+	moderationBody := parsed.ModerationBody()
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIImages, moderationBody)
 
-	require.Equal(t, "[user] replace background", input.Text)
-	require.Equal(t, []string{"https://example.com/source.png", "https://example.com/mask.png"}, input.Images)
+	require.Equal(t, "replace background", parsed.Prompt)
+	require.Equal(t, []string{"https://example.com/private-source.png?signature=synthetic-secret"}, parsed.InputImageURLs)
+	require.Equal(t, "https://example.com/private-mask.png?signature=synthetic-secret", parsed.MaskImageURL)
+	require.Contains(t, input.Text, "[user] replace background")
+	require.Equal(t, 2, strings.Count(input.Text, "[attachment kind=image source=remote extension=.png]"))
+	require.Empty(t, input.Images)
+	require.NotContains(t, string(moderationBody), "synthetic-secret")
+	require.NotContains(t, string(moderationBody), "private-source")
+	require.NotContains(t, string(moderationBody), "private-mask")
+	require.NotContains(t, string(moderationBody), "http")
 }
 
-func TestOpenAIImagesRequestModerationBody_MultipartEditIncludesUploadsInMemory(t *testing.T) {
+func TestOpenAIImagesRequestModerationBody_MultipartEditDoesNotEncodeUploadBytes(t *testing.T) {
 	parsed := &OpenAIImagesRequest{
 		Endpoint: openAIImagesEditsEndpoint,
 		Prompt:   "replace background",
@@ -124,16 +133,22 @@ func TestOpenAIImagesRequestModerationBody_MultipartEditIncludesUploadsInMemory(
 		},
 	}
 
-	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIImages, parsed.ModerationBody())
+	moderationBody := parsed.ModerationBody()
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIImages, moderationBody)
 
-	require.Equal(t, "[user] replace background", input.Text)
-	require.Equal(t, []string{
-		"data:image/png;base64,ZmFrZS1pbWFnZS1ieXRlcw==",
-		"data:image/png;base64,ZmFrZS1tYXNrLWJ5dGVz",
-	}, input.Images)
+	require.Equal(t, []byte("fake-image-bytes"), parsed.Uploads[0].Data, "normal upstream upload bytes must remain unchanged")
+	require.Equal(t, []byte("fake-mask-bytes"), parsed.MaskUpload.Data, "normal upstream mask bytes must remain unchanged")
+	require.Contains(t, input.Text, "[user] replace background")
+	require.Equal(t, 2, strings.Count(input.Text, "[attachment kind=image mime=image/png source=upload extension=.png]"))
+	require.Empty(t, input.Images)
+	require.NotContains(t, string(moderationBody), "fake-image-bytes")
+	require.NotContains(t, string(moderationBody), "fake-mask-bytes")
+	require.NotContains(t, string(moderationBody), "ZmFrZS")
+	require.NotContains(t, string(moderationBody), "source.png")
+	require.NotContains(t, string(moderationBody), "mask.png")
 
 	log := (&ContentModerationService{}).buildLog(ContentModerationCheckInput{}, defaultContentModerationConfig(), ContentModerationActionAllow, false, "", 0, nil, input.ExcerptText(), nil, nil, "")
-	require.Equal(t, "[user] replace background", log.InputExcerpt)
+	require.Equal(t, "[user] replace background [user] [attachment kind=image mime=image/png source=upload extension=.png] [attachment kind=image mime=image/png source=upload extension=.png]", log.InputExcerpt)
 	require.NotContains(t, log.InputExcerpt, "ZmFrZS")
 }
 

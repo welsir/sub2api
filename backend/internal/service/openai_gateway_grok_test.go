@@ -221,7 +221,7 @@ func TestExtractGrokMediaModelSupportsJSONAndMultipart(t *testing.T) {
 	require.Equal(t, "grok-imagine-edit", ExtractGrokMediaModel(writer.FormDataContentType(), buf.Bytes()))
 }
 
-func TestParseGrokMediaRequestBuildsMultipartModerationBody(t *testing.T) {
+func TestParseGrokMediaRequestBuildsTextOnlyMultipartModerationBody(t *testing.T) {
 	var buf bytes.Buffer
 	writer := multipart.NewWriter(&buf)
 	require.NoError(t, writer.WriteField("prompt", "edit this private image"))
@@ -242,7 +242,18 @@ func TestParseGrokMediaRequestBuildsMultipartModerationBody(t *testing.T) {
 	moderationBody := info.ModerationBody()
 	require.NotEmpty(t, moderationBody)
 	require.Equal(t, "edit this private image", gjson.GetBytes(moderationBody, "prompt").String())
-	require.True(t, strings.HasPrefix(gjson.GetBytes(moderationBody, "images.0.image_url").String(), "data:image/"))
+	require.Equal(t, "image", gjson.GetBytes(moderationBody, "attachments.0.kind").String())
+	require.Equal(t, "image/png", gjson.GetBytes(moderationBody, "attachments.0.mime").String())
+	require.Equal(t, "upload", gjson.GetBytes(moderationBody, "attachments.0.source").String())
+	require.Equal(t, ".png", gjson.GetBytes(moderationBody, "attachments.0.extension").String())
+	require.False(t, gjson.GetBytes(moderationBody, "attachments.0.size").Exists())
+	require.Equal(t, []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}, info.Uploads[0].Data)
+	require.NotContains(t, string(moderationBody), "iVBOR")
+	require.NotContains(t, string(moderationBody), "input.png")
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIImages, moderationBody)
+	require.Contains(t, input.Text, "[attachment kind=image mime=image/png source=upload extension=.png]")
+	require.Empty(t, input.Images)
 }
 
 func TestParseGrokMediaVideoRequestResolution(t *testing.T) {

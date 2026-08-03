@@ -1,10 +1,11 @@
-# [INPUT]: Adapter build-context files.
-# [OUTPUT]: Secret-free, dependency-free Docker build context.
+# [INPUT]: Adapter TypeScript source and locked build-context files.
+# [OUTPUT]: Secret-free Docker build context without local artifacts or dependencies.
 # [POS]: Build boundary that prevents local state and credentials entering image layers.
 
 .env
 *.env
 node_modules
+dist
 tests
 coverage
 .DS_Store

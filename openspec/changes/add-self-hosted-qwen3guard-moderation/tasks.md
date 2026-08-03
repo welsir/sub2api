@@ -16,7 +16,7 @@
 - [x] 2.5 Implement `/healthz`, `/readyz`, and a model-backend client that keeps the Qwen Chat Completions surface behind the adapter.
 - [x] 2.6 Add bounded input, concurrency, queue, and inference deadlines with explicit overload and timeout responses.
 - [x] 2.7 Add redacted operational logs and metrics for model revision, mapping revision, correlation ID, input size/hash, label/category, latency, overload, timeout, and parse error.
-- [x] 2.8 Add contract fixtures for safe, controversial, mapped unsafe, unknown-category unsafe, malformed output, unsupported multimodal input, authentication failure, timeout, and overload.
+- [x] 2.8 Add contract fixtures for safe, controversial, mapped unsafe, unknown-category unsafe, malformed output, direct structured-media fail-closed defense, authentication failure, timeout, and overload.
 - [x] 2.9 Run adapter unit, contract, lint/type, secret-scan, and `git diff --check` gates and record exact results.
 
 ## 3. Add Sub2API Group Exemptions
@@ -49,8 +49,10 @@
 - [x] 3B.5 Preserve complete-context, gzip, bounded execution, Qwen compatibility, and fail-closed Sub2API behavior.
 - [x] 3B.6 Document the high-risk-group-only rollout, require `auto_ban_enabled=false`, and prohibit automatic user or API-key bans from MiniMax decisions.
 - [x] 3B.7 Add provider parser, backend client, HTTP contract, runtime, and configuration verification.
-- [x] 3B.8 Add MiniMax M3 no-thinking and configurable standard/priority admission after credentialed latency probes.
+- [x] 3B.8 Add `MiniMax-M2.7-highspeed` model-name selection without attaching an unrelated `service_tier`, while retaining configurable tiers for models that support them.
 - [x] 3B.9 Add a non-root, secret-free Docker image boundary with separate liveness and backend-readiness probes.
+- [x] 3B.10 Treat MiniMax provider codes `2056` and `2062` as deterministic billing/quota failures instead of transient retryable errors.
+- [x] 3B.11 Require one real hosted classification before release; active plan status, model discovery, and successful `MiniMax-M2.7-highspeed` and `MiniMax-M3` inference were verified locally on 2026-08-03, with M3 selected for the remaining candidate gates.
 
 ## 3C. Add Incremental Full-Context Review
 
@@ -58,9 +60,10 @@
 - [x] 3C.2 Split the complete normalized transcript into deterministic 32,768-rune chunks with 1,024-rune overlap and versioned policy namespaces.
 - [x] 3C.3 Add Redis batch reads and pipelined writes for SHA-256 keyed allow/block verdicts without storing prompt text.
 - [x] 3C.4 Review only cache misses with concurrency eight under one overall deadline, cancel remaining work after an unsafe result, and merge category scores by maximum.
-- [x] 3C.5 Fail closed on missing cache support, Redis read/write errors, provider errors, deadlines, and structured images; never truncate or bypass account selection.
+- [x] 3C.5 Keep supported attachment-bearing requests on the text-only incremental path: preserve the original downstream body, project attachments to bounded non-secret markers, and fail closed on missing or mismatched classifier revision, missing cache support, Redis read/write errors, provider errors, or deadlines without treating attachment presence itself as an error.
 - [x] 3C.6 Convert MiniMax missing choices, non-stop finishes, empty content, and malformed final decisions into successful blocked classifications instead of retry-amplified parse errors.
-- [x] 3C.7 Add tests for cold chunks, appended tails, dangerous history followed by `Continue`, cache failures, deadlines, images, the disabled legacy path, MiniMax uncertainty, and data races.
+- [x] 3C.7 Add tests for cold chunks, appended tails, dangerous history followed by `Continue`, cache failures, deadlines, classifier-revision handshake and namespace invalidation, the disabled legacy path, MiniMax uncertainty, data races, and text-only attachment projection across OpenAI Chat/Responses/Images, Anthropic, Gemini, Grok, and tool traffic; retain a separate direct-adapter structured-image fail-closed test as defense in depth.
+- [x] 3C.8 Harden the complete projection for top-level tool/output schemas, unknown content blocks, attachment semantic siblings, unknown URL schemes, low-entropy Base64, bounded MIME values, invalid JSON, and projection-failed later WebSocket turns without creating an upstream frame or usage row.
 
 ## 4. Prepare The Windows Qwen3Guard Runtime
 
@@ -85,9 +88,11 @@ MiniMax-first rollout.
 
 ## 6. Benchmark And Select The Model
 
-- [ ] 6.1 Build a privacy-reviewed representative set of 500 to 1,000 labeled Chinese inputs covering normal, controversial, violent, illegal, sexual, self-harm, PII, political, copyright, jailbreak, and nuanced legal content.
-- [ ] 6.2 Run 0.6B and 4B against the identical labeled set and record per-category misses, unsafe recall, and safe false-positive rate.
-- [ ] 6.3 Replay the measured peak concurrency and P95/P99 input shape against both candidates and record latency percentiles, throughput, queue pressure, errors, and GPU memory.
+- [x] 6.1 Build a privacy-reviewed, deterministic set of approximately 1,200 to 1,400 Chinese inputs from local archives: all confirmed upstream policy cases, explicit-risk candidates, boundary cases, legitimate reverse engineering, normal business, `Continue`, tool loops, and 12K/32K/64K+ contexts.
+  - Local evidence (2026-08-02): 1,253 privacy-safe broad representative replays from 59,236 prompt rows and 70,231 full upstream requests, plus a separate exact-response replay of all 13 confirmed OAI `cyber_policy` requests; aggregate-only results are recorded in `.specgov/changes/add-self-hosted-qwen3guard-moderation/evidence/minimax-local-candidate.md`.
+- [ ] 6.2 Run `MiniMax-M3` against the identical redacted semantic set and record confirmed-risk recall, candidate outcomes, safe false positives, provider failures, and per-class latency without emitting original prompts.
+  - Partial local evidence (2026-08-03): all 13 exact OAI `cyber_policy` requests blocked after the Unicode chunk-boundary fix, and 40 privacy-safe real prompt samples were classified without provider errors. The full 1,200-to-1,400 semantic replay remains incomplete.
+- [ ] 6.3 Replay the measured peak concurrency and P95/P99 input shape and record latency percentiles, throughput, queue pressure, request amplification, and errors.
 - [ ] 6.4 Select and pin the production candidate only after comparing quality and runtime evidence against the approved gates.
 - [ ] 6.5 Record the selected model revision, adapter revision, mapping revision, input limit, timeout, retry count, and rejected alternative.
 
@@ -97,7 +102,7 @@ MiniMax-first rollout.
 - [ ] 7.2 Keep `keyword_and_api`, `pre_block`, and `auto_ban_enabled=false`; enable `incremental_cache_enabled` only on the isolated candidate before the application image switch.
 - [ ] 7.3 Send safe and unsafe probes through disposable in-scope and out-of-scope Keys; prove only the approved high-risk groups invoke semantic moderation.
 - [ ] 7.4 Repeat a long transcript, append a new turn, and prove only changed tail chunks invoke MiniMax while a cached dangerous prefix plus `Continue` blocks without a provider call.
-- [ ] 7.5 Confirm structured images block locally and are not reported as image-pixel moderation coverage.
+- [ ] 7.5 On the isolated candidate, prove safe text and attachment-only requests can pass with their original attachments unchanged, dangerous visible text plus any attachment blocks before downstream selection, MiniMax receives no attachment bytes or raw identifiers, pure attachment-content attacks remain an accepted residual risk, and direct structured-adapter input still fails closed only as defense in depth.
 - [ ] 7.6 Collect cold-cache and appended-turn latency, cache hits/misses, provider errors, Redis errors, and audited-group counts without logging prompt text.
 - [ ] 7.7 Review false positives and false negatives from the candidate and keep the previous application image/configuration ready for immediate rollback.
 
@@ -107,7 +112,7 @@ MiniMax-first rollout.
 - [ ] 8.2 Prove transport/cache failures become local 503 errors, malformed MiniMax classifier output becomes a local blocked result without retries, and hard keywords remain deterministic.
 - [ ] 8.3 Verify that retries and timeouts remain within the accepted user-latency budget during a complete home-host outage.
 - [ ] 8.4 Present quality, performance, observation, exemption, failure, rollback, and pre-block availability trade-off evidence for explicit operator approval.
-- [ ] 8.5 After approval, switch the versioned application and adapter images and run safe, semantic-unsafe, keyword-unsafe, adapter-error, Redis-error, appended-tail, and image probes.
+- [ ] 8.5 After approval, switch the versioned application and adapter images and run safe, semantic-unsafe, keyword-unsafe, adapter-error, Redis-error, classifier-revision-mismatch, appended-tail, safe-attachment pass-through, dangerous-text-plus-attachment, attachment-only, and direct-adapter structured-image defense probes without claiming attachment-content inspection.
 - [ ] 8.6 Verify blocked and allowed responses at the real client boundary, correlate Sub2API and adapter evidence, and confirm out-of-scope groups do not invoke this local moderation layer.
 - [ ] 8.7 Monitor the initial blocking window and roll back immediately if exemption scope, latency, availability, or false-positive gates regress.
 

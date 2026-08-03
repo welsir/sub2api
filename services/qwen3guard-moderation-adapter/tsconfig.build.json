@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "src/qwen3guard-moderation-adapter",
+    "outDir": "dist",
+    "types": ["node"],
+    "noEmit": false
+  },
+  "include": ["src/qwen3guard-moderation-adapter/**/*.ts"],
+  "exclude": ["dist", "tests"]
+}
