@@ -1001,6 +1001,11 @@ type GatewayConfig struct {
 	// OpenAIPassthroughAllowTimeoutHeaders: OpenAI 透传模式是否放行客户端超时头
 	// 关闭（默认）可避免 x-stainless-timeout 等头导致上游提前断流。
 	OpenAIPassthroughAllowTimeoutHeaders bool `mapstructure:"openai_passthrough_allow_timeout_headers"`
+	// OpenAIRequestCompressionEnabled: 对 ChatGPT Codex HTTP `/responses` 流式请求启用 zstd 请求体压缩。
+	// 仅影响 OAuth-like 账号的 HTTP 出站请求；WebSocket、API Key 与 compact 路径不受影响。
+	OpenAIRequestCompressionEnabled bool `mapstructure:"openai_request_compression_enabled"`
+	// OpenAIRequestCompressionMinBytes: 请求体达到该字节数后才尝试压缩，避免小请求额外 CPU 开销。
+	OpenAIRequestCompressionMinBytes int `mapstructure:"openai_request_compression_min_bytes"`
 	// OpenAICompactModel: /responses/compact 上游使用的模型。
 	// compact 端点支持模型滞后于普通 /responses 时，可用该配置降级规避上游错误。
 	OpenAICompactModel string `mapstructure:"openai_compact_model"`
@@ -2373,6 +2378,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
+	viper.SetDefault("gateway.openai_request_compression_enabled", false)
+	viper.SetDefault("gateway.openai_request_compression_min_bytes", 64*1024)
 	viper.SetDefault("gateway.openai_compact_model", "gpt-5.4")
 	viper.SetDefault("gateway.live.max_session_duration_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）

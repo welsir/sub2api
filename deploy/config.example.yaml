@@ -305,6 +305,11 @@ gateway:
   # OpenAI 透传模式是否放行客户端超时头（如 x-stainless-timeout）
   # 默认 false：过滤超时头，降低上游提前断流风险。
   openai_passthrough_allow_timeout_headers: false
+  # 对 ChatGPT Codex OAuth-like HTTP /responses 大请求启用 zstd 出站压缩。
+  # 默认关闭；不影响 WebSocket、API Key、自定义上游和 /responses/compact。
+  openai_request_compression_enabled: false
+  # 达到该字节数才压缩，默认 64 KiB。压缩失败或结果不更小时自动发送原始请求体。
+  openai_request_compression_min_bytes: 65536
   # Model used for OpenAI /responses/compact upstream requests (default: gpt-5.4).
   # OpenAI /responses/compact 上游模型（默认 gpt-5.4）。
   # Use this to avoid compact failures when newer models are not yet supported by the compact endpoint.

@@ -604,9 +604,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	// DeepSeek 原生 Responses 端点为无状态实现（见 normalizeDeepSeekResponsesRequestBody）。
 	body = normalizeDeepSeekResponsesRequestBody(account, body)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
+	requestBody, compressed := s.maybeCompressOpenAIRequestBody(ctx, account, targetURL, body, gjson.GetBytes(body, "stream").Bool())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(requestBody))
 	if err != nil {
 		return nil, err
+	}
+	if compressed {
+		req.Header.Set("Content-Encoding", "zstd")
+		req.ContentLength = int64(len(requestBody))
 	}
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 
