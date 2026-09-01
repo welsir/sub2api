@@ -95,6 +95,9 @@ func (m *mockAccountRepoForPlatform) List(ctx context.Context, params pagination
 func (m *mockAccountRepoForPlatform) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, *pagination.PaginationResult, error) {
 	return nil, nil, nil
 }
+func (m *mockAccountRepoForPlatform) ListAllWithFilters(ctx context.Context, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, error) {
+	return nil, nil
+}
 func (m *mockAccountRepoForPlatform) ListByGroup(ctx context.Context, groupID int64) ([]Account, error) {
 	return nil, nil
 }
@@ -153,6 +156,34 @@ func (m *mockAccountRepoForPlatform) ListSchedulableUngroupedByPlatform(ctx cont
 func (m *mockAccountRepoForPlatform) ListSchedulableUngroupedByPlatforms(ctx context.Context, platforms []string) ([]Account, error) {
 	return m.ListSchedulableByPlatforms(ctx, platforms)
 }
+func (m *mockAccountRepoForPlatform) ListModelAvailabilityCandidates(_ context.Context, groupID *int64, platforms []string, includeGrouped bool) ([]Account, error) {
+	platformSet := make(map[string]struct{}, len(platforms))
+	for _, platform := range platforms {
+		platformSet[platform] = struct{}{}
+	}
+	result := make([]Account, 0, len(m.accounts))
+	for _, acc := range m.accounts {
+		if _, ok := platformSet[acc.Platform]; !ok || acc.Status != StatusActive || !acc.Schedulable {
+			continue
+		}
+		if groupID != nil {
+			inGroup := false
+			for _, accountGroup := range acc.AccountGroups {
+				if accountGroup.GroupID == *groupID {
+					inGroup = true
+					break
+				}
+			}
+			if !inGroup {
+				continue
+			}
+		} else if !includeGrouped && (len(acc.AccountGroups) > 0 || len(acc.GroupIDs) > 0) {
+			continue
+		}
+		result = append(result, acc)
+	}
+	return result, nil
+}
 func (m *mockAccountRepoForPlatform) SetRateLimited(ctx context.Context, id int64, resetAt time.Time) error {
 	return nil
 }
@@ -194,12 +225,16 @@ func (m *mockAccountRepoForPlatform) IncrementQuotaUsed(ctx context.Context, id 
 	return nil
 }
 
-func (m *mockAccountRepoForPlatform) ResetQuotaUsed(ctx context.Context, id int64) error {
+func (m *mockAccountRepoForPlatform) ResetQuotaUsedAndClearRateLimitCooldown(ctx context.Context, id int64) error {
 	return nil
 }
 
 func (m *mockAccountRepoForPlatform) RevertProxyFallback(ctx context.Context, accountID int64) error {
 	return nil
+}
+
+func (m *mockAccountRepoForPlatform) ListShadowsByParent(ctx context.Context, parentID int64) ([]*Account, error) {
+	return nil, nil
 }
 
 // Verify interface implementation
@@ -240,6 +275,27 @@ func (m *mockGatewayCacheForPlatform) DeleteSessionAccountID(ctx context.Context
 	m.deletedSessions[sessionHash]++
 	delete(m.sessionBindings, sessionHash)
 	return nil
+}
+
+func (m *mockGatewayCacheForPlatform) SetGrokVideoPendingBilling(_ context.Context, _ string, _ []byte, _ time.Duration) error {
+	return nil
+}
+func (m *mockGatewayCacheForPlatform) GetGrokVideoPendingBilling(_ context.Context, _ string) ([]byte, error) {
+	return nil, nil
+}
+func (m *mockGatewayCacheForPlatform) ClaimGrokVideoBilled(_ context.Context, _ string, _ time.Duration) (bool, error) {
+	return true, nil
+}
+
+func (m *mockGatewayCacheForPlatform) ReleaseGrokVideoBilled(_ context.Context, _ string) error {
+	return nil
+}
+
+func (m *mockGatewayCacheForPlatform) SetReasoningContent(_ context.Context, _ string, _ string, _ time.Duration) error {
+	return nil
+}
+func (m *mockGatewayCacheForPlatform) GetReasoningContent(_ context.Context, _ string) (string, error) {
+	return "", ErrReasoningContentNotFound
 }
 
 type mockGroupRepoForGateway struct {
@@ -337,6 +393,61 @@ func TestGatewayService_SelectAccountForModelWithPlatform_Anthropic(t *testing.T
 	require.NotNil(t, acc)
 	require.Equal(t, int64(1), acc.ID, "应选择优先级最高的 anthropic 账户")
 	require.Equal(t, PlatformAnthropic, acc.Platform, "应只返回 anthropic 平台账户")
+}
+
+// Scenario: account-owned Composite aliases are scheduled only to accounts that declare the exact mapping.
+func TestGatewayService_SelectAccountForModelWithExclusions_CompositeAliasRequiresOwningAccount(t *testing.T) {
+	groupID := int64(77)
+	repo := &mockAccountRepoForPlatform{
+		accounts: []Account{
+			{
+				ID:            1,
+				Platform:      PlatformAnthropic,
+				Type:          AccountTypeAPIKey,
+				Priority:      1,
+				Status:        StatusActive,
+				Schedulable:   true,
+				AccountGroups: []AccountGroup{{GroupID: groupID}},
+			},
+			{
+				ID:          2,
+				Platform:    PlatformAnthropic,
+				Type:        AccountTypeAPIKey,
+				Priority:    2,
+				Status:      StatusActive,
+				Schedulable: true,
+				Credentials: map[string]any{
+					"model_mapping": map[string]any{"reasoning-alias": "claude-opus-4-8"},
+				},
+				AccountGroups: []AccountGroup{{GroupID: groupID}},
+			},
+		},
+		accountsByID: map[int64]*Account{},
+	}
+	for i := range repo.accounts {
+		repo.accountsByID[repo.accounts[i].ID] = &repo.accounts[i]
+	}
+
+	group := &Group{ID: groupID, Platform: PlatformComposite, Status: StatusActive, Hydrated: true}
+	svc := &GatewayService{
+		accountRepo: repo,
+		groupRepo:   &mockGroupRepoForGateway{groups: map[int64]*Group{groupID: group}},
+		cfg:         testConfig(),
+	}
+	ctx := WithCompositeRouteDecision(context.Background(), CompositeRouteDecision{
+		Matched:        true,
+		Source:         CompositeRouteSourceAccount,
+		GroupID:        groupID,
+		PublicModel:    "reasoning-alias",
+		TargetPlatform: PlatformAnthropic,
+		UpstreamModel:  "reasoning-alias",
+		Endpoint:       CompositeRouteEndpointResponses,
+	})
+
+	account, err := svc.SelectAccountForModelWithExclusions(ctx, &groupID, "", "reasoning-alias", nil)
+	require.NoError(t, err)
+	require.NotNil(t, account)
+	require.Equal(t, int64(2), account.ID)
 }
 
 // TestGatewayService_SelectAccountForModelWithPlatform_Antigravity 测试 antigravity 单平台选择
@@ -2090,6 +2201,10 @@ func (m *mockConcurrencyCache) GetAccountsLoadBatch(ctx context.Context, account
 }
 
 func (m *mockConcurrencyCache) CleanupExpiredAccountSlots(ctx context.Context, accountID int64) error {
+	return nil
+}
+
+func (m *mockConcurrencyCache) CleanupExpiredAccountSlotKeys(ctx context.Context) error {
 	return nil
 }
 
