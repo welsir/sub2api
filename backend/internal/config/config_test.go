@@ -79,6 +79,23 @@ func TestLoadServerTimingConfig(t *testing.T) {
 	})
 }
 
+func TestLoadCodexForceFastConfig(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.False(t, cfg.Gateway.CodexForceFastEnabled)
+	})
+
+	t.Run("enabled by environment variable", func(t *testing.T) {
+		resetViperWithJWTSecret(t)
+		t.Setenv("GATEWAY_CODEX_FORCE_FAST_ENABLED", "true")
+		cfg, err := Load()
+		require.NoError(t, err)
+		require.True(t, cfg.Gateway.CodexForceFastEnabled)
+	})
+}
+
 func TestLoadRedisUsernameFromEnvironment(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("REDIS_USERNAME", "app-user")

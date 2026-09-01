@@ -1654,6 +1654,10 @@ func (s *OpenAIGatewayService) applyOpenAIFastPolicyToBody(ctx context.Context, 
 		return body, nil
 	}
 	rawTier := gjson.GetBytes(body, "service_tier").String()
+	forcePriority := openAICodexForceFastFromContext(ctx)
+	if forcePriority {
+		rawTier = OpenAIFastTierPriority
+	}
 	if rawTier == "" {
 		return body, nil
 	}
@@ -1683,7 +1687,7 @@ func (s *OpenAIGatewayService) applyOpenAIFastPolicyToBody(ctx context.Context, 
 		return updated, nil
 	default:
 		// pass：把别名（如 "fast"）写回为规范值（"priority"）。
-		if normTier == rawTier {
+		if !forcePriority && normTier == rawTier {
 			return body, nil
 		}
 		updated, err := sjson.SetBytes(body, "service_tier", normTier)
@@ -1765,6 +1769,10 @@ func (s *OpenAIGatewayService) applyOpenAIFastPolicyToWSResponseCreate(
 		return frame, nil, nil
 	}
 	rawTier := gjson.GetBytes(frame, "service_tier").String()
+	forcePriority := openAICodexForceFastFromContext(ctx)
+	if forcePriority {
+		rawTier = OpenAIFastTierPriority
+	}
 	if rawTier == "" {
 		return frame, nil, nil
 	}
@@ -1793,7 +1801,7 @@ func (s *OpenAIGatewayService) applyOpenAIFastPolicyToWSResponseCreate(
 		}
 		return updated, nil, nil
 	default:
-		if normTier == rawTier {
+		if !forcePriority && normTier == rawTier {
 			return frame, nil, nil
 		}
 		updated, err := sjson.SetBytes(frame, "service_tier", normTier)

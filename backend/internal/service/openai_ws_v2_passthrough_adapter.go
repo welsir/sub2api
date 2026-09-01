@@ -685,6 +685,16 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	if account == nil {
 		return errors.New("account is nil")
 	}
+	isCodexClient := false
+	if c != nil {
+		isCodexClient = openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator"))
+	}
+	if s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
+		isCodexClient = true
+	}
+	if s.shouldForceCodexFast(account, isCodexClient, false) {
+		ctx = withOpenAICodexForceFast(ctx)
+	}
 	if err := validateOpenAIWSBearerToken(account, token); err != nil {
 		return err
 	}

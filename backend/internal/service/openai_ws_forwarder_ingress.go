@@ -186,6 +186,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 	debugEnabled := isOpenAIWSModeDebugEnabled()
 	isCodexCLI := openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
+	if s.shouldForceCodexFast(account, isCodexCLI, false) {
+		ctx = withOpenAICodexForceFast(ctx)
+	}
 
 	type openAIWSClientPayload struct {
 		payloadRaw               []byte

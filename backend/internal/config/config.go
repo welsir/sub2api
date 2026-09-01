@@ -992,6 +992,10 @@ type GatewayConfig struct {
 	// CodexImageGenerationBridgeEnabled: 是否为 Codex `/v1/responses` 自动注入 image_generation 工具和桥接指令。
 	// 默认关闭，避免纯文本 Codex 请求被意外改写；显式携带 image_generation 工具的请求仍按分组能力转发。
 	CodexImageGenerationBridgeEnabled bool `mapstructure:"codex_image_generation_bridge_enabled"`
+	// CodexForceFastEnabled: 对官方 Codex 客户端通过 OpenAI OAuth-like 账号发起的普通
+	// `/responses` 请求强制注入 service_tier=priority。默认关闭；不影响 API Key、非 Codex
+	// 客户端和 `/responses/compact`，可通过配置重启快速回退。
+	CodexForceFastEnabled bool `mapstructure:"codex_force_fast_enabled"`
 	// ForcedCodexInstructionsTemplateFile: 服务端强制附加到 Codex 顶层 instructions 的模板文件路径。
 	// 模板渲染后会直接覆盖最终 instructions；若需要保留客户端 system 转换结果，请在模板中显式引用 {{ .ExistingInstructions }}。
 	ForcedCodexInstructionsTemplateFile string `mapstructure:"forced_codex_instructions_template_file"`
@@ -2377,6 +2381,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.disable_codex_identity_enforcement", false)
 	viper.SetDefault("gateway.disable_codex_originator_normalization", false)
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
+	viper.SetDefault("gateway.codex_force_fast_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_request_compression_enabled", false)
 	viper.SetDefault("gateway.openai_request_compression_min_bytes", 64*1024)

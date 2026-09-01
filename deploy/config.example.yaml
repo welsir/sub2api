@@ -276,6 +276,9 @@ gateway:
   # 默认 false：保持纯文本 Codex 请求不被改写；客户端显式提供 image_generation tool 时，
   # 仍会在分组允许图片生成的情况下正常转发。
   codex_image_generation_bridge_enabled: false
+  # 对官方 Codex 客户端通过 Coding Plan/OAuth-like 账号发起的普通 /responses 请求强制 Fast。
+  # 默认关闭；不影响 API Key、非 Codex 客户端和 /responses/compact。修改后仅需重启 Sub2API。
+  codex_force_fast_enabled: false
   # Optional: template file used to build the final top-level Codex `instructions`.
   # 可选：用于构建最终 Codex 顶层 `instructions` 的模板文件路径。
   #
