@@ -629,6 +629,24 @@ func (s *HTTPUpstreamSuite) TestOpenAIProfileDefaultsToHTTP2AndNoHeaderTimeout()
 	require.Equal(s.T(), upstreamProtocolModeOpenAIH2, entry.protocolMode)
 }
 
+func (s *HTTPUpstreamSuite) TestLongStreamProfileUsesSharedHTTP2KeepAlive() {
+	s.cfg.Gateway = config.GatewayConfig{
+		ResponseHeaderTimeout: 600,
+		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{
+			Enabled: false,
+		},
+	}
+	svc := s.newService()
+	entry, err := svc.getClientEntry("", 1, 1, service.HTTPUpstreamProfileLongStream, false, false)
+	require.NoError(s.T(), err)
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(s.T(), ok, "expected *http.Transport")
+	require.Equal(s.T(), 600*time.Second, transport.ResponseHeaderTimeout, "long-stream profile should retain the generic header timeout")
+	require.True(s.T(), transport.ForceAttemptHTTP2, "long-stream profile must enable HTTP/2 independently of OpenAI settings")
+	require.True(s.T(), transport.Protocols.HTTP2(), "long-stream profile must install HTTP/2 PING health checks")
+	require.Equal(s.T(), upstreamProtocolModeLongStreamH2, entry.protocolMode)
+}
+
 func (s *HTTPUpstreamSuite) TestOpenAIProfileCustomHeaderTimeout() {
 	s.cfg.Gateway = config.GatewayConfig{
 		ResponseHeaderTimeout:       600,
@@ -672,6 +690,18 @@ func (s *HTTPUpstreamSuite) TestOpenAIProfileHTTP2DisabledUsesHTTP1Transport() {
 	require.False(s.T(), transport.ForceAttemptHTTP2, "OpenAI HTTP/2 disabled should not force H2")
 	require.NotNil(s.T(), transport.TLSNextProto, "HTTP/1 mode should disable automatic H2 negotiation")
 	require.Equal(s.T(), upstreamProtocolModeOpenAIH1, entry.protocolMode)
+}
+
+func (s *HTTPUpstreamSuite) TestOpenAIHarvestProfileDisablesKeepAlives() {
+	svc := s.newService()
+	entry, err := svc.getClientEntry("socks5h://user:pass@harvest.example:31", 41, 5, service.HTTPUpstreamProfileOpenAIHarvest, false, false)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), upstreamProtocolModeOpenAIH1NoReuse, entry.protocolMode)
+	transport, ok := entry.client.Transport.(*http.Transport)
+	require.True(s.T(), ok, "expected *http.Transport")
+	require.True(s.T(), transport.DisableKeepAlives)
+	require.False(s.T(), transport.ForceAttemptHTTP2)
+	require.Equal(s.T(), 0, transport.MaxIdleConns)
 }
 
 func (s *HTTPUpstreamSuite) TestOpenAIHeaderTimeoutChangeRebuildsClient() {
