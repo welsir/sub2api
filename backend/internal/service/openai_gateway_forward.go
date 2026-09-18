@@ -1407,9 +1407,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// previous_response_id，避免携带状态字段被上游拒绝。
 	body = normalizeDeepSeekResponsesRequestBody(account, body)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
+	requestBody, compressed := s.maybeCompressOpenAIRequestBody(ctx, account, targetURL, body, isStream)
+	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(requestBody))
 	if err != nil {
 		return nil, err
+	}
+	if compressed {
+		req.Header.Set("Content-Encoding", "zstd")
+		req.ContentLength = int64(len(requestBody))
 	}
 	req = req.WithContext(WithHTTPUpstreamProfile(req.Context(), HTTPUpstreamProfileOpenAI))
 
