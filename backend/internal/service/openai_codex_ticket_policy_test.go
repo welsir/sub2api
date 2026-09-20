@@ -188,27 +188,35 @@ func TestCodexTicketPoolStopsOnLimitWithoutTryingNextRoute(t *testing.T) {
 
 func TestCodexTicketWSBridgeInjectsEveryTurn(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	proxy := "http://selected.example:8080"
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{codexTicketResponse(), codexTicketResponse()}}
-	svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true, HarvestProxyURL: proxy}, upstream)
-	svc.cfg.Gateway.MaxLineSize = defaultMaxLineSize
-	account := ticketTestAccount(41)
-	ticket := verifiedTestTicket(account, fakeCodexTicketState(292), proxy)
-	svc.storeOpenAICodexTicket(context.Background(), account, ticket)
-	require.True(t, svc.codexTicketUsesHTTPBridge(context.Background(), account))
-	for turn := 1; turn <= 2; turn++ {
-		c, _ := gin.CreateTestContext(httptest.NewRecorder())
-		c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
-		payload := []byte(`{"type":"response.create","model":"gpt-6-astra","input":"ping","stream":true}`)
-		result, err := svc.proxyOpenAIWSHTTPBridgeTurn(context.Background(), c, account, "tok", payload, len(payload), "gpt-6-astra", "", "", "", "", turn, func([]byte) error { return nil })
-		require.NoError(t, err)
-		require.Equal(t, "gpt-6-astra", result.UpstreamResponseModel)
-		require.Equal(t, proxy, upstream.lastProxyURL)
-		require.Equal(t, ticket.State, upstream.lastReq.Header.Get(openAICodexTurnStateHeader))
+	for _, direct := range []bool{false, true} {
+		t.Run(map[bool]string{false: "harvest", true: "direct"}[direct], func(t *testing.T) {
+			proxy := "http://selected.example:8080"
+			upstream := &httpUpstreamRecorder{responses: []*http.Response{codexTicketResponse(), codexTicketResponse()}}
+			svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true, HarvestProxyURL: proxy, GenerationDirect: direct}, upstream)
+			svc.cfg.Gateway.MaxLineSize = defaultMaxLineSize
+			account := ticketTestAccount(41)
+			ticket := verifiedTestTicket(account, fakeCodexTicketState(292), proxy)
+			svc.storeOpenAICodexTicket(context.Background(), account, ticket)
+			require.True(t, svc.codexTicketUsesHTTPBridge(context.Background(), account))
+			for turn := 1; turn <= 2; turn++ {
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+				payload := []byte(`{"type":"response.create","model":"gpt-6-astra","input":"ping","stream":true}`)
+				result, err := svc.proxyOpenAIWSHTTPBridgeTurn(context.Background(), c, account, "tok", payload, len(payload), "gpt-6-astra", "", "", "", "", turn, func([]byte) error { return nil })
+				require.NoError(t, err)
+				require.Equal(t, "gpt-6-astra", result.UpstreamResponseModel)
+				if direct {
+					require.Empty(t, upstream.lastProxyURL)
+				} else {
+					require.Equal(t, proxy, upstream.lastProxyURL)
+				}
+				require.Equal(t, ticket.State, upstream.lastReq.Header.Get(openAICodexTurnStateHeader))
+			}
+			require.Len(t, upstream.requests, 2)
+			svc.cfg.Gateway.OpenAICodexTicket.Enabled = false
+			require.False(t, svc.codexTicketUsesHTTPBridge(context.Background(), account))
+		})
 	}
-	require.Len(t, upstream.requests, 2)
-	svc.cfg.Gateway.OpenAICodexTicket.Enabled = false
-	require.False(t, svc.codexTicketUsesHTTPBridge(context.Background(), account))
 }
 
 func TestStrictCodexAllModelsRequireOwnTicket(t *testing.T) {

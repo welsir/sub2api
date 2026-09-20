@@ -2647,3 +2647,25 @@ func TestLoad_DefaultGatewayImageStreamConfig(t *testing.T) {
 		t.Fatalf("image stream timeout = %d, want greater than ordinary stream timeout %d", cfg.Gateway.ImageStreamDataIntervalTimeout, cfg.Gateway.StreamDataIntervalTimeout)
 	}
 }
+
+func TestLoadCodexTicketGenerationDirect(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte("gateway:\n  openai_codex_ticket:\n    enabled: true\n"), 0600))
+	t.Setenv("CONFIG_FILE", path)
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.False(t, cfg.Gateway.OpenAICodexTicket.GenerationDirect)
+	require.NoError(t, os.WriteFile(path, []byte("gateway:\n  openai_codex_ticket:\n    generation_direct: true\n"), 0600))
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.OpenAICodexTicket.GenerationDirect)
+	t.Setenv("GATEWAY_OPENAI_CODEX_TICKET_GENERATION_DIRECT", "false")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.False(t, cfg.Gateway.OpenAICodexTicket.GenerationDirect)
+	t.Setenv("GATEWAY_OPENAI_CODEX_TICKET_GENERATION_DIRECT", "true")
+	cfg, err = Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.OpenAICodexTicket.GenerationDirect)
+}

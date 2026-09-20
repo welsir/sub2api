@@ -299,7 +299,7 @@ func (s *OpenAIGatewayService) applyOpenAICodexTicket(ctx context.Context, accou
 	if s.codexTicketUsableContext(ctx, account, ticket, time.Now()) {
 		h.Set(openAICodexTurnStateHeader, ticket.State)
 		s.openaiCodexTicketBindings.Store(codexTicketDigest(ticket.State), ticket)
-		logger.L().Info("openai_codex_ticket injected", zap.Int64("account_id", account.ID), zap.String("model", model), zap.Int("length", ticket.Length), zap.String("state_id", codexTicketDigest(ticket.State)[:12]), zap.String("route_id", ticket.RouteKey[:12]))
+		logger.L().Info("openai_codex_ticket injected", zap.Int64("account_id", account.ID), zap.String("model", model), zap.Int("length", ticket.Length), zap.Bool("generation_direct", cfg.GenerationDirect), zap.String("state_id", codexTicketDigest(ticket.State)[:12]), zap.String("route_id", ticket.RouteKey[:12]))
 		return nil
 	}
 	if !cfg.FailClosed {

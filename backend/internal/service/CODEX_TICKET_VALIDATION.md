@@ -19,6 +19,7 @@ gateway:
   openai_codex_ticket:
     enabled: true
     fail_closed: true
+    generation_direct: true
     models: [gpt-6-astra, gpt-5.6-sol]
     harvest_proxy_url: "socks5h://USER:PASSWORD@FIRST_HOST:PORT"
     harvest_proxy_urls:
@@ -41,7 +42,7 @@ Collection uses one shared budget per upstream account inside Sub2. Defaults are
 
 HTTP 401/403 stops the current credential until it changes or the process restarts; 429 waits at least three minutes and honors a longer `Retry-After`. Stream rate-limit errors also stop collection. Existing account cooldowns are respected. These pauses are local to the process; this is not a distributed quota coordinator. Restarting a process is not a rate-limit recovery procedure.
 
-Formal requests using a verified state use its selected collection proxy. Removed routes and changed credentials invalidate tickets. An identical proxy URL does not guarantee a stable physical IP: configure sticky sessions with sufficient lifetime at the provider.
+`generation_direct: true` sends generation requests with a verified ticket directly from the server, while collection continues through the configured harvest proxies. The default is `false`, which retains the selected collection proxy for generation. The environment override is `GATEWAY_OPENAI_CODEX_TICKET_GENERATION_DIRECT=true`; restart the service after changing it. This setting applies to ordinary HTTP, passthrough, and WebSocket HTTP-bridge generation paths; `compact_proxy_url` remains independent. It does not enable no-ticket requests or bypass expiry, credential, model, account-pause, or strict response checks. Removed harvest routes and changed credentials still invalidate tickets. The recorded route digest identifies the collection proxy URL, not a physical IP or a requirement for generation to share that IP. Injection logs include `generation_direct` to distinguish the chosen egress policy.
 
 Ticket-managed accounts use HTTP upstream forwarding. Client WebSocket requests use the existing HTTP bridge, allowing every turn to update its state and route instead of silently retaining an old WebSocket handshake. Explicitly disabled WebSocket ingress stays disabled. Other accounts retain their transport policy.
 

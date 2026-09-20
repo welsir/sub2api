@@ -133,6 +133,7 @@ func codexTicketRetryAfter(h http.Header) time.Duration {
 
 // Resolve from the exact injected state, not whichever ticket was refreshed
 // most recently. Keep old bindings until expiry for concurrent requests.
+// Generation egress is selected only after validating the ticket and account.
 func (s *OpenAIGatewayService) codexTicketOutboundProxy(ctx context.Context, account *Account, h http.Header, fallback string) (string, error) {
 	state := h.Get(openAICodexTurnStateHeader)
 	if state == "" || !isOpenAICodexTicketAccount(account) {
@@ -151,6 +152,9 @@ func (s *OpenAIGatewayService) codexTicketOutboundProxy(ctx context.Context, acc
 	// Set the same identity only after ordinary builders have finished applying
 	// their defaults; otherwise the Astra harvest version may be downgraded.
 	applyOpenAICodexTicketHarvestIdentity(h, t.Model)
+	if s.openAICodexTicketConfig().GenerationDirect {
+		return "", nil // Explicit direct transport, not the account proxy.
+	}
 	return proxy, nil
 }
 

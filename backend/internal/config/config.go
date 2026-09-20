@@ -1231,7 +1231,7 @@ func (c *UserMessageQueueConfig) GetEffectiveMode() string {
 }
 
 // OpenAICodexTicketConfig 控制 ChatGPT OAuth 的 x-codex-turn-state 门票。
-// 合格票绑定 harvest_proxy_url；注入该票的业务请求使用同一路线。
+// 合格票记录采集路线；generation_direct 可让持票生成请求使用服务器直连。
 // 门票默认有效 3600 秒，临近过期前 refresh_before_seconds 重新打票。
 type OpenAICodexTicketConfig struct {
 	Enabled                      bool     `mapstructure:"enabled"`
@@ -1240,6 +1240,7 @@ type OpenAICodexTicketConfig struct {
 	RefreshBeforeSeconds         int      `mapstructure:"refresh_before_seconds"`
 	HarvestProxyURL              string   `mapstructure:"harvest_proxy_url"`
 	HarvestProxyURLs             []string `mapstructure:"harvest_proxy_urls"`
+	GenerationDirect             bool     `mapstructure:"generation_direct"` // Direct generation only; harvesting still uses configured proxies.
 	CompactProxyURL              string   `mapstructure:"compact_proxy_url"`
 	AccountProbesPerMinute       int      `mapstructure:"account_probes_per_minute"`
 	ModelProbesPerMinute         int      `mapstructure:"model_probes_per_minute"`
@@ -2428,6 +2429,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_codex_ticket.cold_wait_seconds", 90)
 	viper.SetDefault("gateway.openai_codex_ticket.model_probes_per_minute", 4)
 	viper.SetDefault("gateway.openai_codex_ticket.compact_proxy_url", "")
+	viper.SetDefault("gateway.openai_codex_ticket.generation_direct", false)
 	viper.SetDefault("gateway.openai_codex_ticket.harvest_probe_interval_seconds", 8)
 	viper.SetDefault("gateway.openai_codex_ticket.harvest_attempt_timeout_seconds", 25)
 	viper.SetDefault("gateway.openai_codex_ticket.fail_closed", true)
