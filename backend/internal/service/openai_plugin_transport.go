@@ -20,7 +20,7 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 		} else if proxyURL == "" || ValidateOpenAICodexTicketHarvestProxyURL(proxyURL) != nil {
 			return nil, errCodexCompactRoute
 		}
-	} else {
+	} else if !isOpenAINativeImagesUpstreamRequest(request) {
 		proxyURL, err = s.codexTicketOutboundProxy(request.Context(), account, request.Header, proxyURL)
 	}
 	if err != nil {

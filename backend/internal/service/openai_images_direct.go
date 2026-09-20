@@ -15,6 +15,31 @@ import (
 
 type openAIImagesForceResponsesContextKey struct{}
 
+type openAIImagesRequestContextKey struct{}
+
+// Only the Images service entry points set this marker. A model name or a
+// client-supplied header alone must never exempt a Responses request.
+func withOpenAIImagesRequest(ctx context.Context) context.Context {
+	return context.WithValue(ctx, openAIImagesRequestContextKey{}, true)
+}
+
+func isOpenAIImagesTicketExempt(ctx context.Context, model string) bool {
+	if ctx == nil {
+		return false
+	}
+	images, _ := ctx.Value(openAIImagesRequestContextKey{}).(bool)
+	return images && !isOpenAIImagesForceResponses(ctx) && usesCodexDirectImages(model)
+}
+
+func isOpenAINativeImagesUpstreamRequest(request *http.Request) bool {
+	images, _ := request.Context().Value(openAIImagesRequestContextKey{}).(bool)
+	if !images || isOpenAIImagesForceResponses(request.Context()) {
+		return false
+	}
+	return request.URL.Path == "/backend-api/codex/images/generations" ||
+		request.URL.Path == "/backend-api/codex/images/edits"
+}
+
 func withOpenAIImagesForceResponses(ctx context.Context) context.Context {
 	return context.WithValue(ctx, openAIImagesForceResponsesContextKey{}, true)
 }

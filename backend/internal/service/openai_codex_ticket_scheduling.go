@@ -124,6 +124,10 @@ func codexTicketCompactRequest(req *http.Request) bool {
 
 // Compaction has its own response contract and never consumes a generation ticket.
 func (s *OpenAIGatewayService) prepareCodexTicketRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, req *http.Request) error {
+	if isOpenAIImagesTicketExempt(ctx, extractOpenAICodexTicketModel(body)) {
+		req.Header.Del(openAICodexTurnStateHeader)
+		return nil
+	}
 	if s.codexTicketUsesHTTPBridge(ctx, account) && isExplicitOpenAICompactRequest(c, body) {
 		*req = *req.WithContext(context.WithValue(req.Context(), codexTicketCompactKey{}, true))
 		req.Header.Del(openAICodexTurnStateHeader)
