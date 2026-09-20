@@ -559,8 +559,11 @@ func (s *OpenAIGatewayService) isOpenAIAccountRequestRuntimeBlocked(account *Acc
 	if s == nil {
 		return false
 	}
+	if requireCompact && isOpenAICodexTicketAccount(account) && s.openAICodexTicketEnabled() && s.codexTicketPaused(account) {
+		return true
+	}
 	outboundModel := s.openAICodexTicketOutboundModel(account, requestedModel, requireCompact)
-	if s.openAICodexTicketBlocksAccount(account, outboundModel) {
+	if !requireCompact && s.openAICodexTicketBlocksAccount(account, outboundModel) {
 		return true
 	}
 	snapshot := s.peekOpenAIAccountRuntimeBlock(account)
