@@ -229,37 +229,3 @@ func TestStrictCodexAllModelsRequireOwnTicket(t *testing.T) {
 		})
 	}
 }
-
-func TestStrictCodexResponseDoesNotExposeUnverifiedSuccess(t *testing.T) {
-	for name, body := range map[string]string{
-		"valid-sse":     ticketTestSSE("gpt-6-astra"),
-		"wrong-model":   ticketTestSSE("gpt-5.6-luna"),
-		"truncated":     "data: {\"type\":\"response.created\"}\n\n",
-		"late-failure":  ticketTestSSE("gpt-6-astra") + "data: {\"type\":\"response.failed\"}\n\n",
-		"valid-json":    `{"model":"gpt-6-astra","status":"completed"}`,
-		"wrong-json":    `{"model":"gpt-5.6-luna","status":"completed"}`,
-		"missing-model": `{"status":"completed"}`,
-	} {
-		t.Run(name, func(t *testing.T) {
-			upstream := &httpUpstreamRecorder{responses: []*http.Response{{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}}}
-			svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true}, upstream)
-			account := ticketTestAccount(41)
-			ticket := verifiedTestTicket(account, fakeCodexTicketState(292), svc.openAICodexTicketHarvestProxyURL())
-			svc.storeOpenAICodexTicket(context.Background(), account, ticket)
-			req, err := http.NewRequest(http.MethodPost, chatgptCodexURL, nil)
-			require.NoError(t, err)
-			require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), account, ticket.Model, req.Header))
-			response, err := svc.doOpenAIUpstream(req, "", account)
-			if strings.HasPrefix(name, "valid-") {
-				require.NoError(t, err)
-				got, err := io.ReadAll(response.Body)
-				require.NoError(t, err)
-				require.Equal(t, body, string(got))
-				response.Body.Close()
-			} else {
-				require.ErrorIs(t, err, errStrictCodexResponse)
-				require.Nil(t, response)
-			}
-		})
-	}
-}

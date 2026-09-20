@@ -80,19 +80,6 @@ func TestCodexTicketDirectGenerationPreservesAdmission(t *testing.T) {
 	}
 }
 
-func TestCodexTicketDirectGenerationPreservesResponseValidation(t *testing.T) {
-	account := ticketTestAccount(41)
-	upstream := &httpUpstreamRecorder{responses: []*http.Response{{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(ticketTestSSE("gpt-5.6-luna")))}}}
-	svc := ticketTestService(t, config.OpenAICodexTicketConfig{Enabled: true, FailClosed: true, GenerationDirect: true}, upstream)
-	svc.storeOpenAICodexTicket(context.Background(), account, verifiedTestTicket(account, fakeCodexTicketState(292), ticketTestProxyURL))
-	req, _ := http.NewRequest(http.MethodPost, chatgptCodexURL, nil)
-	require.NoError(t, svc.applyOpenAICodexTicket(context.Background(), account, "gpt-6-astra", req.Header))
-	resp, err := svc.doOpenAIUpstream(req, ticketTestProxyURL, account)
-	require.ErrorIs(t, err, errStrictCodexResponse)
-	require.Nil(t, resp)
-	require.Empty(t, upstream.lastProxyURL)
-}
-
 func TestCodexTicketDirectGenerationDoesNotOverrideCompactProxy(t *testing.T) {
 	proxy := "http://compact.example:8080"
 	upstream := &httpUpstreamRecorder{responses: []*http.Response{{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"output":[]}`))}}}

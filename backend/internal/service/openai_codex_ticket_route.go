@@ -136,13 +136,20 @@ func codexTicketRetryAfter(h http.Header) time.Duration {
 // Generation egress is selected only after validating the ticket and account.
 func (s *OpenAIGatewayService) codexTicketOutboundProxy(ctx context.Context, account *Account, h http.Header, fallback string) (string, error) {
 	state := h.Get(openAICodexTurnStateHeader)
+	strict := s.codexTicketUsesHTTPBridge(ctx, account) && s.openAICodexTicketConfig().FailClosed
+	if state == "" && strict {
+		return "", ErrOpenAICodexTicketUnavailable
+	}
 	if state == "" || !isOpenAICodexTicketAccount(account) {
 		return fallback, nil
 	}
 	raw, ok := s.openaiCodexTicketBindings.Load(codexTicketDigest(state))
 	if !ok {
+		if strict {
+			return "", ErrOpenAICodexTicketUnavailable
+		}
 		return fallback, nil
-	} // Client-owned state retains its existing route.
+	} // Non-strict client-owned state retains its existing route.
 	t := raw.(*openAICodexTicket)
 	proxy, valid := t.routeFor(account, s.codexTicketRouteConfig(ctx), time.Now())
 	if !valid || s.codexTicketPaused(account) {

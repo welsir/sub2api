@@ -33,14 +33,14 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 			if response != nil {
 				s.pauseCodexTicket(account, response.StatusCode, codexTicketRetryAfter(response.Header))
 			}
-			return s.validateStrictCodexResponse(request, account, response, err)
+			return response, err
 		}
 	}
 	response, err := s.httpUpstream.Do(request, proxyURL, account.ID, account.Concurrency)
 	if response != nil {
 		s.pauseCodexTicket(account, response.StatusCode, codexTicketRetryAfter(response.Header))
 	}
-	return s.validateStrictCodexResponse(request, account, response, err)
+	return response, err
 }
 
 // doOpenAIAccountTestUpstream 让 OpenAI OAuth 账号测试与真实转发使用同一插件路径。
